@@ -41,7 +41,10 @@ def build_parser(*, manage_workflow, manage_sessions, display_stitch_info):
                                  required=False)
     workflow_parser.add_argument('-validate', action='store_true', default=False,
                                  help='assembles and validates all .fab files  in the config directory')
-    workflow_parser.add_argument('-apply', action='store_true', default=False, help='create resources')
+    workflow_parser.add_argument(
+        '-apply', action='store_true', default=False,
+        help='create resources. The -apply is repeatable and is designed to converge to the desired state')
+
     workflow_parser.add_argument('-init', action='store_true', default=False, help='display resource ordering')
     workflow_parser.add_argument('-stitch-info', action='store_true', default=False, help='display network stitch-info')
     workflow_parser.add_argument('-plan', action='store_true', default=False, help='shows plan')
@@ -52,7 +55,10 @@ def build_parser(*, manage_workflow, manage_sessions, display_stitch_info):
     workflow_parser.add_argument('-stats', action='store_true', default=False, help='display stats')
     workflow_parser.add_argument('-json', action='store_true', default=False,
                                  help='use json output. relevant when used with -show or -plan')
-    workflow_parser.add_argument('-destroy', action='store_true', default=False, help='delete resources')
+    workflow_parser.add_argument(
+        '-destroy', action='store_true', default=False,
+        help='delete resources. The -destroy is repeatable and is designed to converge to the desired state')
+
     workflow_parser.set_defaults(dispatch_func=manage_workflow)
 
     sessions_parser = subparsers.add_parser('sessions', help='Manage fabfed sessions ')
@@ -83,12 +89,17 @@ def get_log_level():
 
 def get_log_location():
     import os
-    return os.environ.get('FABFED_LOG_LOCATION', "./fabfed.log")
+    return os.environ.get('FABFED_LOG_LOCATION', "/tmp/fabfed.log")
 
 
 def get_formatter():
     fmt = "%(asctime)s [%(filename)s:%(lineno)d] [%(levelname)s] %(message)s"
     return logging.Formatter(fmt)
+
+
+def disable_stdout_logs():
+    import os
+    return os.environ.get('FABFED_DISABLE_LOGS_TO_STDOUT', "false").lower() == 'true'
 
 
 _LOGGER = None
@@ -124,9 +135,11 @@ def init_logger():
     file_handler.setFormatter(formatter)
     logger.propagate = False
     logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+
+    if not disable_stdout_logs():
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
 
     global _LOGGER
 
@@ -224,6 +237,13 @@ def get_inventory_dir(friendly_name):
     inv_dir = os.path.join(get_base_dir(friendly_name), "inventory")
     os.makedirs(inv_dir, exist_ok=True)
     return inv_dir
+
+
+def get_ssh_dir(friendly_name):
+    import os
+    ssh_dir = os.path.join(get_base_dir(friendly_name), "ssh")
+    os.makedirs(ssh_dir, exist_ok=True)
+    return ssh_dir
 
 
 def dump_sessions(to_json: bool):

@@ -55,6 +55,4 @@ resource:
           provider: '{{ fabric.fabric_provider }}'
           network: '{{ network.fabric_network }}'
           site: '{{ var.site }}' 
-          image: default_rocky_8
-          nic_model: NIC_Basic
           count: '{{ var.node_count }}'

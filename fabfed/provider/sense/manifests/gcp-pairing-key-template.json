@@ -1,0 +1,5 @@
+{
+  "Pairing Key": "?pairing_key?",
+  "sparql": "SELECT DISTINCT ?pairing_key WHERE {?vpc nml:hasBidirectionalPort ?vpngw. ?vpngw nml:name ?cloud_router. ?vpngw nml:isAlias ?vlan_attachment. ?vlan_attachment mrs:hasNetworkStatus \"pending_partner\". ?vlan_attachment mrs:hasNetworkAddress ?pairing_key_na. ?pairing_key_na mrs:type \"pairing-key\". ?pairing_key_na mrs:value ?pairing_key.}",
+  "required": "true"
+}

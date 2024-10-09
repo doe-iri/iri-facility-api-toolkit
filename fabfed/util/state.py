@@ -1,5 +1,5 @@
 from fabfed.model.state import ProviderState
-from fabfed.util.utils import get_base_dir, get_stats_base_dir
+from fabfed.util.utils import get_base_dir, get_stats_base_dir, get_inventory_dir, get_ssh_dir
 from typing import List, Dict
 
 import json
@@ -485,6 +485,20 @@ def delete_stats(friendly_name: str):
     import shutil
 
     dir_path = get_stats_base_dir(friendly_name)
+    shutil.rmtree(dir_path)
+
+
+def delete_inventory(friendly_name: str):
+    import shutil
+
+    dir_path = get_inventory_dir(friendly_name)
+    shutil.rmtree(dir_path)
+
+
+def delete_ssh(friendly_name: str):
+    import shutil
+
+    dir_path = get_ssh_dir(friendly_name)
     shutil.rmtree(dir_path)
 
 

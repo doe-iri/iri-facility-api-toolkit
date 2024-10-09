@@ -82,8 +82,11 @@ class FabricNetwork(Network):
 
 class NetworkBuilder:
     def __init__(self, label, provider: FabricProvider, slice_object: Slice, name, resource: dict):
+        from fabfed.policy.policy_helper import StitchInfo
+
         self.provider = provider
         self.slice_object = slice_object
+        self.stitch_infos: List[StitchInfo] = resource.get(Constants.RES_STITCH_INFO)
         self.stitch_port = get_stitch_port_for_provider(resource=resource, provider=provider.type)
         self.site = resource.get(Constants.RES_SITE)
         self.facility_cloud_port_interfaces = []
@@ -231,6 +234,9 @@ class NetworkBuilder:
                 facility_port_interface = facility_port.get_interfaces()[0]
                 self.facility_cloud_port_interfaces.append(facility_port_interface)
                 logger.info("Done_Creating_Facility_Port:" + facility_port.toJson())
+            return
+
+        devices = set()
 
         for discovered_stitch_info in self.discovered_stitch_infos:
             if 'site' not in discovered_stitch_info:
@@ -243,6 +249,7 @@ class NetworkBuilder:
                 f'{self.net_name} will use stitch info: {discovered_stitch_info}')
 
             device = discovered_stitch_info[Constants.STITCH_PORT_DEVICE_NAME]
+            devices.add(device)
             site = discovered_stitch_info[Constants.STITCH_PORT_SITE]
             vlan = discovered_stitch_info[Constants.STITCH_PORT_VLAN]
             self.sites.add(site)
@@ -264,6 +271,38 @@ class NetworkBuilder:
             #                                                     vlan=str(vlan))
             facility_port_interface = facility_port.get_interfaces()[0]
             self.facility_non_cloud_port_interfaces.append(facility_port_interface)
+
+        if len(devices) != len(self.stitch_infos):
+            from fabfed.policy.facility_port_handler import load_facility_info_using_stich_port
+            from fabfed.policy.tag_handler import get_available_vlan
+
+            for stitch_port in self.stitch_port:
+                device = stitch_port[Constants.STITCH_PORT_DEVICE_NAME]
+
+                if device in devices:
+                    continue
+
+                load_facility_info_using_stich_port(stitch_port)
+                site = stitch_port[Constants.STITCH_PORT_SITE]
+                vlan = get_available_vlan(stitch_port=stitch_port)
+                self.sites.add(site)
+                logger.info(f"Adding Facility Port to slice: name={device}:site={site}:vlan={vlan}")
+
+                from fabrictestbed_extensions.fablib.facility_port import FacilityPort
+
+                fim_facility_port = self.slice_object.get_fim_topology().add_facility(
+                    name=device,
+                    site=site,
+                    capacities=Capacities(bw=self.bw),
+                    labels=Labels(vlan=str(vlan)),
+                )
+                facility_port = FacilityPort(self.slice_object, fim_facility_port)
+
+                # facility_port = self.slice_object.add_facility_port(name=device,
+                #                                                     site=site,
+                #                                                     vlan=str(vlan))
+                facility_port_interface = facility_port.get_interfaces()[0]
+                self.facility_non_cloud_port_interfaces.append(facility_port_interface)
 
     def handle_network(self):
         if self.facility_cloud_port_interfaces:

@@ -89,17 +89,21 @@ def manage_workflow(args):
             sys.exit(1)
 
         workflow_failed = False
+        workflow_failed_message = ''
 
         try:
             controller.apply(provider_states=states)
         except KeyboardInterrupt as kie:
             logger.error(f"Keyboard Interrupt while creating resources ... {kie}")
+            workflow_failed_message = f'{kie}'
             workflow_failed = True
         except ControllerException as ce:
             logger.error(f"Exceptions while creating resources ... {ce}")
+            workflow_failed_message = f'{ce}'
             workflow_failed = True
         except Exception as e:
             logger.error(f"Unknown error while creating resources ... {e}")
+            workflow_failed_message = f'{e}'
             workflow_failed = True
 
         controller_duration = time.time() - controller_duration_start
@@ -114,7 +118,7 @@ def manage_workflow(args):
         nodes, networks, services, pending, failed = utils.get_counters(states=states)
         workflow_failed = workflow_failed or pending or failed
 
-        if Constants.RECONCILE_STATES:
+        if workflow_failed and Constants.RECONCILE_STATES:
             states = sutil.reconcile_states(states, args.session)
 
         sutil.save_states(states, args.session)
@@ -138,6 +142,11 @@ def manage_workflow(args):
                                    provider_stats=provider_stats)
         logger.info(f"STATS:duration_in_seconds={workflow_duration}")
         logger.info(f"nodes={nodes}, networks={networks}, services={services}, pending={pending}, failed={failed}")
+        counts = dict(nodes=nodes, networks=networks, services=services, pending=pending, failed=failed)
+        display_info = dict(workflow_status="FAILED" if workflow_failed else "OK",
+                            error_message=workflow_failed_message,
+                            resources=counts)
+        sutil.dump_objects(objects=display_info, to_json=args.json)
         sutil.save_stats(dict(comment="all durations are in seconds", stats=fabfed_stats), args.session)
         sys.exit(1 if workflow_failed else 0)
 

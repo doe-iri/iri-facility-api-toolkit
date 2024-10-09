@@ -3,6 +3,7 @@
  - [Description](#descr)
  - [Installation](#install)
  - [Operation Instructions](#operate)
+ - [Using Fabfed Welcome Jupyter Notebook](#jupyter)
 
 # <a name="descr"></a>Description
 The FabFed is a Python library for a cross-testbed federation framework that (1) models the network experiment (or "slice") across the FABRIC testbed and federated testbeds and providers, and (2) provides workflow tools to stitch l2 and l3 networks between the testbeds and providers.
@@ -13,6 +14,7 @@ The example below showcases network stitching across providers, a [chi](https://
 
 - For more details, refer to fabfed's [workflow design](./docs/workflow_design.md)
 - For a complete example, refer to  [Fabric Chameleon Stitching](./examples/basic-stitching/chameleon)
+- Many sample workflow definitions can be found under [the examples directory](./examples)
 
 ```
   1 resource:
@@ -80,4 +82,9 @@ fabfed workflow --config-dir some_dir [--var-file some_var_file.yml] --session s
 # Use this option to manage your workflow sessions
 fabfed sessions -show
 ```
+# <a name="jupyter"></a>Fabfed Welcome Jupyter Notebook
+The FabFed Welcome Jupyter Notebook helps with fabfed installation, credential configuration and with running serveral sample workflows. 
+
+- Download the [fabfed example tarball](https://artifacts.fabric-testbed.net/artifacts/288425c7-7ae8-4b6a-90d8-c8f957f630a9)
+- Or clone this repo. The notebook can be found under [the examples directory](./examples)
 

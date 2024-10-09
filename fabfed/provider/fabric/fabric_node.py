@@ -39,94 +39,29 @@ class FabricNode(Node):
         self.addr_list = {}
 
     def handle_networking(self):
-        slice_object = self._slice_object
-
         if not self.mgmt_ip:
             logger.warning(f" Node {self.name} has no management ip ")
             return
 
-        v6_dev = v4_dev = stitch_dev = None
+        itfs = [itf for itf in self.delegate.get_interfaces() if itf.get_ip_addr()]
 
-        try:
-            # XXX Finding interfaces on stitched networks is currently not working on fablib==1.4.0
-            # Search for interface directly...
-            stitch_iface = slice_object.get_interface(name=f"{self.name}-{FABRIC_STITCH_NET_IFACE_NAME}-p1")
-            stitch_dev = stitch_iface.get_device_name()
-            logger.info(f" Node {self.name} has stitch device={stitch_dev}")
-        except Exception as e:
-            logger.warning(f" Node {self.name} checking for stitch network/device: {e}")
+        for itf in itfs:
+            if FABRIC_STITCH_NET_IFACE_NAME in itf.get_name():
+                self.dataplane_ipv4 = str(itf.get_ip_addr())
+                break
+            elif f'FABNET_IPv4_{self.site}' in itf.get_name():
+                self.dataplane_ipv4 = str(itf.get_ip_addr())
+                break
 
-        try:
-            if stitch_dev is None and INCLUDE_FABNET_V4:
-                for itf in slice_object.get_interfaces():
-                    if self.v4net_name in itf.get_name():
-                        v4_dev = itf.get_device_name()
-                        logger.info(f" Node {self.name} has v4 device={v4_dev}")
-                        break
-        except Exception as e:
-            logger.warning(f"Node {self.name} checking for ipv4/ipv6: {e}")
-
-        try:
-            if stitch_dev is None and INCLUDE_FABNET_V6:
-                for itf in slice_object.get_interfaces():
-                    if self.v6net_name in itf.get_name():
-                        v6_dev = itf.get_device_name()
-                        logger.info(f" Node {self.name} has v6 device={v6_dev}")
-                        break
-        except Exception as e:
-            logger.warning(f"Node {self.name} checking for ipv4/ipv6: {e}")
-
-        try:
-            if stitch_dev and INCLUDE_FABNETS:
-                v4_net = slice_object.get_network(name=self.v4net_name)
-                v4_dev = v4_net.get_interfaces()[0].get_device_name() if v4_net and v4_net.get_interfaces() else None
-                logger.info(f" Node {self.name} has v4 device={v4_dev}")
-
-                v6_net = slice_object.get_network(name=self.v6net_name)
-                v6_dev = v6_net.get_interfaces()[0].get_device_name() if v6_net and v6_net.get_interfaces() else None
-                logger.info(f" Node {self.name} has v6 device={v6_dev}")
-        except Exception as e:
-            logger.warning(f"Node {self.name} checking for ipv4/ipv6: {e}")
-
-        try:
-            for ip_addr in self._delegate.ip_addr_list(output='json', update=False):
-                ifname = ip_addr['ifname']
-                self.addr_list[ifname] = []
-
-                for addr_info in ip_addr['addr_info']:
-                    self.addr_list[ifname].append(addr_info['local'])
-                    if stitch_dev:
-                        if stitch_dev == ifname and addr_info['family'] == 'inet':
-                            self.dataplane_ipv4 = addr_info['local']
-
-                        if stitch_dev == ifname and addr_info['family'] == 'inet6':
-                            self.dataplane_ipv6 = addr_info['local']
-                    else:
-                        if v4_dev == ifname and addr_info['family'] == 'inet':
-                            self.dataplane_ipv4 = addr_info['local']
-
-                        if v6_dev == ifname and addr_info['family'] == 'inet6':
-                            self.dataplane_ipv6 = addr_info['local']
-        except Exception as e:
-            logger.warning(f"Node {self.name} checking for dataplane address: {e}")
+        for itf in itfs:
+            if f'FABNET_IPv6_{self.site}' in itf.get_name():
+                node_addr = itf.get_ip_addr()
+                self.dataplane_ipv6 = str(node_addr)
+                break
 
     @property
     def delegate(self) -> Delegate:
         return self._delegate
-
-    @property
-    def v4net_name(self):
-        if INCLUDE_FABNET_V4:
-            return f"FABNET_IPv4_{self.site}"
-
-        return f"{self.name}-{FABRIC_IPV4_NET_NAME}"
-
-    @property
-    def v6net_name(self):
-        if INCLUDE_FABNET_V6:
-            return f"FABNET_IPv6_{self.site}"
-
-        return f"{self.name}-{FABRIC_IPV6_NET_NAME}"
 
     def set_network_label(self, network_label):
         self.network_label = network_label
@@ -200,25 +135,12 @@ class NodeBuilder:
         self.node: Delegate = slice_object.add_node(name=name, image=image, site=site, cores=cores, ram=ram, disk=disk)
 
         # Use fully automated ip v4
-        if INCLUDE_FABNET_V4 and resource.get(Constants.RES_TYPE_NETWORK) is None:
+        if resource.get(Constants.RES_TYPE_NETWORK) is None:
             self.node.add_fabnet(net_type="IPv4", nic_type=self.nic_model)
 
         # Use fully automated ip v6
         if INCLUDE_FABNET_V6 and resource.get(Constants.RES_TYPE_NETWORK) is None:
             self.node.add_fabnet(net_type="IPv6", nic_type=self.nic_model)
-
-        # This has been deprecated Include two basic NICs for FabNetv4/v6
-        if INCLUDE_FABNETS and resource.get(Constants.RES_TYPE_NETWORK) is None:
-            net_iface_v4 = self.node.add_component(model='NIC_Basic',
-                                                   name=FABRIC_IPV4_NET_IFACE_NAME).get_interfaces()[0]
-            # TODO: KOMAL:
-            net_iface_v4.set_mode("auto")
-            net_iface_v6 = self.node.add_component(model='NIC_Basic',
-                                                   name=FABRIC_IPV6_NET_IFACE_NAME).get_interfaces()[0]
-            # TODO: KOMAL
-            net_iface_v6.set_mode("auto")
-            slice_object.add_l3network(name=f"{name}-{FABRIC_IPV4_NET_NAME}", interfaces=[net_iface_v4], type='IPv4')
-            slice_object.add_l3network(name=f"{name}-{FABRIC_IPV6_NET_NAME}", interfaces=[net_iface_v6], type='IPv6')
 
     def add_component(self, model=None, name=None):
         self.node.add_component(model=model, name=name)

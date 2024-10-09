@@ -1,11 +1,24 @@
 provider:
   - fabric:
-    - fabric_provider:
-         credential_file: ~/.fabfed/fabfed_credentials.yml
-         profile: fabric
+      - fabric_provider:
+          credential_file: ~/.fabfed/fabfed_credentials.yml
+          profile: fabric
+  - janus:
+      - janus_provider:
+          credential_file: ~/.fabfed/fabfed_credentials.yml
+          profile: janus
 resource:
   - node:
-      - rocky_node:
-            provider:  '{{ fabric.fabric_provider }}'
-            site: WASH
-            count: 1
+      - ctrlr_node:
+          provider: '{{ fabric.fabric_provider }}'
+          # site: WASH  # Uncomment this otherwise site will be random
+      - fabric_node:
+          provider: '{{ fabric.fabric_provider }}'
+          # site: MAX  # Uncomment this otherwise site will be random
+          count: 1
+  - service:
+      - dtn_service:
+          provider: '{{ janus.janus_provider }}'
+          controller: '{{ node.ctrlr_node }}'
+          node: ['{{ node.ctrlr_node }}', '{{ node.fabric_node }}']
+          count: 0  # Set count to 1 to use janus dtn service

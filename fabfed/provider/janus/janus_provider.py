@@ -21,6 +21,7 @@ class JanusService(Service):
         self.created = False
         self._nodes = nodes
         self._provider = provider
+
         if controller_url and controller_host:
             self.controller_url = controller_url
             self.controller_host = controller_host
@@ -87,11 +88,9 @@ class JanusProvider(Provider):
 
         # count was set to zero 
         if not creation_details['in_config_file']:
-            # TODO HANDLE UNINSTALL OF JANUS ON NODES ...
             return
 
         assert resource.get(Constants.RES_COUNT, 1)
-        assert resource.get(Constants.RES_IMAGE)
         self.logger.info(f"Validated:OK Resource={self.name} using {self.label}")
 
     def do_add_resource(self, *, resource: dict):
@@ -106,11 +105,16 @@ class JanusProvider(Provider):
         Note that external dependencies are respurce dependencies across different providers.
         @param resource: resource attributes
         """
+        creation_details = resource[Constants.RES_CREATION_DETAILS]
+
+        if not creation_details['in_config_file']:
+            return
+
         self.logger.info(f"Adding resource={self.name} using {self.label}")
         self._validate_resource(resource)
 
         label = resource.get(Constants.LABEL)
-        image = resource.get(Constants.RES_IMAGE)
+        image = resource.get(Constants.RES_IMAGE, "dtnaas/tools")
         controller = resource.get("controller", None)
         controller_url = None
         controller_host = None
@@ -150,18 +154,24 @@ class JanusProvider(Provider):
         Called by add_resource(self, *, resource: dict) if resource has no external dependencies
         @param resource: resource attributes
         """
+        creation_details = resource[Constants.RES_CREATION_DETAILS]
+
+        if not creation_details['in_config_file']:
+            return
+
         label = resource.get(Constants.LABEL)
         states = resource.get(Constants.SAVED_STATES)
+        force = resource.get("force", True)
         created = False
         for s in states:
-            created =  s.attributes.get('created', False)
+            created =  s.attributes.get('created', True)
 
         self.logger.info(f"Creating resource={self.name} using {self.label}")
 
         temp = [service for service in self.services if service.label == label]
 
         for service in temp:
-            if created:
+            if not force and created:
                 self.logger.info(f"Service {label} is already in created state, skipping create task")
                 service.created = True
             else:
@@ -170,9 +180,12 @@ class JanusProvider(Provider):
 
     def do_delete_resource(self, *, resource: dict):
         self.logger.info(f"Deleting resource={resource} using {self.label}")
+        image = resource.get(Constants.RES_IMAGE, "dtnaas/tools")
+        nodes = list()
 
-        image = resource.get(Constants.RES_IMAGE)
-        nodes = [rd for rd in resource[Constants.EXTERNAL_DEPENDENCY_STATES]]
+        if resource.get(Constants.EXTERNAL_DEPENDENCY_STATES):
+           nodes = [rd for rd in resource.get(Constants.EXTERNAL_DEPENDENCY_STATES)]
+
         service_nodes = [n.attributes.get('name') for n in nodes]
         label = resource.get(Constants.LABEL)
         states = resource.get(Constants.SAVED_STATES)

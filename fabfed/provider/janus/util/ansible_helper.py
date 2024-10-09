@@ -258,17 +258,23 @@ class AnsibleRunnerHelper:
 
     def run_playbook(self, playbook_path: str, tags: list = [], limit: str = None):
         rc = RunnerConfig(
-            forks = 100,
-            private_data_dir = '../',
-            project_dir = 'ansible',
+            forks=100,
+            private_data_dir='/tmp/fabfed_ansible',
+            project_dir='ansible',
             playbook=playbook_path,
-            tags = ','.join(tags),
-            limit = limit,
-            inventory = self.inventory_path,
-            extravars = self.variable_manager.get_vars()
+            tags=','.join(tags),
+            limit=limit,
+            inventory=self.inventory_path,
+            extravars=self.variable_manager.get_vars()
         )
+
+        def my_event_handler(event):
+            if dump := event.get("stdout"):
+                self.logger.info(dump)
+
         rc.prepare()
-        r = Runner(config=rc)
+        rc.suppress_ansible_output = True
+        r = Runner(config=rc, event_handler=my_event_handler)
         r.run()
         self.logger.debug(f"Playbook result: {r.stats}")
 

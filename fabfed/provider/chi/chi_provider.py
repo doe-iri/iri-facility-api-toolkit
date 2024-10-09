@@ -129,37 +129,7 @@ class ChiProvider(Provider):
         key_pair = self.config[CHI_KEY_PAIR]
         project_name = self.config[CHI_PROJECT_NAME]
 
-        if rtype == Constants.RES_TYPE_NETWORK:
-            layer3 = resource.get(Constants.RES_LAYER3)
-            from fabfed.policy.policy_helper import StitchInfo
-            stitch_infos: List[StitchInfo] = resource.get(Constants.RES_STITCH_INFO)
-            assert stitch_infos, f"resource {label} missing stitch info"
-            assert isinstance(stitch_infos, list), f"resource {label} expecting a list for stitch info"
-            assert len(stitch_infos) == 1, f"resource {label} expect a list of size for stitch info "
-            assert stitch_infos[0].stitch_port['peer'] != self.type, f"resource {label} stitch provider has wrong type"
-
-            interfaces = resource.get(Constants.RES_INTERFACES, list())
-
-            if interfaces and 'vlan' not in interfaces[0]:
-                raise ProviderException(f"{self.label} expecting {label}'s interface to have a vlan")
-
-            vlan = -1
-
-            if interfaces:
-                vlan = interfaces[0]['vlan']
-
-            net_name = self.resource_name(resource)
-            from fabfed.provider.chi.chi_network import ChiNetwork
-
-            net = ChiNetwork(label=label, name=net_name, site=site,
-                             layer3=layer3, stitch_info=stitch_infos[0],
-                             project_name=project_name, vlan=vlan)
-            self._networks.append(net)
-
-            if self.resource_listener:
-                self.resource_listener.on_added(source=self, provider=self, resource=net)
-
-        else:
+        if rtype == Constants.RES_TYPE_NODE:
             network = resource.get(Constants.RES_NETWORK, DEFAULT_NETWORK)
 
             if util.has_resolved_internal_dependencies(resource=resource, attribute='network'):
@@ -182,6 +152,88 @@ class ChiProvider(Provider):
 
                 if self.resource_listener:
                     self.resource_listener.on_added(source=self, provider=self, resource=node)
+            return
+
+        layer3 = resource.get(Constants.RES_LAYER3)
+        from fabfed.policy.policy_helper import StitchInfo
+        stitch_infos: List[StitchInfo] = resource.get(Constants.RES_STITCH_INFO)
+        assert stitch_infos, f"resource {label} missing stitch info"
+        assert isinstance(stitch_infos, list), f"resource {label} expecting a list for stitch info"
+        assert len(stitch_infos) == 1, f"resource {label} expect a list of size for stitch info "
+
+        peer_stitch_port = stitch_infos[0].stitch_port['peer']
+        assert peer_stitch_port['provider'] != self.type, f"resource {label} stitch provider has wrong type"
+
+        vlan_saved = False
+
+        if self.retrieve_attribute_from_saved_state(resource, self.resource_name(resource), attribute='interface'):
+            net_name = self.resource_name(resource)
+            interface = self.retrieve_attribute_from_saved_state(resource, net_name, attribute='interface')
+
+            vlan = interface['vlan']
+
+            if isinstance(vlan, str):
+                vlan = int(vlan)
+
+            interfaces = resource.get(Constants.RES_INTERFACES, list())
+
+            if interfaces and interfaces[0]['vlan'] != vlan:
+                self.logger.warning(
+                    f"{self.label} ignoring: {label}'s interface {interfaces} does not match provisioned vlan {vlan}")
+
+            resource[Constants.RES_INTERFACES] = [{'vlan': vlan}]
+            vlan_saved = True
+
+        discovered_interface = None
+
+        if util.has_resolved_external_dependencies(resource=resource, attribute=Constants.RES_STITCH_INTERFACE):
+            stitching_nets = util.get_values_for_dependency(resource=resource,
+                                                            attribute=Constants.RES_STITCH_INTERFACE)
+
+            for interface in stitching_nets[0].interface:
+                if peer_stitch_port['device_name'] in interface['id']:
+                    discovered_interface = interface
+                    break
+
+        if not discovered_interface:
+            raise Exception(f"Did not find peer interface for {peer_stitch_port['device_name']}")
+
+        if discovered_interface:
+            vlan = discovered_interface['vlan']
+        elif resource.get(Constants.RES_INTERFACES, list()):
+            interfaces = resource.get(Constants.RES_INTERFACES) 
+            if 'vlan' not in interfaces[0]:
+               raise ProviderException(f"{self.label} expecting {label}'s interface to have a vlan")
+
+            vlan = interfaces[0]['vlan']
+
+            if not vlan_saved:
+                from fabfed.policy.facility_port_handler import load_facility_info
+                from fabfed.exceptions import ResourceNotAvailable
+
+                load_facility_info(stitch_infos)
+
+                if vlan in peer_stitch_port['allocated_vlans']:
+                    raise ResourceNotAvailable(
+                        f"vlan {vlan} is already used. allocated_vlans={peer_stitch_port['allocated_vlans']}")
+
+        else:
+            from fabfed.policy.facility_port_handler import load_facility_info
+            from fabfed.policy.tag_handler import get_available_vlan
+
+            load_facility_info(stitch_infos)
+            vlan = get_available_vlan(stitch_port=peer_stitch_port)
+
+        net_name = self.resource_name(resource)
+        from fabfed.provider.chi.chi_network import ChiNetwork
+
+        net = ChiNetwork(label=label, name=net_name, site=site,
+                         layer3=layer3, stitch_info=stitch_infos[0],
+                         project_name=project_name, vlan=int(vlan))
+        self._networks.append(net)
+
+        if self.resource_listener:
+            self.resource_listener.on_added(source=self, provider=self, resource=net)
 
     def do_create_resource(self, *, resource: dict):
         site = resource.get(Constants.RES_SITE)
@@ -265,8 +317,8 @@ class ChiProvider(Provider):
                     self.resource_listener.on_created(source=self, provider=self, resource=node)
 
     def do_handle_externally_depends_on(self, *, resource: Resource, dependee: Resource):
-        self.logger.info(f"NEED TO DO SOME POST PROCESSING  {resource}: {dependee}")
-        # I have the code to add the route.
+        # post process can be done here ....
+        pass
 
     # noinspection PyTypeChecker
     def do_delete_resource(self, *, resource: dict):

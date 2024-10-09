@@ -42,9 +42,7 @@ resource:
       - fabric_node:
           provider: '{{ fabric.fabric_provider }}'
           site: NEWY 
-          image: default_rocky_8
           network: '{{ network.fabric_network }}'
-          nic_model: NIC_Basic
           count: '{{ var.node_count }}'
   - network:
       - sense_net:
@@ -65,6 +63,4 @@ resource:
           provider: '{{ janus.janus_provider }}'
           node: ['{{ node.sense_node }}', '{{ node.fabric_node }}']
           controller: '{{ node.fabric_node }}'
-          image: dtnaas/tools
-          profile: fabfed
-          count: 0 # SET THIS TO 1 if you want use janus service
+          count: 0 # Set count to 1 to use janus service.

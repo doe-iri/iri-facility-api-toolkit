@@ -225,7 +225,6 @@ class FabricSlice:
                 if network:
                     from fabrictestbed_extensions.fablib.network_service import NetworkService
 
-
                     itf = node.delegate.add_component(model=node.nic_model,
                                                       name=FABRIC_STITCH_NET_IFACE_NAME).get_interfaces()[0]
                     self.logger.info(
@@ -325,6 +324,9 @@ class FabricSlice:
         self.provider._networks = temp
 
     def _ensure_management_ips(self):
+        if len(self.nodes) == 0:
+            return
+
         for attempt in range(self.retry):
             mngmt_ips = []
             from fabrictestbed_extensions.fablib.fablib import fablib
@@ -429,10 +431,10 @@ class FabricSlice:
                 for n in diff:
                     self.logger.info(f"removing node {n} from slice {self.name}")
 
-                    if INCLUDE_FABNETS:
-                        self.logger.info(f"removing node's fabnets: {n} from slice {self.name}")
-                        self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV4_NET_NAME}")
-                        self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV6_NET_NAME}")
+                    # TODO Are we cleaning up the new fabnets v4 and v6.
+                    #     self.logger.info(f"removing node's fabnets: {n} from slice {self.name}")
+                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV4_NET_NAME}")
+                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV6_NET_NAME}")
 
                     node = self.slice_object.get_node(name=n)
                     temp = [net for net in self.networks if net.label == network_labels[n]]
@@ -506,8 +508,56 @@ class FabricSlice:
         if self.slice_created and not self.slice_modified:
             return
 
-        assert(self.submitted, "expecting slice to have been submitted")
+        assert self.submitted, "expecting slice to have been submitted"
+
         self.logger.info(f"Waiting for slice {self.name} to be stable")
+
+        rtype = resource.get(Constants.RES_TYPE)
+
+        if self.nodes and rtype == Constants.RES_TYPE_NETWORK.lower():
+            from fabrictestbed_extensions.fablib.fablib import fablib
+            import functools
+
+            net_name = self.provider.resource_name(resource)
+            net = next(filter(lambda n: n.name == net_name, self.networks))
+
+            from fabfed.policy.policy_helper import StitchInfo
+            stitch_infos: List[StitchInfo] = resource.get(Constants.RES_STITCH_INFO)
+            peer_providers = [stitch_info.stitch_port['peer']['provider'] for stitch_info in stitch_infos]
+
+            if net.peering is None or 'sense' not in peer_providers:  # TODO SENSE_AWS RUNS INTO AN ISSUE
+                for attempt in range(15):
+                    self.slice_object = fablib.get_slice(name=self.provider.name)
+                    slivers = self.slice_object.get_slivers()
+                    slivers = list(filter(lambda s: s.sliver_type == 'NetworkServiceSliver', slivers))
+                    slivers = list(filter(lambda s: s.sliver['Name'] == net_name, slivers))
+                    states = ['active'] if net.peering else ['active', 'ticketed']
+                    count = map(lambda sliver: 1 if sliver.state.lower() in states else 0, slivers)
+                    count = functools.reduce(lambda a, b: a + b, count)
+
+                    if len(slivers) == count:
+                        self.logger.info(f"Network sliver is ready:{net_name}.")
+
+                        if net.peering is None:
+                            interfaces = list()
+                            for s in slivers:
+                                for interface in s.sliver['interfaces']:
+                                    import json
+
+                                    labels = json.loads(interface['Labels'])
+                                    interfaces.append(dict(id=interface['Name'], vlan=labels['vlan']))
+
+                            net.interface = interfaces
+
+                        self.resource_listener.on_created(source=self, provider=self.provider, resource=net)
+                        return
+
+                    self.logger.warning(
+                        f"Waiting on ready network sliver: {net_name}:attempt={attempt}")
+
+                    import time
+
+                    time.sleep(10)
 
         try:
             self.slice_object.wait(timeout=24 * 60, progress=True)
