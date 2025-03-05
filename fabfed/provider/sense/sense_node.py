@@ -26,11 +26,12 @@ class SenseNode(Node):
         if not si_uuid:
             raise SenseException(f"Instance not found by alias={self.network}")
 
-        status = sense_utils.instance_get_status(si_uuid=si_uuid)
+        statuses = ('CREATE - READY', 'REINSTATE - READY')
+        status = sense_utils.wait_for_instance_operate(si_uuid=si_uuid, statuses=statuses)
 
-        if status != 'CREATE - READY':
-            raise SenseException(f"Instance is not ready:status={status}")
-        
+        if status not in statuses:
+            raise SenseException(f"Instance is not in ready state:status={status}")
+
         """ retrieve the gateway type from intents """
         instance_dict = sense_utils.service_instance_details(si_uuid=si_uuid, alias=self.network)
         gateway_type = instance_dict.get("intents")[0]['json']['data']['gateways'][0]['type'].upper()

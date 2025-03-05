@@ -69,13 +69,13 @@
     "group": [
       {
         "name": "CLOUDLAB",
-        "consumer-for": [
+        "producer-for": [
           "cloudlab"
         ]
       },
       {
         "name": "CHAMELEON",
-        "consumer-for": [
+        "producer-for": [
           "chi"
         ]
       },
@@ -115,7 +115,7 @@
     "group": [
       {
         "name": "CLOUDLAB",
-        "producer-for": [
+        "consumer-for": [
           "fabric"
         ]
       }
@@ -148,7 +148,7 @@
     "group": [
       {
         "name": "CHAMELEON",
-        "producer-for": [
+        "consumer-for": [
           "fabric"
         ]
       }

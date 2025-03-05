@@ -182,6 +182,18 @@ class CloudlabProvider(Provider):
             f"resource {label} stitch provider has wrong type"
         cloudlab_stitch_port = stitch_infos[0].stitch_port
         peer_stitch_port = stitch_infos[0].stitch_port['peer']
+        discovered_interface = None
+
+        import fabfed.provider.api.dependency_util as util
+
+        if util.has_resolved_external_dependencies(resource=resource, attribute=Constants.RES_STITCH_INTERFACE):
+            stitching_nets = util.get_values_for_dependency(resource=resource,
+                                                            attribute=Constants.RES_STITCH_INTERFACE)
+
+            for interface in stitching_nets[0].interface:
+                if peer_stitch_port['device_name'] in interface['id']:
+                    discovered_interface = interface
+                    break
 
         if not profile:
             profile = cloudlab_stitch_port.get(Constants.RES_PROFILE)
@@ -200,7 +212,12 @@ class CloudlabProvider(Provider):
 
         interfaces = resource.get(Constants.RES_INTERFACES, list())
 
-        if interfaces:
+        if not discovered_interface:
+            raise Exception("héllo AES I am None ....")
+
+        if discovered_interface:
+            interfaces = [discovered_interface]
+        elif interfaces:
             vlan = interfaces[0]['vlan']
 
             if not vlan_saved:
@@ -263,12 +280,6 @@ class CloudlabProvider(Provider):
                 self._networks[0].create()
             return
 
-        if rtype == Constants.RES_TYPE_NODE:
-            for node in [node for node in self._nodes if node.label == label]:
-                self.logger.debug(f"Creating node: {vars(node)}")
-                node.create()
-            return
-
     def do_wait_for_create_resource(self, *, resource: dict):
         rtype = resource.get(Constants.RES_TYPE)
         label = resource.get(Constants.LABEL)
@@ -280,6 +291,8 @@ class CloudlabProvider(Provider):
 
         if rtype == Constants.RES_TYPE_NODE:
             for node in [node for node in self._nodes if node.label == label]:
+                self.logger.debug(f"Creating node: {vars(node)}")
+                node.create()
                 self.resource_listener.on_created(source=self, provider=self, resource=node)
                 self.logger.debug(f"Created node: {vars(node)}")
             return

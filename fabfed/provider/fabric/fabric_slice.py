@@ -225,7 +225,6 @@ class FabricSlice:
                 if network:
                     from fabrictestbed_extensions.fablib.network_service import NetworkService
 
-
                     itf = node.delegate.add_component(model=node.nic_model,
                                                       name=FABRIC_STITCH_NET_IFACE_NAME).get_interfaces()[0]
                     self.logger.info(
@@ -509,8 +508,52 @@ class FabricSlice:
         if self.slice_created and not self.slice_modified:
             return
 
-        assert(self.submitted, "expecting slice to have been submitted")
+        assert self.submitted, "expecting slice to have been submitted"
+
         self.logger.info(f"Waiting for slice {self.name} to be stable")
+
+        rtype = resource.get(Constants.RES_TYPE)
+
+        if self.nodes and rtype == Constants.RES_TYPE_NETWORK.lower():
+            from fabrictestbed_extensions.fablib.fablib import fablib
+            import functools
+
+            net_name = self.provider.resource_name(resource)
+            net = next(filter(lambda n: n.name == net_name, self.networks))
+
+            if net.peering is None:  # TODO SENSE_AWS RUNS INTO AN ISSUE
+                for attempt in range(15):
+                    self.slice_object = fablib.get_slice(name=self.provider.name)
+                    slivers = self.slice_object.get_slivers()
+                    slivers = list(filter(lambda s: s.sliver_type == 'NetworkServiceSliver', slivers))
+                    slivers = list(filter(lambda s: s.sliver['Name'] == net_name, slivers))
+                    states = ['active'] if net.peering else ['active', 'ticketed']
+                    count = map(lambda s: 1 if s.state.lower() in states else 0, slivers)
+                    count = functools.reduce(lambda a, b: a + b, count)
+
+                    if len(slivers) == count:
+                        self.logger.info(f"Network sliver is ready:{net_name}.")
+
+                        if net.peering is None:
+                            interfaces = list()
+                            for s in slivers:
+                                for interface in s.sliver['interfaces']:
+                                    import json
+
+                                    labels = json.loads(interface['Labels'])
+                                    interfaces.append(dict(id=interface['Name'], vlan=labels['vlan']))
+
+                            net.interface = interfaces
+
+                        self.resource_listener.on_created(source=self, provider=self.provider, resource=net)
+                        return
+
+                    self.logger.warning(
+                        f"Waiting on ready network sliver: {net_name}:attempt={attempt}:{count}:{len(slivers)}")
+
+                    import time
+
+                    time.sleep(10)
 
         try:
             self.slice_object.wait(timeout=24 * 60, progress=True)

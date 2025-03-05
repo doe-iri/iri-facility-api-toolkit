@@ -15,10 +15,10 @@
     method: POST
     body: "{{ janus_body }}"
     force_basic_auth: yes
-    status_code: 204
+    status_code: 204, 500
     body_format: json
     validate_certs: false
   register: result
-  until: ('status' in result) and (result.status == 204)
+  until: ('status' in result) and (result.status == 204 or result.status == 500)
   retries: 12
   delay: 10

@@ -226,6 +226,13 @@ def get_inventory_dir(friendly_name):
     return inv_dir
 
 
+def get_ssh_dir(friendly_name):
+    import os
+    ssh_dir = os.path.join(get_base_dir(friendly_name), "ssh")
+    os.makedirs(ssh_dir, exist_ok=True)
+    return ssh_dir
+
+
 def dump_sessions(to_json: bool):
     from fabfed.util import state as sutil
     from pathlib import Path

@@ -46,6 +46,11 @@ class FacilityPortHandler:
                 stitch_port['allocated_vlans'] = [int(vlan) for vlan in stitch_port['allocated_vlans']]
 
 
+def load_facility_info_using_stich_port(stitch_port):
+    handler = FacilityPortHandler()
+    handler.populate_stitch_port(stitch_port=stitch_port)
+
+
 def load_facility_info(stitch_infos):
     handler = FacilityPortHandler()
 
@@ -55,12 +60,3 @@ def load_facility_info(stitch_infos):
         for sp in stitch_ports:
             if sp['provider'] == "fabric":
                 handler.populate_stitch_port(stitch_port=sp)
-
-
-
-
-
-
-
-
-

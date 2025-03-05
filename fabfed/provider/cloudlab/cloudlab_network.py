@@ -20,6 +20,8 @@ class CloudNetwork(Network):
         self.interface = interfaces or []
         self.layer3 = layer3
         self.cluster = cluster
+        self.stich_node_ip = None
+        self.stich_site = None
 
     @property
     def provider(self):
@@ -40,7 +42,6 @@ class CloudNetwork(Network):
         return params
 
     def create(self):
-        import time
         import emulab_sslxmlrpc.client.api as api
         import emulab_sslxmlrpc.xmlrpc as xmlrpc
 
@@ -58,6 +59,7 @@ class CloudNetwork(Network):
                 bindings['vlan'] = str(vlan)
 
             bindings['cluster'] = self.cluster
+            # noinspection PyUnresolvedReferences
             nodes = [n for n in self.provider.nodes if n.net == self]
             bindings['node_count'] = str(len(nodes))
             subnet = self.layer3.attributes[Constants.RES_SUBNET]
@@ -79,11 +81,10 @@ class CloudNetwork(Network):
     def wait_for_create(self):
         import time
         import emulab_sslxmlrpc.client.api as api
-        import emulab_sslxmlrpc.xmlrpc as xmlrpc
 
         server = self.provider.rpc_server()
         exp_params = self.provider.experiment_params(self.name)
-        exitval, response = api.experimentStatus(server, exp_params).apply()
+        attempt = -1
 
         for attempt in range(CLOUDLAB_RETRY):
             exitval, response = api.experimentStatus(server, exp_params).apply()
@@ -131,7 +132,7 @@ class CloudNetwork(Network):
             time.sleep(CLOUDLAB_SLEEP_TIME)
 
         if attempt == CLOUDLAB_RETRY:
-            raise CloudlabException("Please Apply Again. Giving up on waiting for experiment ...")
+            raise CloudlabException(message="Please Apply Again. Giving up on waiting for experiment ...")
 
         exitval, response = api.experimentManifests(server, exp_params).apply()
 
@@ -153,6 +154,7 @@ class CloudNetwork(Network):
         temp['provider'] = self.stitch_info.stitch_port['provider']
         self.interface = [temp]
 
+        # noinspection PyUnresolvedReferences
         if not [n for n in self.provider.nodes if n.net == self]:
             return
 

@@ -184,12 +184,24 @@ class ChiProvider(Provider):
             resource[Constants.RES_INTERFACES] = [{'vlan': vlan}]
             vlan_saved = True
 
-        interfaces = resource.get(Constants.RES_INTERFACES, list())
+        discovered_interface = None
 
-        if interfaces and 'vlan' not in interfaces[0]:
-            raise ProviderException(f"{self.label} expecting {label}'s interface to have a vlan")
+        if util.has_resolved_external_dependencies(resource=resource, attribute=Constants.RES_STITCH_INTERFACE):
+            stitching_nets = util.get_values_for_dependency(resource=resource,
+                                                            attribute=Constants.RES_STITCH_INTERFACE)
 
-        if interfaces:
+            for interface in stitching_nets[0].interface:
+                if peer_stitch_port['device_name'] in interface['id']:
+                    discovered_interface = interface
+                    break
+
+        if discovered_interface:
+            vlan = discovered_interface['vlan']
+        elif resource.get(Constants.RES_INTERFACES, list()):
+            interfaces = resource.get(Constants.RES_INTERFACES) 
+            if 'vlan' not in interfaces[0]:
+               raise ProviderException(f"{self.label} expecting {label}'s interface to have a vlan")
+
             vlan = interfaces[0]['vlan']
 
             if not vlan_saved:
@@ -214,7 +226,7 @@ class ChiProvider(Provider):
 
         net = ChiNetwork(label=label, name=net_name, site=site,
                          layer3=layer3, stitch_info=stitch_infos[0],
-                         project_name=project_name, vlan=vlan)
+                         project_name=project_name, vlan=int(vlan))
         self._networks.append(net)
 
         if self.resource_listener:

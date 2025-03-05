@@ -184,45 +184,53 @@ def create_instance(*, client=None, bandwidth, profile, alias, layer3, peering, 
     raise SenseException(f"could not create instance {alias}")
 
 
-def instance_operate(*, client=None, si_uuid):
-    client = client or get_client()
-    workflow_api = WorkflowCombinedApi(req_wrapper=client)
-
+def instance_operate(*, client=None, si_uuid, action='provision'):
     import time
     from random import randint
 
+    client = client or get_client()
+    workflow_api = WorkflowCombinedApi(req_wrapper=client)
     status = workflow_api.instance_get_status(si_uuid=si_uuid)
 
-    if "CREATE - COMMITTING" not in status:
+    if "CREATE - COMMITTING" not in status or 'CANCEL - READY' == status:
         try:
-            time.sleep(randint(5, 30))
-            workflow_api.instance_operate('provision', si_uuid=si_uuid, sync='false')  # AES TODO THIS GUY
+            time.sleep(randint(5, 10))
+            workflow_api.instance_operate(action, si_uuid=si_uuid, async_req=True)
         except Exception as e:
-            logger.warning(f"exception from  instance_operate {e}")
-            pass
+            logger.warning(f"exception from instance_operate {e}")
+
+
+def wait_for_instance_operate(*, client=None, si_uuid,
+                              statuses=('CREATE - READY', 'REINSTATE - READY')):
+    import time
+    from random import randint
+
+    client = client or get_client()
+    workflow_api = WorkflowCombinedApi(req_wrapper=client)
 
     for attempt in range(SENSE_RETRY):
         try:
             status = workflow_api.instance_get_status(si_uuid=si_uuid)
-            logger.info(f"Waiting on CREATED-READY: status={status}:attempt={attempt} out of {SENSE_RETRY}")
+            logger.info(f"Waiting on {statuses}: status={status}:attempt={attempt} out of {SENSE_RETRY}")
 
-            if 'CREATE - READY' in status:
-                break
+            if status in statuses:
+                return status
 
             if 'FAILED' in status:
-                break
+                return status
         except Exception as e:
             logger.warning(f"exception from  instance_get_status {e}")
             pass
 
-        logger.info(f"Waiting on CREATED-READY: going to sleep attempt={attempt}")
+        logger.info(f"Waiting on {statuses}: going to sleep attempt={attempt}")
         time.sleep(randint(30, 35))
 
     return workflow_api.instance_get_status(si_uuid=si_uuid)
 
 
 def delete_instance(*, client=None, si_uuid):
-    import time, random
+    import time
+    import random
 
     client = client or get_client()
     workflow_api = WorkflowCombinedApi(req_wrapper=client)
@@ -253,7 +261,8 @@ def delete_instance(*, client=None, si_uuid):
             workflow_api.instance_operate('cancel', si_uuid=si_uuid, sync='false')
 
     for attempt in range(SENSE_RETRY):
-        time.sleep(random.randint(30, 35))  # This sleep is here to workaround issue where CANCEL-READY shows up prematurely.
+        # This sleep is here to workaround issue where CANCEL-READY shows up prematurely.
+        time.sleep(random.randint(30, 35))
 
         status = workflow_api.instance_get_status(si_uuid=si_uuid)
         # print("LOOPING:DELETE:Status=", status, "attempt=", attempt)

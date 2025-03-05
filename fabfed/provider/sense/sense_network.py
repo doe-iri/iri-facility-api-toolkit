@@ -1,23 +1,26 @@
 from fabfed.model import Network
 from fabfed.util.utils import get_logger
 from . import sense_utils
-from .sense_constants import SERVICE_INSTANCE_KEYS, SENSE_DTN, SENSE_DTN_IP
+from .sense_constants import SERVICE_INSTANCE_KEYS
 from .sense_exceptions import SenseException
+import json
 
 logger = get_logger()
 
 
 class SenseNetwork(Network):
-    def __init__(self, *, label, name: str, bandwidth, profile, layer3, peering, interfaces):
+    def __init__(self, *, label, name: str, bandwidth, profile, layer3, peering, interfaces, saved_interfaces=None):
         super().__init__(label=label, name=name, site="")
         self.profile = profile
         self.layer3 = layer3
         self.peering = peering
-        self.interface = interfaces or []
+        self.interface = interfaces or list()
         self.bandwidth = bandwidth
-        self.switch_ports = []
         self.dtn = []
         self.id = ''
+        self.referenceUUID = self.id
+        self.intents = []
+        self._saved_interfaces = saved_interfaces or list()
 
     # CREATE - COMPILED, CREATE - COMMITTING, CREATE - COMMITTED, CREATE - READY
     def create(self):
@@ -25,6 +28,7 @@ class SenseNetwork(Network):
 
         if not si_uuid:
             logger.debug(f"Creating {self.name}")
+            self._saved_interfaces = list()
             si_uuid, status = sense_utils.create_instance(profile=self.profile, bandwidth=self.bandwidth,
                                                           alias=self.name,
                                                           layer3=self.layer3, peering=self.peering,
@@ -40,61 +44,53 @@ class SenseNetwork(Network):
 
         if 'CREATE - READY' not in status:
             logger.debug(f"Provisioning {self.name}")
-            status = sense_utils.instance_operate(si_uuid=si_uuid)
+            sense_utils.instance_operate(si_uuid=si_uuid)
 
-        if 'CREATE - READY' not in status:
-            raise Exception(f"Creation failed for {si_uuid} {status}")
+        statuses = ('CREATE - READY', 'REINSTATE - READY', 'CREATE - COMMITTED', 'REINSTATE - COMMITTED')
+        status = sense_utils.wait_for_instance_operate(si_uuid=si_uuid, statuses=statuses)
+
+        if status not in statuses:
+            raise SenseException(f"Creation failed for {si_uuid} {status}")
 
         logger.debug(f"Retrieving details {self.name} {status}")
         instance_dict = sense_utils.service_instance_details(si_uuid=si_uuid, alias=self.name)
-
-        import json
-
-        logger.info(f"Retrieved details {self.name} {status}: \n{ json.dumps(instance_dict, indent=2)}")
+        logger.info(f"Retrieved details {self.name} {status}: \n{json.dumps(instance_dict, indent=2)}")
 
         for key in SERVICE_INSTANCE_KEYS:
             self.__setattr__(key, instance_dict.get(key))
 
         self.id = self.referenceUUID
 
-        if self.intents[0]['json']['service'] == 'vcn':
-            if "GCP" in self.intents[0]['json']['data']['gateways'][0]['type'].upper():
-                try:
-                    template_file = 'gcp-template.json'
-                    details = sense_utils.manifest_create(si_uuid=si_uuid, template_file=template_file)
+        if (self.intents[0]['json']['service'] != 'vcn' or
+                "GCP" not in self.intents[0]['json']['data']['gateways'][0]['type'].upper()):
+            return
 
-                    for node_details in details.get("Nodes", []):
-                        pairing_key = node_details.get('Pairing Key')
-                        self.interface.append(dict(id=pairing_key, provider="sense"))
-                        break
-                except:
-                    pass
+        for saved_interface in self._saved_interfaces:
+            if saved_interface.get('kind') == 'gcp_pairing_key':
+                self.interface.append(saved_interface)
+                return
 
-        if self.intents[0]['json']['service'] == 'dnc':
+        from .sense_constants import SENSE_RETRY
+
+        for attempt in range(SENSE_RETRY):
             try:
-                template_file = 'l2-template.json'
+                template_file = 'gcp-pairing-key-template.json'
                 details = sense_utils.manifest_create(si_uuid=si_uuid, template_file=template_file)
-                self.switch_ports = details.get("Switch Ports", [])
-            except:
-                pass
+                pairing_key = details.get('Pairing Key', "?pairing_key?")
 
-        if self.switch_ports:
-            temp = [dict(id=sp["Port"], provider="sense", vlan=sp["Vlan"]) for sp in self.switch_ports]
+                if '?pairing_key?' not in pairing_key:
+                    self.interface.append(dict(id=pairing_key, provider="sense", info=status, kind='gcp_pairing_key'))
+                    break
 
-            for iface in self.interface:
-                for temp_iface in temp:
-                    if iface['id'] == temp_iface["id"]:
-                        self.interface = [temp_iface]
-                        break
+            except Exception as e:
+                if status in ('CREATE - READY', 'REINSTATE - READY'):
+                    raise SenseException(f"not able to get pairing key ...status={status}:{e}")
 
-            for sp in self.switch_ports:
-                if sp.get(SENSE_DTN):
-                    dtn = sp.get(SENSE_DTN)[0].get(SENSE_DTN_IP)
+            logger.warning(f"Waiting on pairing key: going to sleep attempt={attempt}:status={status}")
+            import time
 
-                    if dtn.find('/'):
-                        self.dtn = [dtn[0: dtn.find('/')]]
-                    else:
-                        self.dtn = [dtn]
+            time.sleep(2)
+            status = sense_utils.instance_get_status(si_uuid=si_uuid)
 
     def delete(self):
         from . import sense_utils

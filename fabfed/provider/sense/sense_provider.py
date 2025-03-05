@@ -136,8 +136,13 @@ class SenseProvider(Provider):
 
         from .sense_network import SenseNetwork
 
+        saved_interfaces = self.retrieve_attribute_from_saved_state(resource, net_name, attribute='interface')
+        if not isinstance(saved_interfaces, list):
+            saved_interfaces = [saved_interfaces]
+
         net = SenseNetwork(label=label, name=net_name, profile=profile,
-                           bandwidth=bandwidth, layer3=layer3, peering=peering, interfaces=interfaces)
+                           bandwidth=bandwidth, layer3=layer3, peering=peering, interfaces=interfaces,
+                           saved_interfaces=saved_interfaces)
 
         self._networks.append(net)
 

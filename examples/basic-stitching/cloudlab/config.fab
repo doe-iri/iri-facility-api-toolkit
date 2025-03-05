@@ -2,7 +2,7 @@ variable:
   - node_count:
       default: 1
   - cloulab_device:
-      default: CloudLab-Clemson    # Utah-Cloudlab-Powder
+      default: Utah-Cloudlab-Powder # CloudLab-Clemson
 provider:
   - cloudlab:
       - cloudlab_provider:
@@ -25,6 +25,7 @@ resource:
       - cnet:
           provider: '{{cloudlab.cloudlab_provider }}'
           layer3: '{{ layer3.layer3_config }}'
+          profile: fabfed-test
       - fabric_network:
           provider: '{{ fabric.fabric_provider }}'
           layer3: '{{ layer3.layer3_config }}'

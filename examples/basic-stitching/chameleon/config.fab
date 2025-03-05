@@ -1,6 +1,6 @@
 variable:
-  - site:
-      default: TACC #STAR
+  - chi_device:
+      default: Chameleon-TACC 
   - node_count:
       default: 1
 provider:
@@ -20,16 +20,11 @@ config:
   - layer3:
       - my_layer:
           subnet: 192.168.100.0/24
-          gateway: 192.168.100.1
-          ip_start: 192.168.100.100
-          ip_end: 192.168.100.250
 resource:
   - network:
       - chi_network:
           provider: '{{ chi.chi_provider }}'
           layer3: '{{ layer3.my_layer }}'
-          # interface:
-          # - vlan:  # If need be select a vlan TACC ['3210-3499'] # STAR ['3300-3309'] 
       - fabric_network:
           provider: '{{ fabric.fabric_provider }}'
           layer3: '{{ layer3.my_layer }}'
@@ -37,7 +32,7 @@ resource:
           stitch_with:
             - network: '{{ network.chi_network }}'
               stitch_option:
-                site: '{{ var.site }}'
+                device_name: '{{ var.chi_device }}'
   - node:
       - fabric_node:
           provider: '{{ fabric.fabric_provider }}'
@@ -55,6 +50,4 @@ resource:
           provider: '{{ janus.janus_provider }}'
           node: ['{{ node.chi_node }}', '{{ node.fabric_node }}']
           controller: '{{ node.fabric_node }}'
-          image: dtnaas/tools
-          profile: fabfed
-          count: 0
+          count: 1

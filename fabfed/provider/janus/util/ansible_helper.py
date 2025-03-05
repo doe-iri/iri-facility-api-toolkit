@@ -259,7 +259,7 @@ class AnsibleRunnerHelper:
     def run_playbook(self, playbook_path: str, tags: list = [], limit: str = None):
         rc = RunnerConfig(
             forks = 100,
-            private_data_dir = '../',
+            private_data_dir = '/tmp/fabfed_ansible',
             project_dir = 'ansible',
             playbook=playbook_path,
             tags = ','.join(tags),

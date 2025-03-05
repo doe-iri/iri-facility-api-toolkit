@@ -114,7 +114,7 @@ def manage_workflow(args):
         nodes, networks, services, pending, failed = utils.get_counters(states=states)
         workflow_failed = workflow_failed or pending or failed
 
-        if Constants.RECONCILE_STATES:
+        if workflow_failed and Constants.RECONCILE_STATES:
             states = sutil.reconcile_states(states, args.session)
 
         sutil.save_states(states, args.session)

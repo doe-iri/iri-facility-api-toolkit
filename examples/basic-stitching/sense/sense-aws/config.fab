@@ -62,6 +62,4 @@ resource:
           provider: '{{ janus.janus_provider }}'
           node: [ '{{ node.sense_node }}', '{{ node.fabric_node }}' ]
           controller: '{{ node.fabric_node }}'
-          image: dtnaas/tools
-          profile: fabfed
           count: 0   # SET THIS TO 1 if you want use janus service

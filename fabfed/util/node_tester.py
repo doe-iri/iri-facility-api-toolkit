@@ -3,6 +3,7 @@ import paramiko
 import sys
 
 from fabfed.util.utils import get_logger
+from fabfed.util.constants import Constants
 
 logger = get_logger()
 
@@ -15,8 +16,6 @@ class SshNodeTester:
         self.failed_validation = []
         self.failed_ssh_test = []
         self.summary = ''
-
-        from fabfed.util.constants import Constants
 
         dataplane_addresses = [n.get_dataplane_address(af=Constants.IPv4) for n in self.nodes if
                                n.get_dataplane_address(af=Constants.IPv4)]
@@ -70,7 +69,7 @@ class SshNodeTester:
                          description=fmt.format(n.jump_user, n.jump_host, n.jump_keyfile)))
                 continue
 
-            helper = SshNodeHelper(label=n.name, host=n.host,
+            helper = SshNodeHelper(node=n, label=n.name, host=n.host,
                                    user=n.user,
                                    private_key_file=n.keyfile,
                                    jump_host=n.jump_host,
@@ -115,15 +114,21 @@ class SshNodeTester:
 
     def run_dataplane_test(self, *, command='ping -c 3', retry=3, retry_interval=10):
         for helper in self.helpers:
-            logger.info(f"SSH executing {command} on Node: {helper.label}")
+            node = helper.node
+            dataplane_addresses = self.dataplane_addresses
+
+            if len(self.dataplane_addresses) > 1:
+               dataplane_addresses = [a for a in self.dataplane_addresses if a != node.get_dataplane_address(af=Constants.IPv4)]
 
             for attempt in range(retry):
                 try:
                     helper.connect()
 
-                    for dataplane_address in self.dataplane_addresses:
+                    for dataplane_address in dataplane_addresses:
                         if dataplane_address in self.passed_dataplane_ping_tests[helper.label]:
                             continue
+
+                        logger.info(f"SSH executing {command} {dataplane_address} on Node: {helper.label}")
 
                         _, stdout, stderr = helper.client.exec_command(f"{command} {dataplane_address}")
                         exit_code = stdout.channel.recv_exit_status()
@@ -145,19 +150,24 @@ class SshNodeTester:
                 finally:
                     helper.close_quietly()
 
-            if len(self.passed_dataplane_ping_tests[helper.label]) != len(self.dataplane_addresses):
-                self.failed_dataplane_ping_tests[helper.label] = list(set(self.dataplane_addresses).difference(
+            if len(self.passed_dataplane_ping_tests[helper.label]) != len(dataplane_addresses):
+                self.failed_dataplane_ping_tests[helper.label] = list(set(dataplane_addresses).difference(
                     self.passed_dataplane_ping_tests[helper.label]))
 
     def run_ipv6_dataplane_test(self, *, command='ping6 -c 3', retry=3, retry_interval=10):
         for helper in self.helpers:
             logger.info(f"SSH executing {command} on Node: {helper.label}")
 
+            ipv6_dataplane_addresses = self.ipv6_dataplane_addresses
+
+            if len(self.ipv6_dataplane_addresses) > 1:
+               ipv6_dataplane_addresses = [a for a in self.ipv6_dataplane_addresses if a != node.get_dataplane_address(af=Constants.IPv6)]
+
             for attempt in range(retry):
                 try:
                     helper.connect()
 
-                    for dataplane_address in self.ipv6_dataplane_addresses:
+                    for dataplane_address in ipv6_dataplane_addresses:
                         if dataplane_address in self.passed_ipv6_dataplane_ping_tests[helper.label]:
                             continue
 
@@ -181,17 +191,19 @@ class SshNodeTester:
                 finally:
                     helper.close_quietly()
 
-            if len(self.passed_ipv6_dataplane_ping_tests[helper.label]) != len(self.ipv6_dataplane_addresses):
-                self.failed_ipv6_dataplane_ping_tests[helper.label] = list(set(self.ipv6_dataplane_addresses).difference(
+            if len(self.passed_ipv6_dataplane_ping_tests[helper.label]) != len(ipv6_dataplane_addresses):
+                self.failed_ipv6_dataplane_ping_tests[helper.label] = list(set(ipv6_dataplane_addresses).difference(
                     self.passed_ipv6_dataplane_ping_tests[helper.label]))
 
     def run_tests(self, *, retry=3, retry_interval=10):
         from collections import namedtuple
 
-        self.run_ssh_test(retry=retry, retry_interval=retry_interval)
+        # self.run_ssh_test(retry=retry, retry_interval=retry_interval)
 
         if self.run_ping_test:
             self.run_dataplane_test(retry=retry, retry_interval=retry_interval)
+        else:
+            self.run_ssh_test(retry=retry, retry_interval=retry_interval)
 
         # if self.run_ipv6_ping_test:
         #     self.run_ipv6_dataplane_test(retry=retry, retry_interval=retry_interval)
@@ -225,13 +237,13 @@ class SshNodeTester:
                 {"nodes": node_info_list},
                 {"passed_tests":
                     [
-                        {"passed_ssh_test": self.passed_ssh_test},
+                        # {"passed_ssh_test": self.passed_ssh_test},
                         {"passed_ipv4_dataplane_ping_test": self.passed_dataplane_ping_tests}
                     ]},
                 {"FAILED_VALIDATION": self.failed_validation},
                 {"FAILED_TESTS":
                     [
-                        {"failed_ssh_test": self.failed_ssh_test},
+                        # {"failed_ssh_test": self.failed_ssh_test},
                         {"failed_ipv4_dataplane_ping_test": [dict(src=k, destinations=v) for k, v in
                                                         self.failed_dataplane_ping_tests.items()]}
                     ]}
@@ -253,8 +265,9 @@ class SshNodeTester:
 
 class SshNodeHelper:
     # noinspection PyBroadException
-    def __init__(self, *, label, host, user, private_key_file, jump_host=None, jump_user=None,
+    def __init__(self, *, node, label, host, user, private_key_file, jump_host=None, jump_user=None,
                  jump_private_key_file=None):
+        self.node = node
         self.label = label
         self.host = host
         self.user = user

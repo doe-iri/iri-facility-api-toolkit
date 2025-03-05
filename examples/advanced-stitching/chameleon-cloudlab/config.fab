@@ -1,8 +1,8 @@
 variable:
-  - chi_site:
-      default: TACC # STAR
-  - cloulab_site:
-      default: CLEM # UTAH
+  - chi_device:
+      default: Chameleon-TACC 
+  - cloulab_device:
+      default: Utah-Cloudlab-Powder # CloudLab-Clemson
   - node_count:
       default: 1
 provider:
@@ -31,16 +31,17 @@ resource:
       - cnet:
           provider: '{{cloudlab.cloudlab_provider }}'
           layer3: '{{ layer3.layer3_config }}'
+          profile: fabfed-test
       - fabric_network:
           provider: '{{ fabric.fabric_provider }}'
           layer3: '{{ layer3.layer3_config }}'
           stitch_with:
             - network: '{{ network.chi_network }}'
               stitch_option:
-                site: '{{ var.chi_site }}'
+                device_name: '{{ var.chi_device }}'
             - network: '{{ network.cnet }}'
               stitch_option:
-                site: '{{ var.cloulab_site }}'
+                device_name: '{{ var.cloulab_device }}'
       - chi_network:
           provider: '{{ chi.chi_provider }}'
           name: stitch_net
@@ -54,15 +55,3 @@ resource:
           provider: '{{ chi.chi_provider }}'
           network: '{{ network.chi_network }}'
           count: '{{ var.node_count }}'
-      - fabric_node:
-          provider: '{{ fabric.fabric_provider }}'
-          site: '{{ var.chi_site }}'
-          network: '{{ network.fabric_network }}'
-          # count: '{{ var.node_count }}'   # Work in progress. Have not been able to get this to work with fabric nodes
-          count: 0
-      - other_fabric_node:
-          provider: '{{ fabric.fabric_provider }}'
-          site: '{{ var.cloulab_site }}'
-          network: '{{ network.fabric_network }}'
-          # count: '{{ var.node_count }}'
-          count: 0
