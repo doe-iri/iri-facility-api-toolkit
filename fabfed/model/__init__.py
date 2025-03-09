@@ -83,7 +83,7 @@ ansible_ssh_common_args={proxyjump_str}
 ansible_ssh_private_key_file={self.keyfile}
 ansible_user={self.user}
 node={dplane_addr}
-name={friendly_name}-{self.name}
+name={self.name}
 """
         with open(file_path, "w") as stream:
             try:
@@ -93,6 +93,10 @@ name={friendly_name}-{self.name}
                 raise AnsibleException(f'Exception while saving ansible inventory at {file_path}:{e}')
 
         ssh_config_content = f"""
+UserKnownHostsFile /dev/null
+StrictHostKeyChecking no
+ServerAliveInterval 120
+
 Host {self.jump_host}
      ForwardAgent yes
      Hostname %h

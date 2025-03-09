@@ -181,7 +181,11 @@ class JanusProvider(Provider):
     def do_delete_resource(self, *, resource: dict):
         self.logger.info(f"Deleting resource={resource} using {self.label}")
         image = resource.get(Constants.RES_IMAGE, "dtnaas/tools")
-        nodes = [rd for rd in resource[Constants.EXTERNAL_DEPENDENCY_STATES]]
+        nodes = list()
+
+        if resource.get(Constants.EXTERNAL_DEPENDENCY_STATES):
+           nodes = [rd for rd in resource.get(Constants.EXTERNAL_DEPENDENCY_STATES)]
+
         service_nodes = [n.attributes.get('name') for n in nodes]
         label = resource.get(Constants.LABEL)
         states = resource.get(Constants.SAVED_STATES)

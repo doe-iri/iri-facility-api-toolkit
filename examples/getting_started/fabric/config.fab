@@ -11,10 +11,10 @@ resource:
   - node:
       - ctrlr_node:
           provider: '{{ fabric.fabric_provider }}'
-          site: WASH
+          # site: WASH  # Uncomment this otherwise site will be random
       - fabric_node:
           provider: '{{ fabric.fabric_provider }}'
-          site: MAX 
+          # site: MAX  # Uncomment this otherwise site will be random
           count: 1
   - service:
       - dtn_service:

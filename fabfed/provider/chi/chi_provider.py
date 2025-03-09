@@ -195,6 +195,9 @@ class ChiProvider(Provider):
                     discovered_interface = interface
                     break
 
+        if not discovered_interface:
+            raise Exception(f"Did not find peer interface for {peer_stitch_port['device_name']}")
+
         if discovered_interface:
             vlan = discovered_interface['vlan']
         elif resource.get(Constants.RES_INTERFACES, list()):
@@ -314,8 +317,8 @@ class ChiProvider(Provider):
                     self.resource_listener.on_created(source=self, provider=self, resource=node)
 
     def do_handle_externally_depends_on(self, *, resource: Resource, dependee: Resource):
-        self.logger.info(f"NEED TO DO SOME POST PROCESSING  {resource}: {dependee}")
-        # I have the code to add the route.
+        # post process can be done here ....
+        pass
 
     # noinspection PyTypeChecker
     def do_delete_resource(self, *, resource: dict):

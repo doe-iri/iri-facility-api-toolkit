@@ -213,7 +213,7 @@ class CloudlabProvider(Provider):
         interfaces = resource.get(Constants.RES_INTERFACES, list())
 
         if not discovered_interface:
-            raise Exception("héllo AES I am None ....")
+            raise CloudlabException(message=f"Did not find peer interface for {peer_stitch_port['device_name']}")
 
         if discovered_interface:
             interfaces = [discovered_interface]

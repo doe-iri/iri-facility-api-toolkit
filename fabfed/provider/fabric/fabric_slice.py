@@ -431,10 +431,10 @@ class FabricSlice:
                 for n in diff:
                     self.logger.info(f"removing node {n} from slice {self.name}")
 
-                    if INCLUDE_FABNETS:
-                        self.logger.info(f"removing node's fabnets: {n} from slice {self.name}")
-                        self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV4_NET_NAME}")
-                        self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV6_NET_NAME}")
+                    # TODO Are we cleaning up the new fabnets v4 and v6.
+                    #     self.logger.info(f"removing node's fabnets: {n} from slice {self.name}")
+                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV4_NET_NAME}")
+                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV6_NET_NAME}")
 
                     node = self.slice_object.get_node(name=n)
                     temp = [net for net in self.networks if net.label == network_labels[n]]
@@ -521,14 +521,18 @@ class FabricSlice:
             net_name = self.provider.resource_name(resource)
             net = next(filter(lambda n: n.name == net_name, self.networks))
 
-            if net.peering is None:  # TODO SENSE_AWS RUNS INTO AN ISSUE
+            from fabfed.policy.policy_helper import StitchInfo
+            stitch_infos: List[StitchInfo] = resource.get(Constants.RES_STITCH_INFO)
+            peer_providers = [stitch_info.stitch_port['peer']['provider'] for stitch_info in stitch_infos]
+
+            if net.peering is None or 'sense' not in peer_providers:  # TODO SENSE_AWS RUNS INTO AN ISSUE
                 for attempt in range(15):
                     self.slice_object = fablib.get_slice(name=self.provider.name)
                     slivers = self.slice_object.get_slivers()
                     slivers = list(filter(lambda s: s.sliver_type == 'NetworkServiceSliver', slivers))
                     slivers = list(filter(lambda s: s.sliver['Name'] == net_name, slivers))
                     states = ['active'] if net.peering else ['active', 'ticketed']
-                    count = map(lambda s: 1 if s.state.lower() in states else 0, slivers)
+                    count = map(lambda sliver: 1 if sliver.state.lower() in states else 0, slivers)
                     count = functools.reduce(lambda a, b: a + b, count)
 
                     if len(slivers) == count:
@@ -549,7 +553,7 @@ class FabricSlice:
                         return
 
                     self.logger.warning(
-                        f"Waiting on ready network sliver: {net_name}:attempt={attempt}:{count}:{len(slivers)}")
+                        f"Waiting on ready network sliver: {net_name}:attempt={attempt}")
 
                     import time
 

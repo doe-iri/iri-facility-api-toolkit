@@ -234,7 +234,7 @@ class NetworkBuilder:
                 facility_port_interface = facility_port.get_interfaces()[0]
                 self.facility_cloud_port_interfaces.append(facility_port_interface)
                 logger.info("Done_Creating_Facility_Port:" + facility_port.toJson())
-                return
+            return
 
         devices = set()
 

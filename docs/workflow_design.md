@@ -44,10 +44,10 @@ The `resource` class support three types:
 - [ ] network
 - [ ] service
 
-The workflow model allows us to define resources and to express dependencies among them. This is explained in more details below. We recommend you read on but you can get started quickly by copying the template credential file and the complete chameleon to fabric stitching example expressed in a single ".fab" file. These reside under the <i>config</i> directory. You would need to configure the chameleon and fabric sections in the credential file and install the fabfed tool. 
+The workflow model allows us to define resources and to express dependencies among them. This is explained in more details below. We recommend you read on but you can get started quickly by copying the template credential file and the complete chameleon to fabric stitching example expressed in a single ".fab" file. These reside under [fabfed_config](../examples/fabfed_config) directory. You would need to configure the chameleon and fabric sections in the credential file and install the fabfed tool. 
 
-- [fabfed credential file template](../config/fabfed_credentials_template.yml)
-- [stitching example](../config/chi_to_fabric_stitching.fab)
+- [fabfed credential file template](../examples/fabfed_config/fabfed_credentials_template.yml)
+- [stitching example](../examples/fabfed_config/chi_to_fabric_stitching.fab)
 
 # <a name="variables"></a>Variables
 Variables have their own class named <i>variable</i>. A variable consists of a name and a value. Its declaration 
@@ -85,7 +85,7 @@ provider:                                                    # Class
          profile: fabric                                     # This can be any string and it points to a section in the credential file
 ```
  
- The `credential_file` and the `profile` are attributes used to configure the provider's environment. The credential YAML file contains a section or a profile for each provider. Unlike the provider type, the profile is an arbitrary string used to point to a section in the credential file. And each section contains information specific to a user and to each provider. The example below shows a credential file for fabric and chi. Consult the [template credential file](../config/fabfed_credentials_template.yml) for all the providers we currently support
+ The `credential_file` and the `profile` are attributes used to configure the provider's environment. The credential YAML file contains a section or a profile for each provider. Unlike the provider type, the profile is an arbitrary string used to point to a section in the credential file. And each section contains information specific to a user and to each provider. The example below shows a credential file for fabric and chi. Consult the [template credential file](../examples/fabfed_config/fabfed_credentials_template.yml) for all the providers we currently support
   
 ```
 # Sample Fabfed Credential File
@@ -160,14 +160,14 @@ resource:
 In this example we have a stitching `policy` that is referred to by network `cloudlab_network` using the `stitch_option`. Typically one does not need to provide this `policy` config as fabfed supports system defined stitching policy. But it can be used to experiment with new facility ports
 or override the existing stitching policy. 
 
-Here we see two stitch ports. The top level `stitch_port` and the `peer` stitch port. The `peer` stitch port for fabric and the top level stitchPort is for `cloudlab`. This is specified by the `provider` attribute. Also we see that `clouldlab` is the producer and `fabric` is the consumer. This simply means that the cloudlab_network will be created first and when that happens, the fabric_network will be get created with the vlan information produced by the cloudlab network. 
+Here we see two stitch ports. The top level `stitch_port` and the `peer` stitch port. The `peer` stitch port for fabric and the top level stitchPort is for `cloudlab`. This is specified by the `provider` attribute. Also we see that `clouldlab` is the consumer and `fabric` is the producer. This simply means that the fabric_network will be created first and when that happens, the cloudlab_network will be get created with the vlan information produced by the fabric network. 
 
 ```
 config:
   - policy:
     - cloudlab_fabric_policy:
-        consumer: fabric
-        producer: cloudlab
+        producer: fabric
+        consumer: cloudlab
         stitch_port:
           profile: fabfed-stitch-v2
           provider: cloudlab
@@ -254,10 +254,10 @@ resource:
           provider: '{{ fabric.fabric_provider }}'
           layer3: "{{ layer3.my_layer }}"
           stitch_with:
-            - network: '{{ network.fabric_network }}' # External dependency 
+            - network: '{{ network.chi_network }}' # External dependency 
       - fabric_node:
           provider: '{{ fabric.fabric_provider }}'
-          network: '{{ network.fabric_network }}'     # Internal dependency
+          network: '{{ network.fabric_network }}'  # Internal dependency
 ```
 
  # <a name="stitching"></a>Network Stitching Policy
@@ -272,9 +272,9 @@ resource:
  - [stitching port details](../fabfed/policy/stitching_policy_details.json)
  
  This simple snippet shows a single stitch point from 
- `chi` to `fabric`. The groups are used to specify the consumer/producer relationship. In the example below, `chi` is the producer and 
- fabric is the `fabric` is the consumer. The `chi_network` produces a `vlan` that the  `fabric_network` uses to create a `facility port`. 
- and so the fabfed controller would reorder the resources as needed to ensure  that the producer is processed first.
+ `chi` to `fabric`. The groups are used to specify the consumer/producer relationship. In the example below, `chi` is the consumer and 
+ fabric is the `fabric` is the producer. The `fabric_network` produces a `vlan` that the  `chi_network` uses to create a `facility port`. 
+ and so the fabfed controller would reorder the resources as needed to ensure that the producer is processed first.
  
  The `stitch-port` under fabric and the one under chi are peered together since they have the same `name`. The one under fabric provides
  information for the fabric provider. And similarly its peer under chi provides information for the chameleon provider.
@@ -293,7 +293,7 @@ fabric:
         - STAR
   group:
       - name: STAR
-        consumer-for:
+        producer-for:
             - chi
 chi:
   stitch-port:
@@ -304,7 +304,7 @@ chi:
         - STAR
   group:
     - name: STAR
-      producer-for:
+      consumer-for:
         - fabric
  ```
   # <a name="stitching_example"></a>Network Stitching Example
@@ -362,8 +362,8 @@ Using the `policy` config class, one can, for example, use a stitch point with a
 config:
   - policy:
     - cloudlab_fabric_policy:
-        consumer: fabric
-        producer: cloudlab
+        producer: fabric
+        consumer: cloudlab
         stitch_port:
           name: my_policy
           profile: fabfed-stitch-v2

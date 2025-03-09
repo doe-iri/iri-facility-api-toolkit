@@ -26,8 +26,11 @@ class Controller:
         self.policy = policy
         self.use_local_policy = use_local_policy
         self.resource_listener = ControllerResourceListener()
+        self.current_session = None
 
     def init(self, *, session: str, provider_factory: ProviderFactory, provider_states: List[ProviderState]):
+        self.current_session = session
+
         init_provider_map: Dict[str, bool] = dict()
 
         for provider_config in self.config.get_provider_configs():
@@ -293,6 +296,10 @@ class Controller:
             raise ControllerException(exceptions)
 
     def apply(self, provider_states: List[ProviderState]):
+        from fabfed.util import state as sutil
+
+        sutil.delete_inventory(self.current_session)
+        sutil.delete_ssh(self.current_session)
         resources = self.resources
         self.logger.info(f"Starting APPLY_PHASE for {len(resources)} resource(s)")
         resource_state_map = Controller._build_state_map(provider_states)
@@ -356,13 +363,17 @@ class Controller:
         if not Constants.RUN_SSH_TESTER:
             return
 
-        from .helper import find_node_clusters
         from fabfed.util.node_tester import SshNodeTester
 
         nodes = [n for prov in self.provider_factory.providers if prov.type != "dummy" for n in prov.nodes]
 
         if nodes:
-            clusters = [ nodes ] # find_node_clusters(resources=resources)
+            for n in nodes:
+                if n.get_dataplane_address(af=Constants.IPv4) is None:
+                    raise ControllerException(
+                        [Exception(f"Node {n.label} has no dataplane ip. Try apply again!")])
+
+            clusters = [nodes]  # find_node_clusters(resources=resources)
 
             for cluster in clusters:
                 tester = SshNodeTester(nodes=[n for n in nodes if n.label in [n.label for n in cluster]])

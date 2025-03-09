@@ -157,6 +157,12 @@ class SshNodeTester:
     def run_ipv6_dataplane_test(self, *, command='ping6 -c 3', retry=3, retry_interval=10):
         for helper in self.helpers:
             logger.info(f"SSH executing {command} on Node: {helper.label}")
+            node = helper.node
+
+            ipv6_dataplane_addresses = self.ipv6_dataplane_addresses
+
+            if len(self.ipv6_dataplane_addresses) > 1:
+               ipv6_dataplane_addresses = [a for a in self.ipv6_dataplane_addresses if a != node.get_dataplane_address(af=Constants.IPv6)]
 
             ipv6_dataplane_addresses = self.ipv6_dataplane_addresses
 

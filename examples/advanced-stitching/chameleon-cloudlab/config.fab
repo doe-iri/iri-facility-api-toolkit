@@ -2,7 +2,7 @@ variable:
   - chi_device:
       default: Chameleon-TACC 
   - cloulab_device:
-      default: Utah-Cloudlab-Powder # CloudLab-Clemson
+      default: CloudLab-Clemson # Utah-Cloudlab-Powder
   - node_count:
       default: 1
 provider:
@@ -31,7 +31,7 @@ resource:
       - cnet:
           provider: '{{cloudlab.cloudlab_provider }}'
           layer3: '{{ layer3.layer3_config }}'
-          profile: fabfed-test
+          profile: fabfed-test  # ON Cloudlab: add ../../fabfed_config/clouldlab_profile_sample.py and name it fabfed-test if not in fabfed clouldlab project.
       - fabric_network:
           provider: '{{ fabric.fabric_provider }}'
           layer3: '{{ layer3.layer3_config }}'
@@ -55,3 +55,11 @@ resource:
           provider: '{{ chi.chi_provider }}'
           network: '{{ network.chi_network }}'
           count: '{{ var.node_count }}'
+  - service:
+      - dtn_service:
+          provider: '{{ janus.janus_provider }}'
+          controller: '{{ node.cloudlab_node }}'
+          node: ['{{ node.cloudlab_node  }}', '{{ node.chi_node }}']
+          count: 0  # Set count to 1 to use janus dtn service
+
+

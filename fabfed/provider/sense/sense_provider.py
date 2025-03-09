@@ -137,7 +137,7 @@ class SenseProvider(Provider):
         from .sense_network import SenseNetwork
 
         saved_interfaces = self.retrieve_attribute_from_saved_state(resource, net_name, attribute='interface')
-        if not isinstance(saved_interfaces, list):
+        if saved_interfaces and not isinstance(saved_interfaces, list):
             saved_interfaces = [saved_interfaces]
 
         net = SenseNetwork(label=label, name=net_name, profile=profile,
