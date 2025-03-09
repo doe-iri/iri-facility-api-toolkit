@@ -164,6 +164,11 @@ class SshNodeTester:
             if len(self.ipv6_dataplane_addresses) > 1:
                ipv6_dataplane_addresses = [a for a in self.ipv6_dataplane_addresses if a != node.get_dataplane_address(af=Constants.IPv6)]
 
+            ipv6_dataplane_addresses = self.ipv6_dataplane_addresses
+
+            if len(self.ipv6_dataplane_addresses) > 1:
+               ipv6_dataplane_addresses = [a for a in self.ipv6_dataplane_addresses if a != node.get_dataplane_address(af=Constants.IPv6)]
+
             for attempt in range(retry):
                 try:
                     helper.connect()
