@@ -134,6 +134,7 @@ def parse_and_dump_fabric_credentials(fabric_rc_path):
        project_id: REPLACE_ME
        slice-private-key-location: REPLACE_ME
        slice-public-key-location: REPLACE_ME
+       bastion-host: bastion.fabric-testbed.net
     '''
 
     fabric_creds_mappings = dict(
@@ -141,7 +142,8 @@ def parse_and_dump_fabric_credentials(fabric_rc_path):
         FABRIC_BASTION_KEY_LOCATION='bastion-key-location',
         FABRIC_PROJECT_ID='project_id',
         FABRIC_SLICE_PRIVATE_KEY_FILE='slice-private-key-location',
-        FABRIC_SLICE_PUBLIC_KEY_FILE='slice-public-key-location'
+        FABRIC_SLICE_PUBLIC_KEY_FILE='slice-public-key-location',
+        FABRIC_BASTION_HOST='bastion-host'
     )
 
     with open(absolute_path(fabric_rc_path), 'r') as f:
