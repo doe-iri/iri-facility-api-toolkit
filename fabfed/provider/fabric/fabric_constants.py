@@ -3,7 +3,7 @@ from ipaddress import IPv4Network, IPv6Network
 DEFAULT_RENEWAL_IN_DAYS = 14
 DEFAULT_OC_HOST = 'orchestrator.fabric-testbed.net'
 DEFAULT_CM_HOST = 'cm.fabric-testbed.net'
-DEFAULT_BASTION_HOST = 'bastion-1.fabric-testbed.net'
+DEFAULT_BASTION_HOST = 'bastion.fabric-testbed.net'
 
 FABRIC_OC_HOST = "oc-host"
 FABRIC_CM_HOST = "cm-host"

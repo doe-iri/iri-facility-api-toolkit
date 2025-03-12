@@ -171,6 +171,9 @@ def parse_and_dump_fabric_credentials(fabric_rc_path):
     if 'FABRIC_TOKEN_LOCATION' in os.environ:
         fabric_creds_dict['token-location'] = os.environ['FABRIC_TOKEN_LOCATION']
 
+    if 'FABRIC_BASTION_HOST' in os.environ:
+        fabric_creds_dict['bastion-host'] = os.environ['FABRIC_BASTION_HOST']
+
     import sys
 
     sys.stdout.write(yaml.dump(fabric_creds))
