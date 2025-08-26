@@ -430,22 +430,39 @@ class FabricSlice:
 
                 for n in diff:
                     self.logger.info(f"removing node {n} from slice {self.name}")
-
-                    # TODO Are we cleaning up the new fabnets v4 and v6.
-                    #     self.logger.info(f"removing node's fabnets: {n} from slice {self.name}")
-                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV4_NET_NAME}")
-                    #     self.slice_object.get_fim_topology().remove_network_service(f"{n}-{FABRIC_IPV6_NET_NAME}")
-
                     node = self.slice_object.get_node(name=n)
-                    temp = [net for net in self.networks if net.label == network_labels[n]]
+                    node_interfaces = [i for i in node.get_interfaces()]
+                    fabnetv4_name = f"{FABNET_IPV4_PREFIX}_{node.get_site()}"
+                    fabnetv4_interfaces = [i for i in node_interfaces if fabnetv4_name in i.get_name()]
 
+                    if fabnetv4_interfaces:
+                        fabnetv4_interface = fabnetv4_interfaces[0]
+                        net = self.slice_object.get_network(name=fabnetv4_name)
+                        net.remove_interface(fabnetv4_interface)
+                        net = self.slice_object.get_network(name=fabnetv4_name)  # This is needed.
+
+                        if not net.get_interfaces():
+                            self.slice_object.get_fim_topology().remove_network_service(fabnetv4_name)
+
+                    fabnetv6_name = f"{FABNET_IPV6_PREFIX}_{node.get_site()}"
+                    fabnetv6_interfaces = [i for i in node_interfaces if fabnetv6_name in i.get_name()]
+
+                    if fabnetv6_interfaces:
+                        fabnetv6_interface = fabnetv6_interfaces[0]
+                        net = self.slice_object.get_network(name=fabnetv6_name)
+                        net.remove_interface(fabnetv6_interface)
+                        net = self.slice_object.get_network(name=fabnetv6_name)  # This is needed.
+
+                        if not net.get_interfaces():
+                            self.slice_object.get_fim_topology().remove_network_service(fabnetv6_name)
+
+                    temp = [net for net in self.networks if net.label == network_labels[n]]
                     for network in temp:
                         self.logger.info(f"removing node's interface: {n} from network {network.name}")
                         from fabrictestbed_extensions.fablib.network_service import NetworkService
 
-                        delegate: NetworkService = network.delegate
-                        node_interfaces = [i for i in node.get_interfaces()]
                         itf = node_interfaces[0]
+                        delegate: NetworkService = network.delegate
                         delegate.remove_interface(itf)
 
                     self.slice_object.get_fim_topology().remove_node(name=n)

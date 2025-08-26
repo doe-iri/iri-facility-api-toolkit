@@ -333,6 +333,19 @@ def discover_service_instances(*, client=None):
 
 def find_instance_by_alias(*, client=None, alias):
     client = client or get_client()
+    discover_api = DiscoverApi(req_wrapper=client)
+    response = discover_api.discover_service_instances_get(search=alias)
+    response = json.loads(response)
+    instances = response['instances']
+
+    if not instances:
+        return None
+
+    instance = instances[0]
+    return instance['referenceUUID']
+
+def old_find_instance_by_alias(*, client=None, alias):
+    client = client or get_client()
     instances = discover_service_instances(client=client)
 
     for instance in instances:
