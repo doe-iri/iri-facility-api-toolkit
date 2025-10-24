@@ -26,7 +26,7 @@
 #
 # Author: Komal Thareja (kthare10@renci.org)
 from setuptools import setup, find_packages
-from fabfed import __VERSION__
+from amscrot import __VERSION__
 # To install the library, run the following
 #
 # python setup.py install
@@ -44,13 +44,13 @@ with open("requirements.txt", "r") as fh:
             requirements.append(line)
 
 setup(
-    name="fabfed-py",
+    name="amscrot-py",
     version=__VERSION__,
     description="Fabfed Framework",
-    author="Abdelilah Essiari,Ezra Kissel,Liang Zhang",
+    author="Abdelilah Essiari,Ezra Kissel",
     author_email="aessiari@lbl.gov",
-    url="https://github.com/fabric-testbed/fabfed",
-    keywords=["Fabfed Framework", "Cloud", "FABRIC", "Chameleon", "MOC"],
+    url="https://github.com/esnet/amsc-isro-toolkit",
+    keywords=["AmSC Resource Orchestration Toolkit", "Fabfed Framework", "Cloud", "FABRIC", "Chameleon", "MOC"],
     install_requires=requirements,
     setup_requires=requirements,
     packages=find_packages(),
@@ -64,8 +64,9 @@ setup(
     ],
     python_requires='>=3.9',
     entry_points={
-       'console_scripts': [
-              'fabfed = tools.fabfed:main',
-       ]
+        'console_scripts': [
+            'amscrot = tools.cli:main',
+            'fabfed = tools.cli:main',
+        ]
     }
 )

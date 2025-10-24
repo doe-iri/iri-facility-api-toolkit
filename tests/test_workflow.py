@@ -1,15 +1,15 @@
 import logging
 
-from fabfed.controller.controller import Controller
-from fabfed.util import state as sutil
-from fabfed.util import utils
-from fabfed.util.config import WorkflowConfig
+from amscrot.controller.controller import Controller
+from amscrot.util import state as sutil
+from amscrot.util import utils
+from amscrot.util.config import WorkflowConfig
 from typing import List
-from fabfed.controller.provider_factory import default_provider_factory
-from fabfed.exceptions import ControllerException
-from fabfed.provider.dummy.dummy_provider import DummyService
+from amscrot.controller.provider_factory import default_provider_factory
+from amscrot.exceptions import ControllerException
+from amscrot.provider.dummy.dummy_provider import DummyService
 
-from fabfed.model.state import ProviderState
+from amscrot.model.state import ProviderState
 
 
 class DummyFailCreateException(Exception):

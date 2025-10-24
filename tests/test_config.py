@@ -1,7 +1,7 @@
-from fabfed.util.parser import Parser
-from fabfed.util.config_models import DependencyInfo
-from fabfed.exceptions import ParseConfigException
-from fabfed.exceptions import ResourceTypeNotSupported
+from amscrot.util.parser import Parser
+from amscrot.util.config_models import DependencyInfo
+from amscrot.exceptions import ParseConfigException
+from amscrot.exceptions import ResourceTypeNotSupported
 import pytest
 
 

@@ -1,4 +1,4 @@
-from fabfed.policy.policy_helper import *
+from amscrot.policy.policy_helper import *
 
 
 def test_policy_with_site_and_no_site():
@@ -99,11 +99,11 @@ sense:
 
 
 def load_local_policy_using(providers):
-    from fabfed.policy.policy_helper import load_policy
+    from amscrot.policy.policy_helper import load_policy
 
     policy = load_policy()
 
-    from fabfed.policy.policy_helper import find_stitch_port_for_providers, peer_stitch_ports
+    from amscrot.policy.policy_helper import find_stitch_port_for_providers, peer_stitch_ports
 
     stitch_infos = find_stitch_port_for_providers(policy, providers)
     stitch_infos = peer_stitch_ports(stitch_infos)
@@ -122,7 +122,7 @@ def load_local_policy_using(providers):
             peer.pop(attr, None)
 
     import yaml
-    from fabfed.util.constants import Constants
+    from amscrot.util.constants import Constants
 
     for i, stitch_info in enumerate(stitch_infos):
         producer = stitch_info.producer
