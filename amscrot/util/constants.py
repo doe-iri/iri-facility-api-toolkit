@@ -106,6 +106,7 @@ class Constants:
         "chi": "amscrot.provider.chi.chi_provider.ChiProvider",
         "sense": "amscrot.provider.sense.sense_provider.SenseProvider",
         "janus": "amscrot.provider.janus.janus_provider.JanusProvider",
+        "kube": "amscrot.provider.kube.kube_provider.KubeProvider",
         "cloudlab": "amscrot.provider.cloudlab.cloudlab_provider.CloudlabProvider",
         "gcp": "amscrot.provider.gcp.gcp_provider.GcpProvider",
         "aws": "amscrot.provider.aws.aws_provider.AwsProvider",

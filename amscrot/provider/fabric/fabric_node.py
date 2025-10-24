@@ -14,7 +14,7 @@ class FabricNode(Node):
         flavor = {'cores': delegate.get_cores(), 'ram': delegate.get_ram(), 'disk': delegate.get_disk()}
         super().__init__(label=label, name=delegate.get_name(), image=delegate.get_image(), site=delegate.get_site(),
                          flavor=str(flavor))
-        logger.info(f" Node {self.name} construtor called ... ")
+        logger.info(f" Node {self.name} constructor called ... ")
         self._delegate = delegate
         self.nic_model = nic_model
         self._slice_object = delegate.get_slice()
@@ -58,8 +58,12 @@ class FabricNode(Node):
                 node_addr = itf.get_ip_addr()
                 self.dataplane_ipv6 = str(node_addr)
                 break
+            elif f'FABNET_IPv6Ext_{self.site}' in itf.get_name():
+                node_addr = itf.get_ip_addr()
+                self.dataplane_ipv6 = str(node_addr)
+                break
 
-    @property
+    @property   
     def delegate(self) -> Delegate:
         return self._delegate
 
@@ -135,12 +139,17 @@ class NodeBuilder:
         self.node: Delegate = slice_object.add_node(name=name, image=image, site=site, cores=cores, ram=ram, disk=disk)
 
         # Use fully automated ip v4
-        if resource.get(Constants.RES_TYPE_NETWORK) is None:
+        if resource.get("enable_fabnetv4", True) and resource.get(Constants.RES_TYPE_NETWORK) is None:
             self.node.add_fabnet(net_type="IPv4", nic_type=self.nic_model)
 
         # Use fully automated ip v6
-        if INCLUDE_FABNET_V6 and resource.get(Constants.RES_TYPE_NETWORK) is None:
+        if resource.get("enable_fabnetv6", False):
             self.node.add_fabnet(net_type="IPv6", nic_type=self.nic_model)
+
+        # Use fully automated ip v6Ext
+        if resource.get("enable_fabnetv6ext", False):
+            self.node.add_fabnet(net_type="IPv6Ext", nic_type=self.nic_model,
+                                 routes=resource.get("routes", None))
 
     def add_component(self, model=None, name=None):
         self.node.add_component(model=model, name=name)

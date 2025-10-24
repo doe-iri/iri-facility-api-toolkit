@@ -42,7 +42,7 @@ class Controller:
 
         for provider_state in provider_states:
             init_provider_map[provider_state.label] = init_provider_map[provider_state.label] \
-                                                      or len(provider_state.states()) > 0
+                or len(provider_state.states()) > 0
 
         for provider_config in self.config.get_provider_configs():
             if not init_provider_map[provider_config.label]:
@@ -160,7 +160,7 @@ class Controller:
         peering_to_network_mapping = {}
 
         for network in networks:
-            if Constants.RES_PEER_LAYER3 in network.attributes: # This is for testing
+            if Constants.RES_PEER_LAYER3 in network.attributes:  # This is for testing
                 continue
 
             network.attributes[Constants.RES_PEER_LAYER3] = []
@@ -369,7 +369,8 @@ class Controller:
 
         if nodes:
             for n in nodes:
-                if n.get_dataplane_address(af=Constants.IPv4) is None:
+                if n.get_dataplane_address(af=Constants.IPv4) is None \
+                        and n.get_dataplane_address(af=Constants.IPv6) is None:
                     raise ControllerException(
                         [Exception(f"Node {n.label} has no dataplane ip. Try apply again!")])
 
@@ -471,7 +472,8 @@ class Controller:
             try:
                 provider.delete_resource(resource=resource.attributes)
             except Exception as e:
-                self.logger.warning(f"Exception occurred while deleting resource: {e} using {provider_label}", exc_info=True)
+                self.logger.warning(
+                    f"Exception occurred while deleting resource: {e} using {provider_label}", exc_info=True)
                 remaining_resources.append(resource)
                 skip_resources.update([external_state.label for external_state in external_states])
                 exceptions.append(e)
@@ -517,7 +519,7 @@ class Controller:
 
         for provider in self.provider_factory.providers:
             total_duration = provider.init_duration \
-                             + provider.add_duration + provider.create_duration + provider.delete_duration
+                + provider.add_duration + provider.create_duration + provider.delete_duration
             total_duration = Duration(duration=total_duration,
                                       comment="Total time spent in provider")
             stages = Stages(setup_duration=provider.init_duration,

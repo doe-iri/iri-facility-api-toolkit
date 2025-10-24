@@ -1,7 +1,7 @@
 import logging
 from typing import List, Union
 
-import fabfed.provider.api.dependency_util as util
+import amscrot.provider.api.dependency_util as util
 from amscrot.model import Node, Network
 from .fabric_network import NetworkBuilder, FabricNetwork
 from .fabric_node import FabricNode, NodeBuilder
@@ -46,6 +46,12 @@ class FabricSlice:
                     continue
 
                 if FABNET_IPV4_PREFIX in net_name or FABNET_IPV6_PREFIX in net_name:
+                    continue
+
+                if FABNET_IPV6EXT_PREFIX in net_name or FABNET_IPV4EXT_PREFIX in net_name:
+                    continue
+
+                if FABRIC_IPV6EXT_NET_NAME in net_name or FABRIC_IPV4EXT_NET_NAME in net_name:
                     continue
 
                 self.existing_networks.append(net_name)
@@ -175,34 +181,36 @@ class FabricSlice:
                                 delegate: NetworkService = network.delegate
 
                                 if network.peering:
-                                   from fim.slivers.capacities_labels import Labels, Capacities
+                                    from fim.slivers.capacities_labels import Labels, Capacities
 
-                                   aux_name = delegate.get_name() + "_aux"
-                                   aux_net = self.slice_object.get_network(delegate.get_name() + "_aux")
+                                    aux_name = delegate.get_name() + "_aux"
+                                    aux_net = self.slice_object.get_network(delegate.get_name() + "_aux")
 
-                                   if aux_net is None:
-                                      aux_net = self.slice_object.add_l3network(name=aux_name, interfaces=[], type='L3VPN')
-                                      delegate.fim_network_service.peer(aux_net.fim_network_service,
-                                         labels=Labels(bgp_key='secret', ipv4_subnet='192.168.50.1/24'),
-                                         capacities=Capacities(mtu=9000), peer_labels=Labels(local_name="FABRIC"))
+                                    if aux_net is None:
+                                        aux_net = self.slice_object.add_l3network(
+                                            name=aux_name, interfaces=[], type='L3VPN')
+                                        delegate.fim_network_service.peer(aux_net.fim_network_service,
+                                                                          labels=Labels(bgp_key='secret',
+                                                                                        ipv4_subnet='192.168.50.1/24'),
+                                                                          capacities=Capacities(mtu=9000), peer_labels=Labels(local_name="FABRIC"))
 
-                                   fim_iface1 = itf.get_fim_interface()
-                                   ipv4_gateway = network.layer3.attributes.get(Constants.RES_NET_GATEWAY)
+                                    fim_iface1 = itf.get_fim_interface()
+                                    ipv4_gateway = network.layer3.attributes.get(Constants.RES_NET_GATEWAY)
 
-                                   if ipv4_gateway:
-                                      ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
+                                    if ipv4_gateway:
+                                        ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
 
-                                      if ipv4_subnet and '/' in ipv4_subnet:
-                                         ipv4_netmask = ipv4_subnet.split('/')[1]
-                                         ipv4_subnet = f'{ipv4_gateway}/{ipv4_netmask}'
-                                   else:
-                                      ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
+                                        if ipv4_subnet and '/' in ipv4_subnet:
+                                            ipv4_netmask = ipv4_subnet.split('/')[1]
+                                            ipv4_subnet = f'{ipv4_gateway}/{ipv4_netmask}'
+                                    else:
+                                        ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
 
-                                   fim_iface1.labels = Labels.update(fim_iface1.labels, ipv4_subnet=f'{ipv4_subnet}')
-                                   aux_net.add_interface(itf)
-                                   self.logger.info(f"Added interface {itf.get_name()} to network {aux_name}")
+                                    fim_iface1.labels = Labels.update(fim_iface1.labels, ipv4_subnet=f'{ipv4_subnet}')
+                                    aux_net.add_interface(itf)
+                                    self.logger.info(f"Added interface {itf.get_name()} to network {aux_name}")
                                 else:
-                                   delegate.add_interface(itf)
+                                    delegate.add_interface(itf)
                                 self.logger.info(f"Added interface {itf.get_name()} to network {delegate.get_name()}")
                                 self.slice_modified = True
                                 dataplane_ipv4 = None
@@ -233,36 +241,37 @@ class FabricSlice:
                     delegate: NetworkService = network.delegate
 
                     if network.peering:
-                       from fim.slivers.capacities_labels import Labels, Capacities
+                        from fim.slivers.capacities_labels import Labels, Capacities
 
-                       aux_name = delegate.get_name() + "_aux"
-                       aux_net = self.slice_object.get_network(delegate.get_name() + "_aux")
+                        aux_name = delegate.get_name() + "_aux"
+                        aux_net = self.slice_object.get_network(delegate.get_name() + "_aux")
 
-                       if aux_net is None:
-                          aux_net = self.slice_object.add_l3network(name=aux_name, interfaces=[], type='L3VPN')
-                          delegate.fim_network_service.peer(aux_net.fim_network_service,
-                                  labels=Labels(bgp_key='secret', ipv4_subnet='192.168.50.1/24'),
-                                  capacities=Capacities(mtu=9000), peer_labels=Labels(local_name="FABRIC"))
+                        if aux_net is None:
+                            aux_net = self.slice_object.add_l3network(name=aux_name, interfaces=[], type='L3VPN')
+                            delegate.fim_network_service.peer(aux_net.fim_network_service,
+                                                              labels=Labels(bgp_key='secret',
+                                                                            ipv4_subnet='192.168.50.1/24'),
+                                                              capacities=Capacities(mtu=9000), peer_labels=Labels(local_name="FABRIC"))
 
-                       fim_iface1 = itf.get_fim_interface()
+                        fim_iface1 = itf.get_fim_interface()
 
-                       ipv4_gateway = network.layer3.attributes.get(Constants.RES_NET_GATEWAY)
+                        ipv4_gateway = network.layer3.attributes.get(Constants.RES_NET_GATEWAY)
 
-                       if ipv4_gateway:
-                             ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
+                        if ipv4_gateway:
+                            ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
 
-                             if ipv4_subnet and '/' in ipv4_subnet:
+                            if ipv4_subnet and '/' in ipv4_subnet:
                                 ipv4_netmask = ipv4_subnet.split('/')[1]
                                 ipv4_subnet = f'{ipv4_gateway}/{ipv4_netmask}'
-                       else:
-                          ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
+                        else:
+                            ipv4_subnet = network.layer3.attributes.get(Constants.RES_SUBNET)
 
-                       fim_iface1.labels = Labels.update(fim_iface1.labels, ipv4_subnet=f'{ipv4_subnet}')
-                       aux_net.add_interface(itf)
-                       self.logger.info(f"Added interface {itf.get_name()} to network {aux_name}")
+                        fim_iface1.labels = Labels.update(fim_iface1.labels, ipv4_subnet=f'{ipv4_subnet}')
+                        aux_net.add_interface(itf)
+                        self.logger.info(f"Added interface {itf.get_name()} to network {aux_name}")
                     else:
-                       delegate.add_interface(itf)
-                       self.logger.info(f"Added interface {itf.get_name()} to network {delegate.get_name()}")
+                        delegate.add_interface(itf)
+                        self.logger.info(f"Added interface {itf.get_name()} to network {delegate.get_name()}")
 
                     node.set_network_label(network.label)
 
@@ -453,8 +462,17 @@ class FabricSlice:
                         net.remove_interface(fabnetv6_interface)
                         net = self.slice_object.get_network(name=fabnetv6_name)  # This is needed.
 
+                    fabnetv6ext_name = f"{FABNET_IPV6EXT_PREFIX}_{node.get_site()}"
+                    fabnetv6ext_interfaces = [i for i in node_interfaces if fabnetv6ext_name in i.get_name()]
+
+                    if fabnetv6ext_interfaces:
+                        fabnetv6ext_interface = fabnetv6ext_interfaces[0]
+                        net = self.slice_object.get_network(name=fabnetv6ext_name)
+                        net.remove_interface(fabnetv6ext_interface)
+                        net = self.slice_object.get_network(name=fabnetv6ext_name)  # This is needed.
+
                         if not net.get_interfaces():
-                            self.slice_object.get_fim_topology().remove_network_service(fabnetv6_name)
+                            self.slice_object.get_fim_topology().remove_network_service(fabnetv6ext_name)
 
                     temp = [net for net in self.networks if net.label == network_labels[n]]
                     for network in temp:
@@ -614,7 +632,18 @@ class FabricSlice:
             if "_aux" in net_name or FABRIC_IPV4_NET_NAME in net_name or FABRIC_IPV6_NET_NAME in net_name:
                 continue
 
+            if FABNET_IPV6EXT_PREFIX in net_name or FABNET_IPV4EXT_PREFIX in net_name:
+                alloc_ips: list = net.get_allocated_ips()
+                if alloc_ips and FABNET_IPV6EXT_PREFIX in net_name:
+                    self.logger.info(f"Making IPv6 addresses publically routable for network {net_name}")
+                    net.make_ip_publicly_routable(ipv6=[str(n) for n in alloc_ips])
+                    self.slice_object.submit()
+                continue
+            
             if FABNET_IPV4_PREFIX in net_name or FABNET_IPV6_PREFIX in net_name:
+                continue
+
+            if FABRIC_IPV6EXT_NET_NAME in net_name or FABRIC_IPV4EXT_NET_NAME in net_name:
                 continue
 
             self.existing_networks.append(net_name)
