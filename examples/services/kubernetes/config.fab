@@ -6,17 +6,18 @@ provider:
   - kube:
       - kube_provider:
           credential_file: ~/.amscrot/credentials.yml
+          profile: kube
 
 resource:
   - node:
-      - ctrl_node:
+      - ctrl-node:
           provider: '{{ fabric.fabric_provider }}'
           enable_fabnetv4: false
           enable_fabnetv6: false
           enable_fabnetv6ext: true
           routes: [2600:4040:7879:e00::/64]
           site: WASH  # Uncomment this otherwise site will be random
-      - child_nodes:
+      - agent-node:
           provider: '{{ fabric.fabric_provider }}'
           enable_fabnetv4: false
           enable_fabnetv6: false
@@ -27,6 +28,8 @@ resource:
   - service:
       - kube_service:
           provider: '{{ kube.kube_provider }}'
-          controller: '{{ node.ctrl_node }}'
-          node: ['{{ node.ctrl_node }}', '{{ node.child_nodes }}']
-          count: 0  # Set count to 1 to enable kube service
+          controller: '{{ node.ctrl-node }}'
+          flannel_iface: eth1
+          node: ['{{ node.ctrl-node }}', '{{ node.agent-node }}']
+          count: 1  # Set count to 1 to enable kube service
+          delete: 0 # Set delete to 1 to remove existing kube service

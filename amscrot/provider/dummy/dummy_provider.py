@@ -102,7 +102,6 @@ class DummyProvider(Provider):
         assert resource.get(Constants.RES_TYPE) in Constants.RES_SUPPORTED_TYPES
         assert resource.get(Constants.RES_NAME_PREFIX)
         assert resource.get(Constants.RES_COUNT, 1)
-        assert resource.get(Constants.RES_IMAGE)
 
         label = resource.get(Constants.LABEL)
         self.logger.info(f"Validated:OK Resource={label} using {self.label}")
@@ -126,7 +125,7 @@ class DummyProvider(Provider):
         exposed_attribute_x = resource.get("exposed_attribute_x")
 
         # In the dependency example, exposed_attribute_x is an external dependency
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
 
         if util.has_resolved_external_dependencies(resource=resource, attribute='exposed_attribute_x'):
             # Service dtn1 depends on service dtn2. dtn1 and dtn2 have different providers.

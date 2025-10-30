@@ -1,0 +1,36 @@
+---
+# K3s Kubernetes cluster deployment playbook
+# Calls the k3s-ansible collection playbook for cluster installation or reset
+
+- name: Deploy K3s cluster
+  import_playbook: k3s.orchestration.site
+  tags:
+    - deploy
+
+- name: Reset K3s cluster
+  import_playbook: k3s.orchestration.reset
+  tags:
+    - reset
+    - never
+
+- name: Fetch a file from a specific host
+  hosts: all
+
+  vars:
+    kconfig_dest_path: /tmp
+
+  tasks:
+    - name: Set kubectl cluster configuration on remote host
+      ansible.builtin.shell: "kubectl config set-cluster default --server=https://[{{inventory_hostname}}]:6443"
+      tags:
+        - fetch
+        - never
+
+    - name: Fetch the file
+      ansible.builtin.fetch:
+        src: ~/.kube/config
+        dest: "{{ kconfig_dest_path }}/kubeconfig"
+        flat: yes
+      tags:
+        - fetch
+        - never
