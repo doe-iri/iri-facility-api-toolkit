@@ -30,6 +30,7 @@ resource:
           provider: '{{ kube.kube_provider }}'
           controller: '{{ node.ctrl-node }}'
           flannel_iface: eth1
+          flannel_ipv6_masq: true
           node: ['{{ node.ctrl-node }}', '{{ node.agent-node }}']
           count: 1  # Set count to 1 to enable kube service
           delete: 0 # Set delete to 1 to remove existing kube service

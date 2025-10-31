@@ -18,13 +18,15 @@ class K3sService(Service):
     """K3s Kubernetes cluster service."""
 
     def __init__(self, *, label, name: str, controller_node, agent_nodes,
-                 kube_version: str, flannel_iface: str, provider, logger: logging.Logger):
+                 kube_version: str, flannel_iface: str, flannel_ipv6_masq: bool,
+                 provider, logger: logging.Logger):
         super().__init__(label=label, name=name)
         self.logger = logger
         self.created = False
 
         self.kube_version = kube_version
         self.flannel_iface = flannel_iface
+        self.flannel_ipv6_masq = flannel_ipv6_masq
         self.controller_host = None
 
         self._controller_node = controller_node
@@ -88,6 +90,9 @@ class K3sService(Service):
         if self.flannel_iface:
             group_vars['extra_server_args'] += f" --flannel-iface {self.flannel_iface}"
             group_vars['extra_agent_args'] += f" --flannel-iface {self.flannel_iface}"
+
+        if self.flannel_ipv6_masq:
+            group_vars['extra_server_args'] += " --flannel-ipv6-masq"
 
         # Build inventory structure
         inventory = {
@@ -232,6 +237,7 @@ class KubeProvider(Provider):
         # Get Kube configuration
         kube_version = resource.get('k3s_version', KUBE_VERSION)
         flannel_iface = resource.get('flannel_iface', None)
+        flannel_ipv6_masq = resource.get('flannel_ipv6_masq', False)
 
         # Create service
         service_name_prefix = resource.get(Constants.RES_NAME_PREFIX)
@@ -244,6 +250,7 @@ class KubeProvider(Provider):
             agent_nodes=agent_nodes,
             kube_version=kube_version,
             flannel_iface=flannel_iface,
+            flannel_ipv6_masq=flannel_ipv6_masq,
             provider=self,
             logger=self.logger
         )
@@ -311,8 +318,9 @@ class KubeProvider(Provider):
             self.logger.warning(f"Cannot delete {label} - no controller node found")
             return
 
-        k3s_version = s.attributes.get('k3s_version', 'v1.33.5+k3s1')
-        flannel_iface = s.attributes.get('flannel_iface', 'eth1')
+        kube_version = resource.get('k3s_version', KUBE_VERSION)
+        flannel_iface = resource.get('flannel_iface', None)
+        flannel_ipv6_masq = resource.get('flannel_ipv6_masq', False)
 
         service_name_prefix = resource.get(Constants.RES_NAME_PREFIX)
         service_name = f"{self.name}-{service_name_prefix}"
@@ -322,8 +330,9 @@ class KubeProvider(Provider):
             name=service_name,
             controller_node=controller_node,
             agent_nodes=agent_nodes,
-            k3s_version=k3s_version,
+            k3s_version=kube_version,
             flannel_iface=flannel_iface,
+            flannel_ipv6_masq=flannel_ipv6_masq,
             provider=self,
             logger=self.logger
         )
