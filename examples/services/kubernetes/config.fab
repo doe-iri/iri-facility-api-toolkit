@@ -5,8 +5,6 @@ provider:
           profile: fabric
   - kube:
       - kube_provider:
-          credential_file: ~/.amscrot/credentials.yml
-          profile: kube
 
 resource:
   - node:

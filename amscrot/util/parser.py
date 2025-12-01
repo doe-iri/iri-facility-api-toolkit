@@ -62,7 +62,9 @@ def parse_triplet(obj: SimpleNamespace) -> List[Tuple[str, str, Dict]]:
         for v in obj.__getattribute__(type):
             name = extract_label(dir(v))
 
-            if isinstance(v.__getattribute__(name), list):
+            if v.__getattribute__(name) is None:
+                attrs = dict()
+            elif isinstance(v.__getattribute__(name), list):
                 attrs = v.__getattribute__(name)[0].__dict__
 
                 if len(v.__getattribute__(name)) > 1:
