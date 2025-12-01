@@ -366,3 +366,17 @@ def generate_bgp_key_if_needed(friendly_name):
             raise StateException(f'Exception saving secrets in file {file_path}:{e}')
 
     return secrets[Constants.RES_BGP_KEY]
+
+
+def normalize_alias(alias):
+    """
+
+    :param alias:
+    :return:
+    """
+    undesired = "'\",!~+*^%@#$();/\\ "
+    translation_table = str.maketrans(undesired, ":" * len(undesired))
+    alias = alias.translate(translation_table)
+    alias = alias.replace(":", "")
+    alias = alias.replace("_", "-")
+    return alias.lower()
