@@ -65,8 +65,7 @@ setup(
     python_requires='>=3.9',
     entry_points={
         'console_scripts': [
-            'amscrot = tools.cli:main',
-            'fabfed = tools.cli:main',
+            'amscrot = tools.cli:main'
         ]
     }
 )

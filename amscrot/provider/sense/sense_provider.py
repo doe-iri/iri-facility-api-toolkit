@@ -38,7 +38,7 @@ class SenseProvider(Provider):
         return self.config.get(SENSE_SLICE_PRIVATE_KEY_LOCATION)
 
     def _handle_peering_config(self, resource):
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
         from amscrot.model import Network
 
         peering = resource.get(Constants.RES_PEERING)
@@ -85,7 +85,7 @@ class SenseProvider(Provider):
 
         if rtype == Constants.RES_TYPE_NODE:
             from .sense_node import SenseNode
-            import fabfed.provider.api.dependency_util as util
+            import amscrot.provider.api.dependency_util as util
             from . import sense_utils
 
             assert util.has_resolved_internal_dependencies(resource=resource, attribute='network')

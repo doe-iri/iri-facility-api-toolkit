@@ -136,7 +136,7 @@ class CloudlabProvider(Provider):
 
         if rtype == Constants.RES_TYPE_NODE:
             from .cloudlab_node import CloudlabNode
-            import fabfed.provider.api.dependency_util as util
+            import amscrot.provider.api.dependency_util as util
 
             assert util.has_resolved_internal_dependencies(resource=resource, attribute='network')
             net = util.get_single_value_for_dependency(resource=resource, attribute='network')
@@ -184,7 +184,7 @@ class CloudlabProvider(Provider):
         peer_stitch_port = stitch_infos[0].stitch_port['peer']
         discovered_interface = None
 
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
 
         if util.has_resolved_external_dependencies(resource=resource, attribute=Constants.RES_STITCH_INTERFACE):
             stitching_nets = util.get_values_for_dependency(resource=resource,

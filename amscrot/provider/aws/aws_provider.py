@@ -45,7 +45,7 @@ class AwsProvider(Provider):
         assert self.secret_key
 
     def _handle_peering_config(self, resource):
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
         from amscrot.model import Network
 
         peering = resource.get(Constants.RES_PEERING)
