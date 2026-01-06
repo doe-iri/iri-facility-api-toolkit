@@ -4,19 +4,89 @@ from amscrot.amscrot_manager import AmSCROTManager
 from amscrot.util.constants import Constants
 
 
+class ProviderCredential:
+    def __init__(self, **kwargs):
+        self._attributes = kwargs
+
+    def __getattr__(self, item):
+        return self._attributes.get(item)
+
+    def __setattr__(self, key, value):
+        if key == "_attributes":
+            super().__setattr__(key, value)
+        else:
+            self._attributes[key] = value
+
+    def to_dict(self) -> Dict:
+        return self._attributes.copy()
+
+    def update(self, **kwargs):
+        self._attributes.update(kwargs)
+
+
 class Client:
     def __init__(self):
         self._provider_configs = []
         self._resource_configs = []
         self._manager = None
-        
-    def add_provider(self, *, label: str, type: str, **kwargs):
+        self._credentials = {}
+
+    def load_credentials(self, *, file_path: str = None):
+        """
+        Load credentials from a YAML file.
+        If file_path is not provided, defaults to ~/.amscrot/credentials.yml.
+        """
+        from amscrot.util.utils import load_yaml_from_file
+        import os
+
+        if file_path is None:
+            file_path = "~/.amscrot/credentials.yml"
+            path_expanded = os.path.expanduser(file_path)
+            if not os.path.exists(path_expanded):
+                self._credentials = {}
+                return
+
+        creds = load_yaml_from_file(file_path) or {}
+        # Convert dicts to ProviderCredential objects
+        self._credentials = {k: ProviderCredential(**v) for k, v in creds.items()}
+
+    def add_credential(self, *, profile: str, **kwargs):
+        """
+        Add or update a credential profile programmatically.
+        """
+        if profile in self._credentials:
+            self._credentials[profile].update(**kwargs)
+        else:
+            self._credentials[profile] = ProviderCredential(**kwargs)
+
+    def get_credential(self, profile: str) -> "ProviderCredential":
+        """
+        Get a specific credential object.
+        """
+        return self._credentials.get(profile)
+
+    def list_credentials(self) -> List[str]:
+        """
+        List available credential profiles.
+        """
+        return list(self._credentials.keys())
+
+    def add_provider(self, *, label: str, type: str, profile: str = None, **kwargs):
         """
         Add a provider configuration.
         """
+        attributes = {}
+
+        if profile:
+            if profile not in self._credentials:
+                raise ValueError(f"Profile '{profile}' not found in loaded credentials.")
+            attributes.update(self._credentials[profile].to_dict())
+
+        attributes.update(kwargs)
+
         config = {
             type: [
-                {label: kwargs}
+                {label: attributes}
             ]
         }
         self._provider_configs.append(config)
