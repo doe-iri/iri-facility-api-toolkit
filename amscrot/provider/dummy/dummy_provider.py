@@ -126,7 +126,7 @@ class DummyProvider(Provider):
         exposed_attribute_x = resource.get("exposed_attribute_x")
 
         # In the dependency example, exposed_attribute_x is an external dependency
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
 
         if util.has_resolved_external_dependencies(resource=resource, attribute='exposed_attribute_x'):
             # Service dtn1 depends on service dtn2. dtn1 and dtn2 have different providers.

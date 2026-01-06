@@ -30,8 +30,10 @@ manager.show_sessions()
 
 
 class AmSCROTManager:
-    def __init__(self, *, config_dir: str, var_dict: Union[Dict[str, str], None] = None):
+    def __init__(self, *, config_dir: str = '.', var_dict: Union[Dict[str, str], None] = None,
+                 config_content: Union[str, Dict, None] = None):
         self.config_dir = config_dir
+        self.config_content = config_content
         self.var_dict = var_dict or dict()
         self.controller: Union[Controller, None] = None
         self.provider_states: List[ProviderState] = list()
@@ -56,7 +58,10 @@ class AmSCROTManager:
 
     def _init_controller(self, *, session: str):
         self.provider_states = sutil.load_states(session)
-        config = WorkflowConfig.parse(dir_path=self.config_dir, var_dict=self.var_dict)
+        dir_path = self.config_dir if not self.config_content else None
+        config = WorkflowConfig.parse(dir_path=dir_path,
+                                      content=self.config_content,
+                                      var_dict=self.var_dict)
         controller: Controller = Controller(config=config)
 
         from amscrot.controller.provider_factory import default_provider_factory
@@ -66,7 +71,10 @@ class AmSCROTManager:
         self.controller = controller
 
     def validate(self):
-        config = WorkflowConfig.parse(dir_path=self.config_dir, var_dict=self.var_dict)
+        dir_path = self.config_dir if not self.config_content else None
+        config = WorkflowConfig.parse(dir_path=dir_path,
+                                      content=self.config_content,
+                                      var_dict=self.var_dict)
         return config
 
     def plan(self, *, session: str, to_json: bool = False, summary: bool = True):
