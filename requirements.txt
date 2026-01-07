@@ -6,3 +6,4 @@ ansible-runner==2.3.6
 xmltodict
 boto3
 google-cloud-compute
+pydantic

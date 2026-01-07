@@ -1,0 +1,234 @@
+{
+    "groups": [
+        {
+            "name": "research-team-a"
+        },
+        {
+            "name": "web-ops"
+        },
+        {
+            "name": "field-ops"
+        }
+    ],
+    "policies": {
+        "hpc-simulation-service": {
+            "profile": "hpc-slurm-workload",
+            "group": "research-team-a",
+            "preference": 900
+        },
+        "web-api-backend": {
+            "profile": "k8s-cloud-native",
+            "group": "web-ops",
+            "preference": 800
+        },
+        "iot-sensor-gateway": {
+            "profile": "edge-constrained",
+            "group": "field-ops",
+            "preference": 200
+        }
+    },
+    "services": [
+        {
+            "name": "weather-sim-v2",
+            "endpoint_uri": "slurm://login.cluster.edu",
+            "status": "active",
+            "allocated": true
+        },
+        {
+            "name": "api-server",
+            "endpoint_uri": "https://api.internal.svc",
+            "status": "pending",
+            "capabilities": [
+                "rest-api",
+                "websocket"
+            ]
+        },
+        {
+            "name": "sensor-collector",
+            "endpoint_uri": "mqtt://192.168.1.1:1883",
+            "status": "active"
+        }
+    ],
+    "service_clients": [
+        {
+            "name": "hpc-simulation-service",
+            "serviceRef": "weather-sim-v2",
+            "facilities": [
+                {
+                    "name": "supercomputer-alpha",
+                    "description": "Primary high-performance computing facility",
+                    "compute": [
+                        {
+                            "partition": "gpu-prod",
+                            "nodes": 4,
+                            "tasks_per_node": 32,
+                            "gpus_per_node": 4,
+                            "gpu_type": "nvidia-a100",
+                            "memory_per_node": "512GB",
+                            "cpu_arch": "x86_64"
+                        }
+                    ],
+                    "storage": [
+                        {
+                            "type": "lustre",
+                            "mount_point": "/scratch/global/team-a",
+                            "quota": "100TB",
+                            "performance_tier": "flash"
+                        }
+                    ],
+                    "allocations": [
+                        {
+                            "account": "res-12345",
+                            "qos": "normal",
+                            "walltime_limit": "72:00:00",
+                            "exclusive": true
+                        }
+                    ],
+                    "networks": [
+                        {
+                            "fabric": "infiniband-hdr100",
+                            "rdma_enabled": true,
+                            "external_connectivity": "public-login-node",
+                            "layer3": {
+                                "ipv4_subnets": [
+                                    "10.100.0.0/16"
+                                ],
+                                "gateway": "10.100.0.1",
+                                "bgp_peers": [
+                                    {
+                                        "asn": 65001,
+                                        "peer_ip": "192.168.255.1",
+                                        "local_ip": "192.168.255.2"
+                                    }
+                                ]
+                            }
+                        }
+                    ]
+                },
+                {
+                    "name": "archive-facility",
+                    "description": "Long-term data retention facility",
+                    "storage": [
+                        {
+                            "type": "nfs",
+                            "mount_point": "/archive/team-a",
+                            "quota": "1PB",
+                            "performance_tier": "cold"
+                        }
+                    ],
+                    "networks": [
+                        {
+                            "fabric": "ethernet-10g",
+                            "external_connectivity": "vpn-only"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "web-api-backend",
+            "serviceRef": "api-server",
+            "facilities": [
+                {
+                    "name": "cloud-region-us-east",
+                    "compute": [
+                        {
+                            "resources": {
+                                "requests": {
+                                    "cpu": "2000m",
+                                    "memory": "4Gi"
+                                },
+                                "limits": {
+                                    "cpu": "4000m",
+                                    "memory": "8Gi"
+                                }
+                            },
+                            "replicas": 3,
+                            "node_selector": {
+                                "environment": "production",
+                                "region": "us-east-1"
+                            }
+                        }
+                    ],
+                    "storage": [
+                        {
+                            "name": "db-persist",
+                            "kind": "PersistentVolumeClaim",
+                            "storage_class": "gp3",
+                            "size": "50Gi",
+                            "access_modes": [
+                                "ReadWriteOnce"
+                            ]
+                        }
+                    ],
+                    "networks": [
+                        {
+                            "service": {
+                                "type": "ClusterIP",
+                                "ports": [
+                                    80,
+                                    443
+                                ]
+                            },
+                            "ingress": {
+                                "enabled": true,
+                                "class": "nginx",
+                                "annotations": {
+                                    "cert-manager.io/cluster-issuer": "letsencrypt-prod"
+                                }
+                            },
+                            "layer2": {
+                                "vlan_id": 105,
+                                "mtu": 9000
+                            }
+                        }
+                    ],
+                    "operations": [
+                        {
+                            "strategy": "RollingUpdate",
+                            "max_unavailable": "25%",
+                            "max_surge": "25%"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "iot-sensor-gateway",
+            "serviceRef": "sensor-collector",
+            "facilities": [
+                {
+                    "name": "edge-site-001",
+                    "compute": [
+                        {
+                            "architecture": "arm64",
+                            "cores": 2,
+                            "memory": "1GB",
+                            "container_runtime": "containerd"
+                        }
+                    ],
+                    "networks": [
+                        {
+                            "interface": "lte0",
+                            "bandwidth_limit": "5Mbps",
+                            "latency_tolerance": "high",
+                            "offline_support": true,
+                            "layer3": {
+                                "ipv6_subnets": [
+                                    "2001:db8:abc:123::/64"
+                                ]
+                            }
+                        }
+                    ],
+                    "data": [
+                        {
+                            "caching_policy": "local-buffered",
+                            "sync_interval": "60m",
+                            "retention_policy": "7d"
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
