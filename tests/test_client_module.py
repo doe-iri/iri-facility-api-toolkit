@@ -13,17 +13,19 @@ class TestClientModule(unittest.TestCase):
         client = Client()
 
         # Add a dummy provider
-        client.add_provider(
+        provider = client.add_provider(
             label="my_dummy_provider",
             type="dummy",
             config={} 
         )
 
+        # Create Session
+        session = client.create_session(self.session_name)
+
         # Add a dummy resource
-        client.add_resource(
+        session.add_node(
             label="my_dummy_node",
-            type="node",
-            provider="{{ dummy.my_dummy_provider }}",
+            provider=provider,
             count=1,
             image="default_image",
             flavor="default_flavor"
@@ -31,22 +33,22 @@ class TestClientModule(unittest.TestCase):
 
         # 1. Plan
         print("\n--- Running Plan ---")
-        created, deleted = client.plan(session=self.session_name)
+        created, deleted = session.plan()
         self.assertEqual(created, 1)
         self.assertEqual(deleted, 0)
 
         # 2. Apply
         print("\n--- Running Apply ---")
-        status = client.apply(session=self.session_name)
+        status = session.apply()
         self.assertEqual(status, 0) # 0 means success in amscrot apply
 
         # 3. Show
         print("\n--- Running Show ---")
-        client.show(session=self.session_name)
+        session.show()
 
         # 4. Destroy
         print("\n--- Running Destroy ---")
-        status = client.destroy(session=self.session_name)
+        status = session.destroy()
         self.assertEqual(status, 0) # 0 means success in amscrot destroy
 
 if __name__ == "__main__":

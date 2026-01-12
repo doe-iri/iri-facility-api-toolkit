@@ -30,7 +30,10 @@ def test_add_provider_with_profile(credentials_file):
     
     client.add_provider(label='my_prov', type='dummy', profile='profile1', extra_arg='val')
     
-    config = client._provider_configs[0]['dummy'][0]['my_prov']
+    # Check providers list
+    assert len(client._providers) == 1
+    provider = client._providers[0]
+    config = provider.attributes
     assert config['username'] == 'user1'
     assert config['key'] == 'key1'
     assert config['extra_arg'] == 'val'
@@ -42,7 +45,9 @@ def test_add_provider_override_profile(credentials_file):
     # Override username from profile
     client.add_provider(label='my_prov', type='dummy', profile='profile1', username='overridden')
     
-    config = client._provider_configs[0]['dummy'][0]['my_prov']
+    assert len(client._providers) == 1
+    provider = client._providers[0]
+    config = provider.attributes
     assert config['username'] == 'overridden' # Argument should take precedence
     assert config['key'] == 'key1'
 
@@ -63,8 +68,10 @@ def test_provider_credential_object(credentials_file):
     assert cred is not None
     assert cred.username == 'user1'
     
-    # Test modification
-    cred.new_attr = 'test'
+    
+    # Test modification via client method
+    client.update_credential(profile='profile1', new_attr='test')
+    cred = client.get_credential('profile1')
     assert cred.to_dict()['new_attr'] == 'test'
 
 def test_add_credential_programmatic():
@@ -76,7 +83,7 @@ def test_add_credential_programmatic():
     assert cred.token == 'abc'
     
     # Update existing
-    client.add_credential(profile='new_prof', extra='xyz')
+    client.update_credential(profile='new_prof', extra='xyz')
     assert cred.extra == 'xyz'
     assert cred.token == 'abc'
 

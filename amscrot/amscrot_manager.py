@@ -50,8 +50,9 @@ class AmSCROTManager:
 
     def _delete_session_if_empty(self, *, session):
         self.provider_states = sutil.load_states(session)
+        jobs = self._get_jobs()
 
-        if not self.provider_states:
+        if not self.provider_states and not jobs:
             sutil.destroy_session(session)
 
         self._load_sessions()
@@ -77,11 +78,51 @@ class AmSCROTManager:
                                       var_dict=self.var_dict)
         return config
 
+    def _get_jobs(self) -> List[Dict]:
+        import yaml
+        content = self.config_content
+        if not content:
+            if self.config_dir:
+                 pass
+            return []
+
+        if isinstance(content, str):
+            try:
+                content = yaml.safe_load(content)
+            except yaml.YAMLError:
+                return []
+        
+        if not isinstance(content, dict):
+            return []
+        
+        jobs = []
+        
+        # content['job'] is a list of dicts like [{name1: config1}, {name2: config2}]
+        if 'job' in content:
+             for item in content['job']:
+                 # item is {job_name: job_config}
+                 jobs.extend(item.values())
+
+        return jobs
+
     def plan(self, *, session: str, to_json: bool = False, summary: bool = True):
         self._init_controller(session=session)
         self.controller.plan(provider_states=self.provider_states)
         resources = self.controller.resources
         cr, dl = sutil.dump_plan(resources=resources, to_json=to_json, summary=summary)
+        
+        jobs = self._get_jobs()
+        if jobs:
+            job_summaries = []
+            for job in jobs:
+                job_summaries.append({
+                    "name": job.get("name"),
+                    "type": job.get("type"),
+                    "service_type": job.get("service_type"),
+                    "service_client": job.get("service_client"),
+                    "action": "CREATE" # Mock action
+                })
+            sutil.dump_objects(objects={"job_plan": job_summaries}, to_json=to_json)
 
         logger.warning(f"Applying this plan would create {cr} resource(s) and destroy {dl} resource(s)")
         self._delete_session_if_empty(session=session)
@@ -89,6 +130,21 @@ class AmSCROTManager:
 
     def apply(self, *, session: str):
         self._init_controller(session=session)
+        
+        # Handle Jobs
+        jobs = self._get_jobs()
+        if jobs:
+            job_summaries = []
+            for job in jobs:
+                 # In a real impl, we would submit the job here
+                 job_summaries.append({
+                    "name": job.get("name"),
+                    "service_client": job.get("service_client"),
+                    "status": "SUBMITTED",
+                    "id": f"mock-id-{job.get('name')}"
+                })
+            sutil.dump_objects(objects={"job_submission": job_summaries}, to_json=False) # Log to stdout
+
         self.controller.plan(provider_states=self.provider_states)
         self.controller.add(provider_states=self.provider_states)
         workflow_failed = False
@@ -120,6 +176,20 @@ class AmSCROTManager:
         session_names = [session_meta['session'] for session_meta in self.sessions]
         self.provider_states = sutil.load_states(session) if session in session_names else []
         sutil.dump_states(self.provider_states, to_json, summary)
+        
+        # Handle Jobs        
+        jobs = self._get_jobs()
+        if jobs:
+             job_summaries = []
+             for job in jobs:
+                 job_summaries.append({
+                    "name": job.get("name"),
+                    "status": "UNKNOWN", # No interaction with real backend yet
+                    "service_client": job.get("service_client"),
+                    "dependency": job.get("dependency")
+                })
+             sutil.dump_objects(objects={"job_status": job_summaries}, to_json=to_json)
+             
         self._delete_session_if_empty(session=session)
 
     def stitch_info(self, session: str, to_json: bool = False, summary: bool = True):
@@ -171,11 +241,24 @@ class AmSCROTManager:
         sutil.dump_objects(objects=stitch_info_summaries, to_json=to_json)
 
     def destroy(self, *, session: str):
+        self._init_controller(session=session)
         self._load_sessions()
         session_names = [session_meta['session'] for session_meta in self.sessions]
 
         if session not in session_names:
             return
+
+        # Handle Jobs
+        jobs = self._get_jobs()
+        if jobs:
+            job_summaries = []
+            for job in jobs:
+                job_summaries.append({
+                    "name": job.get("name"),
+                    "service_client": job.get("service_client"),
+                    "action": "DELETE"
+                })
+            sutil.dump_objects(objects={"job_destroy": job_summaries}, to_json=False)
 
         self.provider_states = sutil.load_states(session)
 
