@@ -2,7 +2,7 @@ import logging
 import os
 from typing import List
 
-import fabfed.provider.api.dependency_util as util
+import amscrot.provider.api.dependency_util as util
 from amscrot.exceptions import ResourceTypeNotSupported, ProviderException
 from amscrot.model import Resource
 from amscrot.provider.api.provider import Provider

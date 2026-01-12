@@ -14,7 +14,7 @@ def get_client():
     return SENSE_CLIENT
 
 
-# TODO Fix this and make sure the config is coming from fabfed credentials
+# TODO Fix this and make sure the config is coming from amscrot credentials
 class SenseClient(RequestWrapper):
     def __init__(self, config=None):
         self.temp_config = config

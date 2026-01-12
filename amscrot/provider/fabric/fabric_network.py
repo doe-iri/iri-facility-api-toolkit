@@ -102,7 +102,7 @@ class NetworkBuilder:
         self.discovered_stitch_infos: List[Dict] = []
         self.sites = set()
 
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
 
         if util.has_resolved_external_dependencies(resource=resource, attribute=Constants.RES_STITCH_INTERFACE):
             self.stitching_nets = util.get_values_for_dependency(resource=resource,

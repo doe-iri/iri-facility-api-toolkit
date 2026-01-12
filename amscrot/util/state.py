@@ -475,7 +475,7 @@ def load_sessions():
     from pathlib import Path
     import os
 
-    base_dir = os.path.join(str(Path.home()), '.fabfed', 'sessions')
+    base_dir = os.path.join(str(Path.home()), '.amscrot', 'sessions')
     os.makedirs(base_dir, exist_ok=True)
     sessions = os.listdir(base_dir)
     return sessions

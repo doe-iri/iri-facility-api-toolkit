@@ -6,7 +6,7 @@ from amscrot.util.constants import Constants
 
 '''
 
-To add a provider, all you should need is to add its classpath to fabfed.util.constants.Constants.PROVIDER_CLASSES
+To add a provider, all you should need is to add its classpath to amscrot.util.constants.Constants.PROVIDER_CLASSES
 
 
 see tests/examples/dummy-service for a simple example.
@@ -19,11 +19,11 @@ Useful Commands:
 see tests/examples/dummy-service  # for a simple example
 see tests/examples/dummy-service/config.fab 
 
->fabfed workflow --session <session> -validate
->fabfed workflow --session <session> -plan
->fabfed workflow --session <session> -apply
->fabfed workflow --session <session> -show
->fabfed workflow --session <session> -destroy
+>amscrot workflow --session <session> -validate
+>amscrot workflow --session <session> -plan
+>amscrot workflow --session <session> -apply
+>amscrot workflow --session <session> -show
+>amscrot workflow --session <session> -destroy
 '''
 
 
@@ -102,7 +102,6 @@ class DummyProvider(Provider):
         assert resource.get(Constants.RES_TYPE) in Constants.RES_SUPPORTED_TYPES
         assert resource.get(Constants.RES_NAME_PREFIX)
         assert resource.get(Constants.RES_COUNT, 1)
-        assert resource.get(Constants.RES_IMAGE)
 
         label = resource.get(Constants.LABEL)
         self.logger.info(f"Validated:OK Resource={label} using {self.label}")
