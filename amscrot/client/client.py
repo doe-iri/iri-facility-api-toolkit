@@ -41,12 +41,18 @@ class Client:
             file_path = "~/.amscrot/credentials.yml"
             path_expanded = os.path.expanduser(file_path)
             if not os.path.exists(path_expanded):
-                self._credentials = {}
+                # Don't overwrite existing credentials if default file is missing
+                if not self._credentials:
+                    self._credentials = {}
                 return
 
         creds = load_yaml_from_file(file_path) or {}
-        # Convert dicts to ProviderCredential objects
-        self._credentials = {k: ProviderCredential(**v) for k, v in creds.items()}
+        # Merge dicts to ProviderCredential objects
+        for k, v in creds.items():
+            if k in self._credentials:
+                self._credentials[k].update(**v)
+            else:
+                self._credentials[k] = ProviderCredential(**v)
 
     def add_credential(self, *, profile: str, **kwargs):
         """
@@ -81,12 +87,17 @@ class Client:
         """
         Add a provider configuration.
         """
+        # Load credentials if a file is specified
+        if "credential_file" in kwargs:
+            self.load_credentials(file_path=kwargs["credential_file"])
+
         attributes = {}
 
         if profile:
             if profile not in self._credentials:
                 raise ValueError(f"Profile '{profile}' not found in loaded credentials.")
             attributes.update(self._credentials[profile].to_dict())
+            attributes['profile'] = profile
 
         attributes.update(kwargs)
 
