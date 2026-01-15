@@ -22,18 +22,6 @@ class Provider:
         return f"{{{{ {self.type}.{self.label} }}}}"
 
 
-class ServiceClient:
-    def __init__(self, name: str, endpoint_uri: str, status: str = "ACTIVE", capabilities: List[Any] = None, allocated: List[Any] = None):
-        self.name = name
-        self.endpoint_uri = endpoint_uri
-        self.status = status
-        self.capabilities = capabilities or []
-        self.allocated = allocated or []
-
-    def __repr__(self):
-        return f"<ServiceClient name={self.name} uri={self.endpoint_uri}>"
-
-
 class Resource:
     def __init__(self, label: str, provider: Union[str, Provider], **kwargs):
         self.label = label
@@ -41,7 +29,20 @@ class Resource:
             self.provider = str(provider)
         else:
             self.provider = provider
-        self.attributes = kwargs
+        
+        # Resolve attributes
+        self.attributes = {}
+        for k, v in kwargs.items():
+            self.attributes[k] = self._resolve_attribute(v)
+
+    def _resolve_attribute(self, value: Any) -> Any:
+        if isinstance(value, (Resource, Provider)):
+            return str(value)
+        elif isinstance(value, list):
+            return [self._resolve_attribute(v) for v in value]
+        elif isinstance(value, dict):
+            return {k: self._resolve_attribute(v) for k, v in value.items()}
+        return value
 
     def to_config(self, resource_type: str) -> Dict:
         attrs = self.attributes.copy()
@@ -54,14 +55,21 @@ class Resource:
 
 
 class Node(Resource):
-    pass
-
+    def __str__(self):
+        return f"{{{{ node.{self.label} }}}}"
 
 class Network(Resource):
-    pass
+    def __str__(self):
+        return f"{{{{ network.{self.label} }}}}"
 
 class Service(Resource):
-    pass
+    def __init__(self, label: str, provider: Union[str, Provider], controller: Union[str, Node] = None, **kwargs):
+        if controller:
+            kwargs['controller'] = controller
+        super().__init__(label, provider, **kwargs)
+
+    def __str__(self):
+        return f"{{{{ service.{self.label} }}}}"
 
 
 class Session:

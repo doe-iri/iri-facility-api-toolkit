@@ -1,6 +1,7 @@
 
 import pytest
-from amscrot.model.metadata import MetadataDump, ServiceClient
+from amscrot.model.metadata import MetadataDump
+from amscrot.serviceclient.serviceclient import ServiceClient
 
 def test_load_metadata_schema():
     import os

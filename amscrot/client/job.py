@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import List, Dict, Any, Optional, Union
-from .models import ServiceClient
+from amscrot.serviceclient import ServiceClient
 
 class JobServiceType(str, Enum):
     REALTIME = "REALTIME"

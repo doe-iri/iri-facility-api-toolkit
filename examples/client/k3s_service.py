@@ -23,37 +23,42 @@ def main():
 
     # Define Resources
     ctrl_node = session.add_node(
-        label="ctrl_node",
+        label="ctrl-node",
         provider=fabric_provider,
         enable_fabnetv4=False,
         enable_fabnetv6=False,
         enable_fabnetv6ext=True,
-        routes=["2600:4040:7879:e00::/64"],
-        site="WASH" # Uncomment this otherwise site will be random
+        routes=["2600:4040:787a:4000::/64"],
+        site="MAX" # Uncomment this otherwise site will be random
     )
 
     child_nodes = session.add_node(
-        label="child_nodes",
+        label="child-node",
         provider=fabric_provider,
         enable_fabnetv4=False,
         enable_fabnetv6=False,
         enable_fabnetv6ext=True,
-        routes=["2600:4040:7879:e00::/64"],
-        site="WASH", # Uncomment this otherwise site will be random
+        routes=["2600:4040:787a:4000::/64"],
+        site="MAX", # Uncomment this otherwise site will be random
         count=2
     )
 
     kube_service = session.add_service(
-        label="kube_service",
+        label="kube-service",
         provider=kube_provider,
-        controller="{{ node.ctrl_node }}",
-        node=["{{ node.ctrl_node }}", "{{ node.child_nodes }}"],
-        count=1 # Set to 1 to enable, matching config.fab default
+        flannel_iface="eth1",
+        flannel_ipv6_masq=True,
+        controller=ctrl_node,
+        node=[ctrl_node, child_nodes],
+        count=1,
+        delete=0
     )
 
     print("Generating Plan...")
     plan_result = session.plan()
     print("Plan generated successfully.")
+    
+    session.show()
 
     #session.destroy()
     #session.apply()

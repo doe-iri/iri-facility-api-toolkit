@@ -113,6 +113,11 @@ class Constants:
         "dummy": "amscrot.provider.dummy.dummy_provider.DummyProvider"
     }
 
+    SERVICE_CLIENT_CLASSES = {
+        "iri": "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
+        "kube": "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient"
+    }
+
     RECONCILE_STATES = True
     RUN_SSH_TESTER = True
     COPY_TOKENS = False

@@ -318,17 +318,17 @@ class KubeProvider(Provider):
         service_name_prefix = resource.get(Constants.RES_NAME_PREFIX)
         service_name = f"{self.name}-{service_name_prefix}"
 
-        service = K3sService(
-            label=label,
-            name=service_name,
-            controller_node=controller_node,
-            agent_nodes=agent_nodes,
-            k3s_version=kube_version,
-            flannel_iface=flannel_iface,
-            flannel_ipv6_masq=flannel_ipv6_masq,
-            provider=self,
-            logger=self.logger
-        )
+        # service = K3sService(
+        #     label=label,
+        #     name=service_name,
+        #     controller_node=controller_node,
+        #     agent_nodes=agent_nodes,
+        #     kube_version=kube_version,
+        #     flannel_iface=flannel_iface,
+        #     flannel_ipv6_masq=flannel_ipv6_masq,
+        #     provider=self,
+        #     logger=self.logger
+        # )
 
-        service.delete()
-        self.resource_listener.on_deleted(source=self, provider=self, resource=service)
+        # service.delete()
+        # self.resource_listener.on_deleted(source=self, provider=self, resource=service)
