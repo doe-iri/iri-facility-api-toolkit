@@ -31,10 +31,11 @@ manager.show_sessions()
 
 class AmSCROTManager:
     def __init__(self, *, config_dir: str = '.', var_dict: Union[Dict[str, str], None] = None,
-                 config_content: Union[str, Dict, None] = None):
+                 config_content: Union[str, Dict, None] = None, jobs: List[Any] = None):
         self.config_dir = config_dir
         self.config_content = config_content
         self.var_dict = var_dict or dict()
+        self.jobs = jobs or []
         self.controller: Union[Controller, None] = None
         self.provider_states: List[ProviderState] = list()
         self.sessions: List[Any] = list()
@@ -78,7 +79,10 @@ class AmSCROTManager:
                                       var_dict=self.var_dict)
         return config
 
-    def _get_jobs(self) -> List[Dict]:
+    def _get_jobs(self) -> List[Any]:
+        if self.jobs:
+            return self.jobs
+
         import yaml
         content = self.config_content
         if not content:
@@ -115,13 +119,27 @@ class AmSCROTManager:
         if jobs:
             job_summaries = []
             for job in jobs:
-                job_summaries.append({
-                    "name": job.get("name"),
-                    "type": job.get("type"),
-                    "service_type": job.get("service_type"),
-                    "service_client": job.get("service_client"),
-                    "action": "CREATE" # Mock action
-                })
+                # Check for Job object via duck typing (imported Job is not avail here due to circular dep risk)
+                if hasattr(job, 'service_client') and job.service_client:
+                    # Execute real plan
+                    result = job.service_client.plan(job.job_spec)
+                    job_summaries.append({
+                        "name": job.name,
+                        "type": str(job.type),
+                        "service_client": job.service_client.name,
+                        "plan_status": result.get("status"),
+                        "errors": result.get("errors"),
+                        "warnings": result.get("warnings")
+                    })
+                else:
+                    # Config dict fallback
+                    job_summaries.append({
+                        "name": job.get("name"),
+                        "type": job.get("type"),
+                        "service_type": job.get("service_type"),
+                        "service_client": job.get("service_client"),
+                        "action": "CREATE" # Mock action
+                    })
             sutil.dump_objects(objects={"job_plan": job_summaries}, to_json=to_json)
 
         logger.warning(f"Applying this plan would create {cr} resource(s) and destroy {dl} resource(s)")
@@ -136,13 +154,22 @@ class AmSCROTManager:
         if jobs:
             job_summaries = []
             for job in jobs:
-                 # In a real impl, we would submit the job here
-                 job_summaries.append({
-                    "name": job.get("name"),
-                    "service_client": job.get("service_client"),
-                    "status": "SUBMITTED",
-                    "id": f"mock-id-{job.get('name')}"
-                })
+                 if hasattr(job, 'service_client') and job.service_client:
+                     # Execute real create
+                     job.service_client.create(job.job_spec)
+                     job_summaries.append({
+                        "name": job.name,
+                        "service_client": job.service_client.name,
+                        "status": "SUBMITTED" # Status after create call
+                     })
+                 else:
+                     # Fallback
+                     job_summaries.append({
+                        "name": job.get("name"),
+                        "service_client": job.get("service_client"),
+                        "status": "SUBMITTED",
+                        "id": f"mock-id-{job.get('name')}"
+                    })
             sutil.dump_objects(objects={"job_submission": job_summaries}, to_json=False) # Log to stdout
 
         self.controller.plan(provider_states=self.provider_states)
@@ -182,12 +209,21 @@ class AmSCROTManager:
         if jobs:
              job_summaries = []
              for job in jobs:
-                 job_summaries.append({
-                    "name": job.get("name"),
-                    "status": "UNKNOWN", # No interaction with real backend yet
-                    "service_client": job.get("service_client"),
-                    "dependency": job.get("dependency")
-                })
+                 if hasattr(job, 'service_client') and job.service_client:
+                     status = job.service_client.status()
+                     job_summaries.append({
+                        "name": job.name,
+                        "status": status.get("status"),
+                        "logs": status.get("logs", "")[:200] + "..." if status.get("logs") else "", # Truncate logs for summary
+                        "service_client": job.service_client.name,
+                    })
+                 else:
+                     job_summaries.append({
+                        "name": job.get("name"),
+                        "status": "UNKNOWN", # No interaction with real backend yet
+                        "service_client": job.get("service_client"),
+                        "dependency": job.get("dependency")
+                    })
              sutil.dump_objects(objects={"job_status": job_summaries}, to_json=to_json)
              
         self._delete_session_if_empty(session=session)
@@ -253,11 +289,19 @@ class AmSCROTManager:
         if jobs:
             job_summaries = []
             for job in jobs:
-                job_summaries.append({
-                    "name": job.get("name"),
-                    "service_client": job.get("service_client"),
-                    "action": "DELETE"
-                })
+                if hasattr(job, 'service_client') and job.service_client:
+                    job.service_client.destroy()
+                    job_summaries.append({
+                        "name": job.name,
+                        "service_client": job.service_client.name,
+                        "action": "DELETE"
+                    })
+                else:
+                    job_summaries.append({
+                        "name": job.get("name"),
+                        "service_client": job.get("service_client"),
+                        "action": "DELETE"
+                    })
             sutil.dump_objects(objects={"job_destroy": job_summaries}, to_json=False)
 
         self.provider_states = sutil.load_states(session)

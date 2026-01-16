@@ -61,7 +61,7 @@ def main():
     session.show()
 
     #session.destroy()
-    #session.apply()
+    session.apply()
 
 
 

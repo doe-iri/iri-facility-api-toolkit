@@ -122,8 +122,8 @@ class Parser:
 
     @staticmethod
     def _validate_providers(providers: List[ProviderConfig]):
-        if len(providers) == 0:
-            raise ParseConfigException("no providers found ...")
+        # if len(providers) == 0:
+        #     raise ParseConfigException("no providers found ...")
 
         if len(providers) != len(set(providers)):
             raise ParseConfigException(f'detected duplicate providers')

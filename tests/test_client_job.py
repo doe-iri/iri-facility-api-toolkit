@@ -8,7 +8,7 @@ class TestClientJob(unittest.TestCase):
         sc = ServiceClient.create(type="iri", name="sc1", endpoint_uri="http://localhost:8000")
         self.assertEqual(sc.name, "sc1")
         self.assertEqual(sc.endpoint_uri, "http://localhost:8000")
-        self.assertEqual(sc.status, "ACTIVE")
+        self.assertEqual(sc.status(), {"status": "ACTIVE"})
         self.assertEqual(sc.capabilities, [])
         
     def test_job_creation(self):

@@ -127,7 +127,7 @@ class Session:
         import yaml
         config_list = self._build_config()
         config_content = yaml.dump(config_list)
-        return AmSCROTManager(config_content=config_content)
+        return AmSCROTManager(config_content=config_content, jobs=self._jobs)
         
     def plan(self) -> Any:
         manager = self._get_manager()

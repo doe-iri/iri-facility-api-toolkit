@@ -1,25 +1,32 @@
 from abc import ABC, abstractmethod
-from typing import List, Any
+from typing import List, Any, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from amscrot.client.job import JobSpec
 
 class ServiceClient(ABC):
     def __init__(self, name: str, endpoint_uri: str, type: str, status: str = "ACTIVE", capabilities: List[Any] = None, allocated: List[Any] = None):
         self.name = name
         self.endpoint_uri = endpoint_uri
         self.type = type
-        self.status = status
+        self._status = status
         self.capabilities = capabilities or []
         self.allocated = allocated or []
 
     @abstractmethod
-    def run(self):
+    def plan(self, job_spec: "JobSpec") -> Dict:
         pass
 
     @abstractmethod
-    def stop(self):
+    def create(self, job_spec: "JobSpec"):
         pass
 
     @abstractmethod
-    def status(self) -> str:
+    def destroy(self):
+        pass
+
+    @abstractmethod
+    def status(self) -> Dict:
         pass
 
     @classmethod
