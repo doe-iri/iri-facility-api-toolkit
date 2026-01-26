@@ -14,19 +14,19 @@ class ServiceClient(ABC):
         self.allocated = allocated or []
 
     @abstractmethod
-    def plan(self, job_spec: "JobSpec") -> Dict:
+    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         pass
 
     @abstractmethod
-    def create(self, job_spec: "JobSpec"):
+    def create(self, job_spec: "JobSpec", job_name: str = None):
         pass
 
     @abstractmethod
-    def destroy(self):
+    def destroy(self, job_name: str = None):
         pass
 
     @abstractmethod
-    def status(self) -> Dict:
+    def status(self, job_name: str = None) -> Dict:
         pass
 
     @classmethod
@@ -45,6 +45,19 @@ class ServiceClient(ABC):
             return client_class(**kwargs)
         except (ImportError, AttributeError) as e:
             raise ImportError(f"Failed to load ServiceClient class for type '{type}' from '{class_path}': {e}")
+
+    def to_config(self) -> Dict:
+        return {
+            'service_client': [
+                {
+                    self.name: {
+                        'type': self.type,
+                        'endpoint_uri': self.endpoint_uri,
+                        'status': self._status
+                    }
+                }
+            ]
+        }
 
     def __repr__(self):
         return f"<ServiceClient name={self.name} type={self.type} uri={self.endpoint_uri}>"

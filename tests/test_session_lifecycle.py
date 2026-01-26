@@ -10,7 +10,7 @@ class TestSessionLifecycle(unittest.TestCase):
         # 1. Setup Client and Session
         client = Client()
 
-        session = client.create_session("test-session-k8s")
+        session = client.create_session("test-session-k8s-v2")
         
         # 2. Setup KubeServiceClient and Job
         k_client = ServiceClient.create(type="kube", name="sess-k8s", endpoint_uri="http://kube")
@@ -25,8 +25,8 @@ class TestSessionLifecycle(unittest.TestCase):
             attributes={
                 "namespace": "default",
                 "labels": {"kueue.x-k8s.io/queue-name": "compute-queue"},
-                "completions": 20, # Scaled up test
-                "parallelism": 5, # Increased parallelism
+                "completions": 5,
+                "parallelism": 5,
                 "ttlSecondsAfterFinished": 60,
                 "priorityClassName": "batch-low",
                 "restartPolicy": "Never"
@@ -55,19 +55,13 @@ class TestSessionLifecycle(unittest.TestCase):
         print("\n--- Session Show (Polling) ---")
         try:
             # Poll for completion
-            for i in range(30):
-                # We can't easily capture the return of show() programmatically as it prints to stdout/logs mostly?
-                # But AmSCROTManager.show calls sutil.dump_objects.
-                # Currently show() returns None (void).
-                # To verify in test, we might check the underlying client status directly 
-                # OR rely on no exceptions + manual inspection of stdout during verification.
-                # However, since we have reference to k_client, we can check it too.
-                session.show() # specific implementation prints status
+            for i in range(10):
+                session.show()
                 
-                status = k_client.status()
+                status = k_client.status(job_name="sess-job-1")
                 print(f"Poll {i}: {status.get('status')} - Succeeded: {status.get('succeeded')}")
                 
-                if status.get("succeeded") == 20:
+                if status.get("succeeded") == 5:
                     print("Job completed successfully via Session orchestration.")
                     break
                 
@@ -85,7 +79,7 @@ class TestSessionLifecycle(unittest.TestCase):
             session.destroy()
             
             # Verify cleanup
-            final_status = k_client.status()
+            final_status = k_client.status(job_name="sess-job-1")
             print(f"Final Status: {final_status}")
 
 

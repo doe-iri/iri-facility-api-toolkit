@@ -1,5 +1,7 @@
 
-from typing import Dict, List, Any, Union
+from typing import Dict, List, Any, Union, TYPE_CHECKING
+if TYPE_CHECKING:
+    from amscrot.serviceclient import ServiceClient
 from amscrot.amscrot_manager import AmSCROTManager
 from amscrot.util.constants import Constants
 from .models import Session, Provider
@@ -27,6 +29,7 @@ class ProviderCredential:
 class Client:
     def __init__(self):
         self._providers: List[Provider] = []
+        self._service_clients: List["ServiceClient"] = []
         self._credentials = {}
 
     def load_credentials(self, *, file_path: str = None):
@@ -105,5 +108,9 @@ class Client:
         self._providers.append(provider)
         return provider
 
+    def add_service_client(self, service_client: "ServiceClient"):
+        self._service_clients.append(service_client)
+        return service_client
+
     def create_session(self, name: str) -> Session:
-        return Session(client=self, name=name)
+        return Session(name=name, providers=self._providers, service_clients=self._service_clients)

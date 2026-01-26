@@ -26,20 +26,16 @@ class KubeServiceClient(ServiceClient):
         self.core_v1 = client.CoreV1Api() if self._available else None
         self.scheduling_v1 = client.SchedulingV1Api() if self._available else None
         self.custom_objects = client.CustomObjectsApi() if self._available else None
-        self.job_name = None
+        # self.job_name = None # Removed stateful job_name
         self.namespace = "default" # Could be configurable
 
-    def _create_job_object(self, job_spec: "JobSpec"):
+    def _create_job_object(self, job_spec: "JobSpec", job_name: str) -> client.V1Job:
         # Extract attributes
         attributes = job_spec.attributes or {}
         
         # Determine namespace (override if in attributes)
+        # Use job-specific namespace if provided, else client default
         namespace = attributes.get("namespace", self.namespace)
-        self.namespace = namespace # Update instance namespace if provided? Or just use for this job? 
-        # Better to keep it consistent for the create call:
-        # But create() uses self.namespace. Let's update it or return it.
-        # For now, let's assume if custom namespace is needed, client should be init with it or updated.
-        # But attributes might specify it per job.
         
         # Configure Pod resources
         resources = job_spec.resources or {}
@@ -53,14 +49,14 @@ class KubeServiceClient(ServiceClient):
             )
         
         container = client.V1Container(
-            name=self.name,
+            name=job_name,
             image=job_spec.image or "busybox",
             command=job_spec.executable or ["echo", "Hello World"],
             resources=container_resources 
         )
         
         # Labels
-        labels = {"app": self.name}
+        labels = {"app": job_name}
         if "labels" in attributes:
             labels.update(attributes["labels"])
             
@@ -71,7 +67,7 @@ class KubeServiceClient(ServiceClient):
         }
         if "priorityClassName" in attributes:
             pod_spec_args["priority_class_name"] = attributes["priorityClassName"]
-
+            
         template = client.V1PodTemplateSpec(
             metadata=client.V1ObjectMeta(labels=labels),
             spec=client.V1PodSpec(**pod_spec_args)
@@ -96,24 +92,20 @@ class KubeServiceClient(ServiceClient):
         job = client.V1Job(
             api_version="batch/v1",
             kind="Job",
-            metadata=client.V1ObjectMeta(name=self.name, namespace=namespace, labels=labels), 
+            metadata=client.V1ObjectMeta(name=job_name, namespace=namespace, labels=labels), 
             spec=spec
         )
         return job
 
-    def _validate_resources(self, job) -> tuple[list[str], list[str]]:
+    def _validate_resources(self, job, job_name: str) -> tuple[list[str], list[str]]:
         errors = []
         warnings = []
         
         if not self._available:
-             # If client is not available, we might assume validation can't run fully 
-             # OR we warn that validation is skipped.
-             # Given 'plan' often runs locally without cluster, we might just warn?
-             # But here we are using the client to check cluster state.
              warnings.append("Kubernetes client unavailable, skipping cluster-side validation.")
              return errors, warnings
 
-        print(f"[{self.name}] Validating resources...")
+        print(f"[{self.name}] Validating resources for '{job_name}'...")
         
         # 1. Validate PriorityClass
         priority_class = job.spec.template.spec.priority_class_name
@@ -124,8 +116,6 @@ class KubeServiceClient(ServiceClient):
             except ApiException as e:
                 msg = f"PriorityClass '{priority_class}' validation failed: ({e.status}) {e.reason}"
                 print(f"[{self.name}] Warning: {msg}")
-                # Treat missing priority class as error or warning? 
-                # K8s will block pod scheduling if missing, so it's critical.
                 if e.status == 404:
                     errors.append(f"PriorityClass '{priority_class}' not found.")
                 else:
@@ -135,8 +125,6 @@ class KubeServiceClient(ServiceClient):
         queue_name = job.metadata.labels.get("kueue.x-k8s.io/queue-name")
         if queue_name and self.custom_objects:
             try:
-                # Check for Kueue CRD/API availability first? Or just try getting the object.
-                # Assuming group kueue.x-k8s.io and version v1beta1
                 self.custom_objects.get_namespaced_custom_object(
                     group="kueue.x-k8s.io",
                     version="v1beta1",
@@ -155,16 +143,17 @@ class KubeServiceClient(ServiceClient):
         
         return errors, warnings
 
-    def plan(self, job_spec: "JobSpec") -> Dict:
-        print(f"[{self.name}] Planning Kube service...")
-        job = self._create_job_object(job_spec)
+    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
+        name = job_name or self.name 
+        print(f"[{self.name}] Planning Kube service for '{name}'...")
+        job = self._create_job_object(job_spec, name)
         
-        errors, warnings = self._validate_resources(job)
+        errors, warnings = self._validate_resources(job, name)
         
         status = "PLANNED"
         if errors:
             status = "FAILED"
-            print(f"[{self.name}] Plan FAILED with {len(errors)} errors.")
+            print(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
         else:
             print(f"[{self.name}] Kubernetes Job Validated: {job.metadata.name}")
             
@@ -172,18 +161,17 @@ class KubeServiceClient(ServiceClient):
             "status": status,
             "errors": errors,
             "warnings": warnings,
-            "job_object": job # Optional: return the constructed object for inspection?
-             # Probably not serializable easily if it's a complex object, but callers might want it.
-             # For now keep it simple.
+            "job_object": job 
         }
 
-    def create(self, job_spec: "JobSpec"):
-        print(f"[{self.name}] Creating Kube service...")
+    def create(self, job_spec: "JobSpec", job_name: str = None):
+        name = job_name or self.name
+        print(f"[{self.name}] Creating Kube service for '{name}'...")
         if not self._available:
              print(f"[{self.name}] Kubernetes client unavailable. Skipping submission.")
              return
 
-        job = self._create_job_object(job_spec)
+        job = self._create_job_object(job_spec, name)
         try: 
             # Use namespace from job object if set, otherwise default
             namespace = job.metadata.namespace or self.namespace
@@ -191,41 +179,41 @@ class KubeServiceClient(ServiceClient):
                 body=job,
                 namespace=namespace
             )
-            self.job_name = api_response.metadata.name
             self._status = "SUBMITTED"
-            print(f"[{self.name}] Job submitted. Status='{api_response.status}'")
+            print(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
         except Exception as e:
-            print(f"[{self.name}] Error submitting job: {e}")
+            print(f"[{self.name}] Error submitting job '{name}': {e}")
             self._status = "ERROR"
 
-    def destroy(self):
-        print(f"[{self.name}] Destroying Kube service...")
-        if not self._available or not self.job_name:
+    def destroy(self, job_name: str = None):
+        name = job_name or self.name
+        print(f"[{self.name}] Destroying Kube service for '{name}'...")
+        if not self._available:
             return
 
         try:
             api_response = self.batch_v1.delete_namespaced_job(
-                name=self.job_name,
+                name=name,
                 namespace=self.namespace,
                 body=client.V1DeleteOptions(
                     propagation_policy='Foreground',
                     grace_period_seconds=5
                 )
             )
-            print(f"[{self.name}] Job deleted. Status='{api_response.status}'")
+            print(f"[{self.name}] Job '{name}' deleted. Status='{api_response.status}'")
             self._status = "DESTROYED"
         except Exception as e:
-             print(f"[{self.name}] Error deleting job: {e}")
+             print(f"[{self.name}] Error deleting job '{name}': {e}")
 
-    def _get_job_logs(self) -> str:
-        if not self.core_v1 or not self.job_name:
+    def _get_job_logs(self, job_name: str) -> str:
+        if not self.core_v1:
             return ""
         
         try:
             # Find pods owned by the job (label selector job-name=<job_name>)
             pods = self.core_v1.list_namespaced_pod(
                 namespace=self.namespace,
-                label_selector=f"job-name={self.job_name}"
+                label_selector=f"job-name={job_name}"
             )
             
             if not pods.items:
@@ -245,28 +233,31 @@ class KubeServiceClient(ServiceClient):
         except Exception as e:
             return f"Error fetching logs: {str(e)}"
 
-    def status(self) -> Dict:
-        if not self._available or not self.job_name:
+    def status(self, job_name: str = None) -> Dict:
+        name = job_name or self.name
+        
+        if not self._available:
              return {"status": self._status}
         
         try:
             api_response = self.batch_v1.read_namespaced_job_status(
-                name=self.job_name,
+                name=name,
                 namespace=self.namespace
             )
             # Map k8s status to amscrot status
             k8s_status = api_response.status
+            status_str = "UNKNOWN"
             if k8s_status.succeeded:
-                self._status = "DONE"
+                status_str = "DONE"
             elif k8s_status.failed:
-                self._status = "ERROR"
+                status_str = "ERROR"
             elif k8s_status.active:
-                self._status = "RUNNING"
+                status_str = "RUNNING"
                 
-            logs = self._get_job_logs()
+            logs = self._get_job_logs(name)
             
             return {
-                "status": self._status,
+                "status": status_str,
                 "succeeded": k8s_status.succeeded,
                 "failed": k8s_status.failed,
                 "active": k8s_status.active,
@@ -278,8 +269,8 @@ class KubeServiceClient(ServiceClient):
                 if self._status == "DESTROYED":
                     return {"status": "DESTROYED"}
                 return {"status": "UNKNOWN", "error": "Job not found"}
-            print(f"[{self.name}] Error reading status: {e}")
+            print(f"[{self.name}] Error reading status for '{name}': {e}")
             return {"status": "UNKNOWN", "error": str(e)}
         except Exception as e:
-            print(f"[{self.name}] Error reading status: {e}")
+            print(f"[{self.name}] Error reading status for '{name}': {e}")
             return {"status": "UNKNOWN", "error": str(e)}

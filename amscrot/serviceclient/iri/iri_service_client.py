@@ -5,17 +5,17 @@ class IriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
         super().__init__(type="iri", **kwargs)
 
-    def plan(self, job_spec: "JobSpec") -> Dict:
-        print(f"[{self.name}] Planning IRI service with spec: {job_spec}")
+    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
+        print(f"[{self.name}] Planning IRI service for '{job_name or self.name}' with spec: {job_spec}")
         return {"status": "PLANNED", "errors": [], "warnings": []}
 
-    def create(self, job_spec):
-        print(f"[{self.name}] Creating IRI service with spec: {job_spec}")
+    def create(self, job_spec, job_name: str = None):
+        print(f"[{self.name}] Creating IRI service for '{job_name or self.name}' with spec: {job_spec}")
         self._status = "RUNNING"
 
-    def destroy(self):
-        print(f"[{self.name}] Destroying IRI service...")
+    def destroy(self, job_name: str = None):
+        print(f"[{self.name}] Destroying IRI service for '{job_name or self.name}'...")
         self._status = "STOPPED"
 
-    def status(self) -> Dict:
+    def status(self, job_name: str = None) -> Dict:
         return {"status": self._status}

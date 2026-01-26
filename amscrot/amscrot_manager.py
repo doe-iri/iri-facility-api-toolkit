@@ -122,7 +122,7 @@ class AmSCROTManager:
                 # Check for Job object via duck typing (imported Job is not avail here due to circular dep risk)
                 if hasattr(job, 'service_client') and job.service_client:
                     # Execute real plan
-                    result = job.service_client.plan(job.job_spec)
+                    result = job.service_client.plan(job.job_spec, job_name=job.name)
                     job_summaries.append({
                         "name": job.name,
                         "type": str(job.type),
@@ -156,7 +156,7 @@ class AmSCROTManager:
             for job in jobs:
                  if hasattr(job, 'service_client') and job.service_client:
                      # Execute real create
-                     job.service_client.create(job.job_spec)
+                     job.service_client.create(job.job_spec, job_name=job.name)
                      job_summaries.append({
                         "name": job.name,
                         "service_client": job.service_client.name,
@@ -210,7 +210,7 @@ class AmSCROTManager:
              job_summaries = []
              for job in jobs:
                  if hasattr(job, 'service_client') and job.service_client:
-                     status = job.service_client.status()
+                     status = job.service_client.status(job_name=job.name)
                      job_summaries.append({
                         "name": job.name,
                         "status": status.get("status"),
@@ -290,7 +290,7 @@ class AmSCROTManager:
             job_summaries = []
             for job in jobs:
                 if hasattr(job, 'service_client') and job.service_client:
-                    job.service_client.destroy()
+                    job.service_client.destroy(job_name=job.name)
                     job_summaries.append({
                         "name": job.name,
                         "service_client": job.service_client.name,

@@ -2,8 +2,8 @@ from typing import Dict, List, Any, TYPE_CHECKING, Union
 from amscrot.amscrot_manager import AmSCROTManager
 
 if TYPE_CHECKING:
-    from .client import Client
     from .job import Job
+    from amscrot.serviceclient import ServiceClient
 
 class Provider:
     def __init__(self, label: str, type: str, **kwargs):
@@ -21,15 +21,11 @@ class Provider:
     def __str__(self):
         return f"{{{{ {self.type}.{self.label} }}}}"
 
-
 class Resource:
-    def __init__(self, label: str, provider: Union[str, Provider], **kwargs):
+    def __init__(self, label: str, provider: Provider, **kwargs):
         self.label = label
-        if isinstance(provider, Provider):
-            self.provider = str(provider)
-        else:
-            self.provider = provider
-        
+        self.provider = provider
+
         # Resolve attributes
         self.attributes = {}
         for k, v in kwargs.items():
@@ -37,6 +33,7 @@ class Resource:
 
     def _resolve_attribute(self, value: Any) -> Any:
         if isinstance(value, (Resource, Provider)):
+            # When resolving references for YAML output, we want the template string reference
             return str(value)
         elif isinstance(value, list):
             return [self._resolve_attribute(v) for v in value]
@@ -46,7 +43,9 @@ class Resource:
 
     def to_config(self, resource_type: str) -> Dict:
         attrs = self.attributes.copy()
-        attrs['provider'] = self.provider
+        if self.provider:
+            attrs['provider'] = str(self.provider)
+             
         return {
             resource_type: [
                 {self.label: attrs}
@@ -63,7 +62,7 @@ class Network(Resource):
         return f"{{{{ network.{self.label} }}}}"
 
 class Service(Resource):
-    def __init__(self, label: str, provider: Union[str, Provider], controller: Union[str, Node] = None, **kwargs):
+    def __init__(self, label: str, provider: Provider, controller: Union[str, Node] = None, **kwargs):
         if controller:
             kwargs['controller'] = controller
         super().__init__(label, provider, **kwargs)
@@ -73,33 +72,38 @@ class Service(Resource):
 
 
 class Session:
-    def __init__(self, client: "Client", name: str):
-        if not client:
-             raise ValueError("client argument is required")
-        self._client = client
+    def __init__(self, name: str, providers: List[Provider] = None, service_clients: List["ServiceClient"] = None):
         self._name = name
+        self._providers = providers or []
+        self._service_clients = service_clients or []
         self._nodes: List[Node] = []
         self._networks: List[Network] = []
         self._services: List[Service] = []
         self._jobs: List[Job] = []
 
-    def add_node(self, *, label: str, provider: Union[str, Provider], **kwargs) -> Node:
+    def add_node(self, *, label: str, provider: Provider, **kwargs) -> Node:
         node = Node(label, provider, **kwargs)
         self._nodes.append(node)
         return node
 
-    def add_network(self, *, label: str, provider: Union[str, Provider], **kwargs) -> Network:
+    def add_network(self, *, label: str, provider: Provider, **kwargs) -> Network:
         network = Network(label, provider, **kwargs)
         self._networks.append(network)
         return network
 
-    def add_service(self, *, label: str, provider: Union[str, Provider], **kwargs) -> Service:
+    def add_service(self, *, label: str, provider: Provider, **kwargs) -> Service:
         service = Service(label, provider, **kwargs)
         self._services.append(service)
         return service
 
     def add_job(self, job: "Job"):
         self._jobs.append(job)
+
+    def add_provider(self, provider: Provider):
+        self._providers.append(provider)
+        
+    def add_service_client(self, service_client: "ServiceClient"):
+        self._service_clients.append(service_client)
 
     def _build_config(self) -> Dict:
         resources = []
@@ -114,11 +118,15 @@ class Session:
         for j in self._jobs:
             job_configs.append(j.to_config())
             
-        # Build provider config from client's Provider objects
-        provider_configs = [p.to_config() for p in self._client._providers]
+        # Build provider config
+        provider_configs = [p.to_config() for p in self._providers]
+        
+        # Build service client config
+        service_client_configs = [sc.to_config() for sc in self._service_clients]
             
         return {
             'provider': provider_configs,
+            'service_client': service_client_configs,
             'resource': resources,
             'job': job_configs
         }
@@ -127,6 +135,7 @@ class Session:
         import yaml
         config_list = self._build_config()
         config_content = yaml.dump(config_list)
+        print (config_content)
         return AmSCROTManager(config_content=config_content, jobs=self._jobs)
         
     def plan(self) -> Any:

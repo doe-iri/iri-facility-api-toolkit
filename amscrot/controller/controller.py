@@ -41,6 +41,11 @@ class Controller:
             init_provider_map[resource.provider.label] = init_provider_map[resource.provider.label] or count > 0
 
         for provider_state in provider_states:
+            # Skip provider states that don't exist in current configuration
+            # This can happen when running tests in sequence where old provider states persist
+            if provider_state.label not in init_provider_map:
+                self.logger.warning(f"Skipping provider state {provider_state.label}: not in current configuration")
+                continue
             init_provider_map[provider_state.label] = init_provider_map[provider_state.label] \
                 or len(provider_state.states()) > 0
 
