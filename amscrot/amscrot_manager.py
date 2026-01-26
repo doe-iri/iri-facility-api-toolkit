@@ -110,11 +110,15 @@ class AmSCROTManager:
         return jobs
 
     def plan(self, *, session: str, to_json: bool = False, summary: bool = True):
+        # Phase 1: Plan resources (nodes, networks, services)
+        logger.info("Phase 1: Planning resources (nodes, networks, services)...")
         self._init_controller(session=session)
         self.controller.plan(provider_states=self.provider_states)
         resources = self.controller.resources
         cr, dl = sutil.dump_plan(resources=resources, to_json=to_json, summary=summary)
         
+        # Phase 2: Plan jobs
+        logger.info("Phase 2: Planning jobs...")
         jobs = self._get_jobs()
         if jobs:
             job_summaries = []
@@ -141,6 +145,7 @@ class AmSCROTManager:
                         "action": "CREATE" # Mock action
                     })
             sutil.dump_objects(objects={"job_plan": job_summaries}, to_json=to_json)
+            logger.info(f"Jobs planned: {len(job_summaries)} job(s)")
 
         logger.warning(f"Applying this plan would create {cr} resource(s) and destroy {dl} resource(s)")
         self._delete_session_if_empty(session=session)
@@ -149,29 +154,8 @@ class AmSCROTManager:
     def apply(self, *, session: str):
         self._init_controller(session=session)
         
-        # Handle Jobs
-        jobs = self._get_jobs()
-        if jobs:
-            job_summaries = []
-            for job in jobs:
-                 if hasattr(job, 'service_client') and job.service_client:
-                     # Execute real create
-                     job.service_client.create(job.job_spec, job_name=job.name)
-                     job_summaries.append({
-                        "name": job.name,
-                        "service_client": job.service_client.name,
-                        "status": "SUBMITTED" # Status after create call
-                     })
-                 else:
-                     # Fallback
-                     job_summaries.append({
-                        "name": job.get("name"),
-                        "service_client": job.get("service_client"),
-                        "status": "SUBMITTED",
-                        "id": f"mock-id-{job.get('name')}"
-                    })
-            sutil.dump_objects(objects={"job_submission": job_summaries}, to_json=False) # Log to stdout
-
+        # Phase 1: Plan and create resources (nodes, networks, services)
+        logger.info("Phase 1: Planning and creating resources (nodes, networks, services)...")
         self.controller.plan(provider_states=self.provider_states)
         self.controller.add(provider_states=self.provider_states)
         workflow_failed = False
@@ -195,8 +179,38 @@ class AmSCROTManager:
         workflow_failed = workflow_failed or pending or failed
         self.provider_states = sutil.reconcile_states(self.provider_states, session)
         sutil.save_states(self.provider_states, session)
-        logger.info(f"nodes={nodes}, networks={networks}, services={services}, pending={pending}, failed={failed}")
+        logger.info(f"Resources created: nodes={nodes}, networks={networks}, services={services}, pending={pending}, failed={failed}")
+        
+        # Phase 2: Create jobs (only after resources are successfully created)
+        if not workflow_failed:
+            logger.info("Phase 2: Creating jobs...")
+            jobs = self._get_jobs()
+            if jobs:
+                job_summaries = []
+                for job in jobs:
+                    if hasattr(job, 'service_client') and job.service_client:
+                        # Execute real create
+                        job.service_client.create(job.job_spec, job_name=job.name)
+                        job_summaries.append({
+                            "name": job.name,
+                            "service_client": job.service_client.name,
+                            "status": "SUBMITTED" # Status after create call
+                        })
+                    else:
+                        # Fallback
+                        job_summaries.append({
+                            "name": job.get("name"),
+                            "service_client": job.get("service_client"),
+                            "status": "SUBMITTED",
+                            "id": f"mock-id-{job.get('name')}"
+                        })
+                sutil.dump_objects(objects={"job_submission": job_summaries}, to_json=False) # Log to stdout
+                logger.info(f"Jobs created: {len(job_summaries)} job(s) submitted")
+        else:
+            logger.warning("Skipping job creation due to resource creation failures")
+        
         return 1 if workflow_failed else 0
+
 
     def show(self, *, session: str, to_json: bool = False, summary: bool = True):
         self._load_sessions()
@@ -284,7 +298,8 @@ class AmSCROTManager:
         if session not in session_names:
             return
 
-        # Handle Jobs
+        # Phase 1: Destroy jobs first (before resources)
+        logger.info("Phase 1: Destroying jobs...")
         jobs = self._get_jobs()
         if jobs:
             job_summaries = []
@@ -303,7 +318,10 @@ class AmSCROTManager:
                         "action": "DELETE"
                     })
             sutil.dump_objects(objects={"job_destroy": job_summaries}, to_json=False)
+            logger.info(f"Jobs destroyed: {len(job_summaries)} job(s) deleted")
 
+        # Phase 2: Destroy resources (nodes, networks, services)
+        logger.info("Phase 2: Destroying resources (nodes, networks, services)...")
         self.provider_states = sutil.load_states(session)
 
         if not self.provider_states:
