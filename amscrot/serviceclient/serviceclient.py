@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
 class ServiceClient(ABC):
-    def __init__(self, name: str, endpoint_uri: str, type: str, status: str = "ACTIVE", capabilities: List[Any] = None, allocated: List[Any] = None):
+    def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, status: str = "ACTIVE", capabilities: List[Any] = None, allocated: List[Any] = None):
         self.name = name
         self.endpoint_uri = endpoint_uri
         self.type = type

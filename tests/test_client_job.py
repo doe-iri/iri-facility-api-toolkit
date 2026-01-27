@@ -2,17 +2,18 @@
 import unittest
 from amscrot.client import Job, JobSpec, JobType, JobServiceType, JobStatus
 from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
 
 class TestClientJob(unittest.TestCase):
     def test_service_client_creation(self):
-        sc = ServiceClient.create(type="iri", name="sc1", endpoint_uri="http://localhost:8000")
+        sc = ServiceClient.create(type=Constants.ServiceType.IRI, name="sc1", endpoint_uri="http://localhost:8000")
         self.assertEqual(sc.name, "sc1")
         self.assertEqual(sc.endpoint_uri, "http://localhost:8000")
         self.assertEqual(sc.status(), {"status": "ACTIVE"})
         self.assertEqual(sc.capabilities, [])
         
     def test_job_creation(self):
-        sc = ServiceClient.create(type="iri", name="sc1", endpoint_uri="http://localhost:8000")
+        sc = ServiceClient.create(type=Constants.ServiceType.IRI, name="sc1", endpoint_uri="http://localhost:8000")
         
         spec = JobSpec(
             resources={"node_count": 10},

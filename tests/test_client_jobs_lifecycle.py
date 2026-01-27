@@ -3,6 +3,7 @@ import unittest
 import pytest
 from amscrot.client import Client, Session, Job, JobType, JobServiceType, JobSpec
 from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
 
 class TestClientJobsLifecycle(unittest.TestCase):
     def test_jobs_lifecycle(self):
@@ -13,10 +14,10 @@ class TestClientJobsLifecycle(unittest.TestCase):
         session = client.create_session("test_jobs_lifecycle")
         
         # Create ServiceClients
-        sc1 = ServiceClient.create(type="iri",
+        sc1 = ServiceClient.create(type=Constants.ServiceType.IRI,
                                    name="nersc_perlmutter",
                                    endpoint_uri="https://nersc.gov/api")
-        sc2 = ServiceClient.create(type="kube",
+        sc2 = ServiceClient.create(type=Constants.ServiceType.KUBE,
                                    name="anl_theta",
                                    endpoint_uri="https://anl.gov/api")
         

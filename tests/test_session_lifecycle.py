@@ -3,6 +3,7 @@ import time
 from amscrot.client.client import Client
 from amscrot.client.job import Job, JobType, JobServiceType, JobSpec
 from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
 
 
 class TestSessionLifecycle(unittest.TestCase):
@@ -13,7 +14,7 @@ class TestSessionLifecycle(unittest.TestCase):
         session = client.create_session("test-session-k8s-v2")
         
         # 2. Setup KubeServiceClient and Job
-        k_client = ServiceClient.create(type="kube", name="sess-k8s", endpoint_uri="http://kube")
+        k_client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="sess-k8s", endpoint_uri="http://kube")
         
         # Use simple spec for quicker test (using busybox)
         # Note: we assume kueue is setup from previous steps if we used the advanced config that requires it.

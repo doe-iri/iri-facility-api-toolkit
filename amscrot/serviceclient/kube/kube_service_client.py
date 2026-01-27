@@ -2,13 +2,14 @@ from typing import Dict, Optional, TYPE_CHECKING
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from ..serviceclient import ServiceClient
+from ...util.constants import Constants
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
 class KubeServiceClient(ServiceClient):
     def __init__(self, **kwargs):
-        super().__init__(type="kube", **kwargs)
+        super().__init__(type=Constants.ServiceType.KUBE, **kwargs)
         # Try to load kube config, fall back to in-cluster or None if failing (will be handled in methods)
         try:
             config.load_kube_config()

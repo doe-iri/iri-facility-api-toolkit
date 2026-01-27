@@ -1,10 +1,11 @@
 import unittest
 from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
 from amscrot.client.job import JobSpec
 
 class TestServiceClientMethods(unittest.TestCase):
     def test_iri_methods(self):
-        client = ServiceClient.create(type="iri", name="iri1", endpoint_uri="http://iri")
+        client = ServiceClient.create(type=Constants.ServiceType.IRI, name="iri1", endpoint_uri="http://iri")
         spec = JobSpec(image="test-image")
         
         # Test Plan
@@ -21,7 +22,7 @@ class TestServiceClientMethods(unittest.TestCase):
         self.assertEqual(client.status()["status"], "STOPPED")
         
     def test_kube_methods(self):
-        client = ServiceClient.create(type="kube", name="kube1", endpoint_uri="http://kube")
+        client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
         spec = JobSpec(image="busybox", executable=["echo", "hello"])
         
         plan_result = client.plan(spec)
@@ -36,7 +37,7 @@ class TestServiceClientMethods(unittest.TestCase):
 
     def test_kube_log_capture(self):
         # Test with a job that sleeps and prints
-        client = ServiceClient.create(type="kube", name="logtest", endpoint_uri="http://kube")
+        client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="logtest", endpoint_uri="http://kube")
         spec = JobSpec(
             image="python:3.9-slim", 
             executable=["python", "-c", "import time; print('Hello K8s Logs'); time.sleep(5); print('Done Sleep')"]

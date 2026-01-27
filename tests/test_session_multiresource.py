@@ -3,6 +3,7 @@ import time
 from amscrot.client.client import Client
 from amscrot.client.job import Job, JobType, JobServiceType, JobSpec
 from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
 
 class TestSessionMultiResource(unittest.TestCase):
     def test_multiresource_session_lifecycle(self):
@@ -31,7 +32,7 @@ class TestSessionMultiResource(unittest.TestCase):
         
         # 5. Setup Kube Service Client for Jobs
         k_client = ServiceClient.create(
-            type="kube", 
+            type=Constants.ServiceType.KUBE, 
             name="k8s-client", 
             endpoint_uri="http://localhost:8080"
         )

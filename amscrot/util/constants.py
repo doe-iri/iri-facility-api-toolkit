@@ -100,13 +100,18 @@ class Constants:
     NETWORK_STITCH_CONFIG = "policy"
     PROVIDER = 'provider'
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
+    
+    class ServiceType:
+        IRI = "iri"
+        KUBE = "kube"
+        ESNET_IRI = "esnet-iri"
 
     PROVIDER_CLASSES = {
         "fabric": "amscrot.provider.fabric.fabric_provider.FabricProvider",
         "chi": "amscrot.provider.chi.chi_provider.ChiProvider",
         "sense": "amscrot.provider.sense.sense_provider.SenseProvider",
         "janus": "amscrot.provider.janus.janus_provider.JanusProvider",
-        "kube": "amscrot.provider.kube.kube_provider.KubeProvider",
+        ServiceType.KUBE: "amscrot.provider.kube.kube_provider.KubeProvider",
         "cloudlab": "amscrot.provider.cloudlab.cloudlab_provider.CloudlabProvider",
         "gcp": "amscrot.provider.gcp.gcp_provider.GcpProvider",
         "aws": "amscrot.provider.aws.aws_provider.AwsProvider",
@@ -114,8 +119,9 @@ class Constants:
     }
 
     SERVICE_CLIENT_CLASSES = {
-        "iri": "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
-        "kube": "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient"
+        ServiceType.IRI: "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
+        ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
+        ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient"
     }
 
     RECONCILE_STATES = True

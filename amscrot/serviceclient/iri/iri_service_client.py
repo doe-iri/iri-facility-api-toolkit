@@ -1,9 +1,10 @@
 from typing import Dict
 from ..serviceclient import ServiceClient
+from ...util.constants import Constants
 
 class IriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
-        super().__init__(type="iri", **kwargs)
+        super().__init__(type=Constants.ServiceType.IRI, **kwargs)
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         print(f"[{self.name}] Planning IRI service for '{job_name or self.name}' with spec: {job_spec}")
