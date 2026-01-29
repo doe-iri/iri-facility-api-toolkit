@@ -161,7 +161,7 @@ class Provider(ABC):
     def supports_modify(self):
         return False
 
-    def resource_name(self, resource: dict, idx: int = -1):
+    def resource_name(self, resource: dict, idx: int = 0):
         if idx < 0:
            name = f"{self.name}-{resource[Constants.RES_NAME_PREFIX]}"
         else:

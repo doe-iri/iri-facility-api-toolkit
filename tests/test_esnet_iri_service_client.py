@@ -96,7 +96,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 "cpu_cores_per_process": 1,
                 "gpu_cores_per_process": 1,
                 "exclusive_node_use": True,
-                "memory": 1024
+                "memory": 1
             },
             attributes={
                 "resource_id": resource_id,
