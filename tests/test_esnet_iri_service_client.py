@@ -31,7 +31,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         # Create the service client (will load credentials automatically)
         iri_client = ServiceClient.create(
             type=Constants.ServiceType.ESNET_IRI,
-            name="iri-compute"
+            name="iri-compute",
+            profile="esnet-iri-east"
         )
         
         # Verify client was created successfully
@@ -140,15 +141,15 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                     break
                 
                 time.sleep(2)
-            
+
             self.assertEqual(status_result["status"], "DONE", f"Job failed or timed out. Details: {status_result}")
             print(f"Job completed successfully. Status: {status_result}")
-            
+
             # Verify exit code if available in the raw response
             if "iri_response" in status_result and status_result["iri_response"]:
                 print(f"Raw IRI response: {status_result['iri_response']}")
             self.assertEqual(status_result["job_id"], job_id)
-            
+
         except Exception as e:
             # If there's an error, print it but still try to clean up
             print(f"\n!!! Test failed with error: {e}")

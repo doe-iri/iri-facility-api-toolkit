@@ -22,16 +22,22 @@ class EsnetIriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
         super().__init__(type=Constants.ServiceType.ESNET_IRI, **kwargs)
         
-        # Load credentials from ~/.amscrot/credentials.yml
+        # Load credentials
         self.api_key = None
-        self.endpoint = None
+        self.api_endpoint = None
         self._load_credentials()
         
+        # Override endpoint if provided via ServiceClient init
+        if self.endpoint_uri:
+            self.api_endpoint = self.endpoint_uri
+        else:
+            self.endpoint_uri = self.api_endpoint
+
         # Initialize the authenticated client
         self._client = None
-        if self.api_key and self.endpoint:
+        if self.api_key and self.api_endpoint:
             self._client = AuthenticatedClient(
-                base_url=self.endpoint,
+                base_url=self.api_endpoint,
                 token=self.api_key,
                 verify_ssl=True
             )
@@ -44,26 +50,68 @@ class EsnetIriServiceClient(ServiceClient):
         self._submitted_jobs = {}
     
     def _load_credentials(self):
-        """Load ESnet IRI credentials from ~/.amscrot/credentials.yml"""
-        cred_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
-        
+        """Load ESnet IRI credentials."""
+        # 1. Use provided ProviderCredential object if available
+        # self.credential is populated by ServiceClient.__init__
+        if self.credential:
+            try:
+                # Handle ProviderCredential object (duck typing or to_dict)
+                if hasattr(self.credential, 'to_dict'):
+                    creds = self.credential.to_dict()
+                elif isinstance(self.credential, dict):
+                    creds = self.credential
+                else:
+                    creds = {}
+
+                self.api_key = creds.get('api_key')
+                self.api_endpoint = creds.get('api_endpoint')
+                return
+            except Exception as e:
+                print(f"[{self.name}] Error loading from credential object: {e}")
+
+        # 2. Load from file
+        default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
+        # self.credential_file is populated by ServiceClient.__init__
+        cred_file = self.credential_file or default_file
+
         if not os.path.exists(cred_file):
-            print(f"[{self.name}] Warning: Credentials file not found at {cred_file}")
+            if self.credential_file:
+                 print(f"[{self.name}] Warning: Custom credentials file not found at {cred_file}")
+            # If default file is missing and no explicit file given, just return silent warning if desired
+            if not self.credential_file and cred_file == default_file:
+                 pass # Silent warning as per previous behavior, or just print warning
+                 print(f"[{self.name}] Warning: Credentials file not found at {cred_file}")
             return
-        
+
         try:
             with open(cred_file, 'r') as f:
-                credentials = yaml.safe_load(f)
-            
-            if Constants.ServiceType.ESNET_IRI in credentials:
-                iri_creds = credentials[Constants.ServiceType.ESNET_IRI]
-                self.api_key = iri_creds.get('api_key')
-                self.endpoint = iri_creds.get('endpoint')
-                
-                if not self.api_key or not self.endpoint:
-                    print(f"[{self.name}] Warning: Missing api_key or endpoint in credentials")
+                credentials = yaml.safe_load(f) or {}
+
+            # 3. Look up profile or default type
+            lookups = []
+            if self.profile:
+                lookups.append(self.profile)
+            lookups.append(Constants.ServiceType.ESNET_IRI)
+
+            section_creds = None
+            used_key = None
+
+            for key in lookups:
+                if key in credentials:
+                    section_creds = credentials[key]
+                    used_key = key
+                    break
+
+            if section_creds:
+                self.api_key = section_creds.get('api_key')
+                self.api_endpoint = section_creds.get('api_endpoint')
+
+                if not self.api_key or not self.api_endpoint:
+                    print(f"[{self.name}] Warning: Missing api_key or api_endpoint in credentials (section: {used_key})")
             else:
-                print(f"[{self.name}] Warning: 'esnet-iri' section not found in credentials")
+                 searched = f"'{self.profile}' or " if self.profile else ""
+                 print(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.ESNET_IRI}' not found in credentials")
+
         except Exception as e:
             print(f"[{self.name}] Error loading credentials: {e}")
     
@@ -75,38 +123,38 @@ class EsnetIriServiceClient(ServiceClient):
             executable = executable[0]
         elif not executable:
             executable = "echo"  # Default fallback
-        
+
         # Create the IRI JobSpec
         iri_spec = IriJobSpec(
             executable=executable,
         )
-        
+
         # Add arguments if present
         if job_spec.executable and isinstance(job_spec.executable, list) and len(job_spec.executable) > 1:
             iri_spec.arguments = job_spec.executable[1:]
-        
+
         # Add name if present (prioritize argument, then check JobSpec attribute if exists)
         if name:
             iri_spec.name = name
         elif hasattr(job_spec, 'name') and job_spec.name:
             iri_spec.name = job_spec.name
-            
+
         # Add resources if present
         if job_spec.resources:
             iri_spec.resources = ResourceSpec.from_dict(job_spec.resources)
-            
+
         # Add attributes if present (excluding resource_id which is handled separately)
         if job_spec.attributes:
             attrs = job_spec.attributes.copy()
-            
+
             # Extract resource_id
             if 'resource_id' in attrs:
                 del attrs['resource_id']
-                
+
             # Extract directory if present
             if 'directory' in attrs:
                 iri_spec.directory = attrs.pop('directory')
-                
+
             # Extract standard I/O paths
             if 'stdout_path' in attrs:
                 iri_spec.stdout_path = attrs.pop('stdout_path')
@@ -127,8 +175,8 @@ class EsnetIriServiceClient(ServiceClient):
             return job_spec.attributes['resource_id']
         
         # Fallback to a default if not specified (for testing)
-        print(f"[{self.name}] Warning: No resource_id in job attributes, using default")
-        return "fb0aafe1-c780-55c0-b635-a7121f1b0ce5"
+        print(f"[{self.name}] Warning: No resource_id in job attributes!")
+        return None
     
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         """Validate the job specification."""

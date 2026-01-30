@@ -5,13 +5,19 @@ if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
 class ServiceClient(ABC):
-    def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, status: str = "ACTIVE", capabilities: List[Any] = None, allocated: List[Any] = None):
+    def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
+                 status: str = "ACTIVE", capabilities: List[Any] = None, 
+                 allocated: List[Any] = None,
+                 credential: Any = None, profile: str = None, credential_file: str = None):
         self.name = name
         self.endpoint_uri = endpoint_uri
         self.type = type
         self._status = status
         self.capabilities = capabilities or []
         self.allocated = allocated or []
+        self.credential = credential
+        self.profile = profile
+        self.credential_file = credential_file
 
     @abstractmethod
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:

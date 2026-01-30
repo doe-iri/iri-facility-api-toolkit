@@ -34,40 +34,57 @@ class SENSENetworkedJobs(unittest.TestCase):
             count=1
         )
         
-        # 5. Setup Kube Service Client for Jobs
-        k_client = ServiceClient.create(
-            type=Constants.ServiceType.KUBE, 
-            name="k8s-client", 
-            endpoint_uri="http://localhost:8080"
+        # 5. Setup ESnet IRI Service Clients for Jobs
+        east_client = ServiceClient.create(
+            type=Constants.ServiceType.ESNET_IRI, 
+            name="iri-east",
+            profile="esnet-iri-east"
         )
-        session.add_service_client(k_client)
+        session.add_service_client(east_client)
+
+        west_client = ServiceClient.create(
+            type=Constants.ServiceType.ESNET_IRI, 
+            name="iri-west",
+            profile="esnet-iri-west"
+        )
+        session.add_service_client(west_client)
         
         # 6. Create Jobs
         # Job 1
-        spec1 = JobSpec(
-            image="busybox",
-            executable=["echo", "Running Job 1"],
-            attributes={"namespace": "default", "restartPolicy": "Never"}
+        spec1 = spec2 = JobSpec(
+            executable=["/bin/echo", "Hello AmSC"],
+            resources={
+                "node_count": 1,
+                "process_count": 1,
+                "processes_per_node": 1,
+                "cpu_cores_per_process": 1,
+                "gpu_cores_per_process": 1,
+                "exclusive_node_use": True,
+                "memory": 1
+            },
+            attributes={
+                "resource_id": "fb0aafe1-c780-55c0-b635-a7121f1b0ce5",
+                "directory": "/tmp",
+                "duration": 60,
+                "queue_name": "debug",
+                "account": "interactive"
+            }
         )
+
         job1 = Job(
             name="job-1",
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
-            service_client=k_client,
+            service_client=east_client,
             job_spec=spec1
         )
         
         # Job 2
-        spec2 = JobSpec(
-            image="busybox",
-            executable=["echo", "Running Job 2"],
-            attributes={"namespace": "default", "restartPolicy": "Never"}
-        )
         job2 = Job(
             name="job-2",
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
-            service_client=k_client,
+            service_client=west_client,
             job_spec=spec2
         )
 
@@ -88,23 +105,25 @@ class SENSENetworkedJobs(unittest.TestCase):
 
         # 9. Show Status (Poll)
         print("\n--- Session Status (Poll) ---")
-        for i in range(10):
-            session.show()
-            
+        for i in range(20):
+            #session.show()
+
             # Check individual job statuses via client
-            s1 = k_client.status(job_name="job-1")
-            s2 = k_client.status(job_name="job-2")
-            
+            s1 = east_client.status(job_name="job-1")
+            s2 = west_client.status(job_name="job-2")
+
             print(f"Poll {i}: Job1={s1.get('status')} Job2={s2.get('status')}")
-            
-            if (s1.get('status') in ["DONE", "RUNNING"] and 
-                s2.get('status') in ["DONE", "RUNNING"]):
-                # Success if both are at least running or done
-                # Since busybox jobs might finish instantly, "DONE" is good.
+
+            if (s1.get('status') in ["DONE", "ERROR", "DESTROYED"] and 
+                s2.get('status') in ["DONE", "ERROR", "DESTROYED"]):
                 break
-                
-            time.sleep(1)
-            
+
+            time.sleep(2)
+
+        self.assertEqual(s1.get('status'), "DONE", f"Job failed or timed out. Details: {s1}")
+        self.assertEqual(s2.get('status'), "DONE", f"Job failed or timed out. Details: {s2}")
+        print(f"Jobs completed successfully. Status: {s1.get('status')} {s2.get('status')}")
+
         # 10. Destroy
         print("\n--- Session Destroy ---")
         #session.destroy()
@@ -112,8 +131,8 @@ class SENSENetworkedJobs(unittest.TestCase):
 
         # Verify cleanup with pulling
         for i in range(10):
-            s1 = k_client.status(job_name="job-1")
-            s2 = k_client.status(job_name="job-2")
+            s1 = east_client.status(job_name="job-1")
+            s2 = west_client.status(job_name="job-2")
             if (s1.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"] and 
                 s2.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"]):
                 break
