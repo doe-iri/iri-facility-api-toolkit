@@ -19,6 +19,10 @@ class ServiceClient(ABC):
         self.profile = profile
         self.credential_file = credential_file
 
+    #TODO
+    # @abstractmethod
+    # DISCOVER()
+
     @abstractmethod
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         pass
