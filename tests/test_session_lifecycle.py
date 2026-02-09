@@ -14,11 +14,10 @@ class TestSessionLifecycle(unittest.TestCase):
         session = client.create_session("test-session-k8s-v2")
         
         # 2. Setup KubeServiceClient and Job
-        k_client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="sess-k8s", endpoint_uri="http://kube")
+        k_client = ServiceClient.create(type=Constants.ServiceType.KUBE,
+                                        name="sess-k8s")
         
-        # Use simple spec for quicker test (using busybox)
-        # Note: we assume kueue is setup from previous steps if we used the advanced config that requires it.
-        # Let's use the advanced spec to verify full integration, but reduce times/counts.
+        # 3. Provide Job specification
         spec = JobSpec(
             image="busybox",
             executable=["sleep", "5"],
@@ -34,6 +33,7 @@ class TestSessionLifecycle(unittest.TestCase):
             }
         )
         
+        # 4. Add Job with bound spec
         job = Job(
             name="sess-job-1",
             type=JobType.COMPUTE,
@@ -44,15 +44,15 @@ class TestSessionLifecycle(unittest.TestCase):
         
         session.add_job(job)
         
-        # 3. Plan
+        # 5. Plan
         print("\n--- Session Plan ---")
         session.plan()
         
-        # 4. Apply
+        # 6. Apply
         print("\n--- Session Apply ---")
         session.apply()
         
-        # 5. Show (Poll Status)
+        # 7. Show (Poll Status)
         print("\n--- Session Show (Polling) ---")
         try:
             # Poll for completion
@@ -75,7 +75,7 @@ class TestSessionLifecycle(unittest.TestCase):
                  self.fail("Timed out waiting for session job completion")
 
         finally:
-            # 6. Destroy
+            # 8. Destroy
             print("\n--- Session Destroy ---")
             session.destroy()
             
