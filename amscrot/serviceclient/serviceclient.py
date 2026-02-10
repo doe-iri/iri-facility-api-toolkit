@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Any, Dict, Optional, TYPE_CHECKING
+from amscrot.util import utils
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
@@ -18,10 +19,11 @@ class ServiceClient(ABC):
         self.credential = credential
         self.profile = profile
         self.credential_file = credential_file
+        self.logger = utils.get_logger()
 
-    #TODO
-    # @abstractmethod
-    # DISCOVER()
+    @abstractmethod
+    def discover(self) -> List[Any]:
+        pass
 
     @abstractmethod
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
