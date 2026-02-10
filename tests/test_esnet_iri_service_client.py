@@ -94,7 +94,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         
         # Create a job spec with resource_id in attributes
         spec = JobSpec(
-            executable=["/bin/echo", "Hello AmSC;", "sleep 5"],
+            executable=["/bin/echo", "Hello AmSC"],
             resources={
                 "node_count": 1,
                 "process_count": 1,
@@ -102,7 +102,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 "cpu_cores_per_process": 1,
                 "gpu_cores_per_process": 1,
                 "exclusive_node_use": True,
-                "memory": 1
+                "memory": 268435456
             },
             attributes={
                 "resource_id": resource_id,
