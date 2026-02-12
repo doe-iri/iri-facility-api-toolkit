@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Any, Dict, Optional, TYPE_CHECKING
+from amscrot.util import utils
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
@@ -29,7 +30,9 @@ class ServiceClient(ABC):
         self.credential = credential
         self.profile = profile
         self.credential_file = credential_file
+        self.logger = utils.get_logger()
 
+<<<<<<< HEAD
     #################################################
     # Global Metadata Discovery
     #################################################
@@ -62,6 +65,10 @@ class ServiceClient(ABC):
     ##################################################
     @abstractmethod
     def list(self, job_name: str = None):
+=======
+    @abstractmethod
+    def discover(self) -> List[Any]:
+>>>>>>> 59bb0f31fcb362e2685af0b3821c261847281035
         pass
 
     @abstractmethod

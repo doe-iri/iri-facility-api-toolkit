@@ -1,4 +1,4 @@
-from typing import Dict, Optional, TYPE_CHECKING
+from typing import Dict, Optional, TYPE_CHECKING, List, Any
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from ..serviceclient import ServiceClient
@@ -21,14 +21,60 @@ class KubeServiceClient(ServiceClient):
                 self._available = True
             except Exception:
                 self._available = False
-                print(f"[{self.name}] Warning: Could not load kubernetes config.") 
+                self.logger.warning(f"[{self.name}] Warning: Could not load kubernetes config.") 
 
         self.batch_v1 = client.BatchV1Api() if self._available else None
         self.core_v1 = client.CoreV1Api() if self._available else None
         self.scheduling_v1 = client.SchedulingV1Api() if self._available else None
         self.custom_objects = client.CustomObjectsApi() if self._available else None
+        self.apiextensions_v1 = client.ApiextensionsV1Api() if self._available else None
         # self.job_name = None # Removed stateful job_name
         self.namespace = "default" # Could be configurable
+
+    def discover(self) -> List[Any]:
+        if not self._available:
+            return []
+
+        discovery_info = []
+
+        try:
+            # 1. Discover Nodes
+            self.logger.info(f"[{self.name}] Discovering nodes...")
+            nodes = self.core_v1.list_node()
+            for node in nodes.items:
+                node_data = {
+                    "name": node.metadata.name,
+                    "addresses": [
+                        {"type": addr.type, "address": addr.address}
+                        for addr in node.status.addresses
+                    ],
+                    "allocatable": node.status.allocatable,
+                    "capacity": node.status.capacity,
+                    "node_info": node.status.node_info.to_dict(),
+                    "labels": node.metadata.labels,
+                    "annotations": node.metadata.annotations
+                }
+                discovery_info.append({"type": "node", "data": node_data})
+
+            # 2. Discover CRDs
+            if self.apiextensions_v1:
+                self.logger.info(f"[{self.name}] Discovering CRDs...")
+                crds = self.apiextensions_v1.list_custom_resource_definition()
+                for crd in crds.items:
+                    crd_data = {
+                        "name": crd.metadata.name,
+                        "group": crd.spec.group,
+                        "versions": [v.name for v in crd.spec.versions],
+                        "scope": crd.spec.scope
+                    }
+                    discovery_info.append({"type": "crd", "data": crd_data})
+
+        except ApiException as e:
+            self.logger.error(f"[{self.name}] Error during discovery: {e}")
+        except Exception as e:
+             self.logger.error(f"[{self.name}] Error during discovery: {e}")
+
+        return discovery_info
 
     def _create_job_object(self, job_spec: "JobSpec", job_name: str) -> client.V1Job:
         # Extract attributes
@@ -106,17 +152,17 @@ class KubeServiceClient(ServiceClient):
              warnings.append("Kubernetes client unavailable, skipping cluster-side validation.")
              return errors, warnings
 
-        print(f"[{self.name}] Validating resources for '{job_name}'...")
+        self.logger.info(f"[{self.name}] Validating resources for '{job_name}'...")
         
         # 1. Validate PriorityClass
         priority_class = job.spec.template.spec.priority_class_name
         if priority_class:
             try:
                 self.scheduling_v1.read_priority_class(name=priority_class)
-                print(f"[{self.name}] PriorityClass '{priority_class}' found.")
+                self.logger.info(f"[{self.name}] PriorityClass '{priority_class}' found.")
             except ApiException as e:
                 msg = f"PriorityClass '{priority_class}' validation failed: ({e.status}) {e.reason}"
-                print(f"[{self.name}] Warning: {msg}")
+                self.logger.warning(f"[{self.name}] Warning: {msg}")
                 if e.status == 404:
                     errors.append(f"PriorityClass '{priority_class}' not found.")
                 else:
@@ -133,7 +179,7 @@ class KubeServiceClient(ServiceClient):
                     plural="localqueues",
                     name=queue_name
                 )
-                print(f"[{self.name}] LocalQueue '{queue_name}' found in namespace '{job.metadata.namespace}'.")
+                self.logger.info(f"[{self.name}] LocalQueue '{queue_name}' found in namespace '{job.metadata.namespace}'.")
             except ApiException as e:
                  msg = f"LocalQueue '{queue_name}' validation failed: ({e.status}) {e.reason}"
                  if e.status == 404:
@@ -146,7 +192,7 @@ class KubeServiceClient(ServiceClient):
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         name = job_name or self.name 
-        print(f"[{self.name}] Planning Kube service for '{name}'...")
+        self.logger.info(f"[{self.name}] Planning Kube service for '{name}'...")
         job = self._create_job_object(job_spec, name)
         
         errors, warnings = self._validate_resources(job, name)
@@ -154,9 +200,9 @@ class KubeServiceClient(ServiceClient):
         status = "PLANNED"
         if errors:
             status = "FAILED"
-            print(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
+            self.logger.error(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
         else:
-            print(f"[{self.name}] Kubernetes Job Validated: {job.metadata.name}")
+            self.logger.info(f"[{self.name}] Kubernetes Job Validated: {job.metadata.name}")
             
         return {
             "status": status,
@@ -167,9 +213,9 @@ class KubeServiceClient(ServiceClient):
 
     def create(self, job_spec: "JobSpec", job_name: str = None):
         name = job_name or self.name
-        print(f"[{self.name}] Creating Kube service for '{name}'...")
+        self.logger.info(f"[{self.name}] Creating Kube service for '{name}'...")
         if not self._available:
-             print(f"[{self.name}] Kubernetes client unavailable. Skipping submission.")
+             self.logger.warning(f"[{self.name}] Kubernetes client unavailable. Skipping submission.")
              return
 
         job = self._create_job_object(job_spec, name)
@@ -181,14 +227,14 @@ class KubeServiceClient(ServiceClient):
                 namespace=namespace
             )
             self._status = "SUBMITTED"
-            print(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
+            self.logger.info(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
         except Exception as e:
-            print(f"[{self.name}] Error submitting job '{name}': {e}")
+            self.logger.error(f"[{self.name}] Error submitting job '{name}': {e}")
             self._status = "ERROR"
 
     def destroy(self, job_name: str = None):
         name = job_name or self.name
-        print(f"[{self.name}] Destroying Kube service for '{name}'...")
+        self.logger.info(f"[{self.name}] Destroying Kube service for '{name}'...")
         if not self._available:
             return
 
@@ -201,10 +247,10 @@ class KubeServiceClient(ServiceClient):
                     grace_period_seconds=5
                 )
             )
-            print(f"[{self.name}] Job '{name}' deleted. Status='{api_response.status}'")
+            self.logger.info(f"[{self.name}] Job '{name}' deleted. Status='{api_response.status}'")
             self._status = "DESTROYED"
         except Exception as e:
-             print(f"[{self.name}] Error deleting job '{name}': {e}")
+             self.logger.error(f"[{self.name}] Error deleting job '{name}': {e}")
 
     def _get_job_logs(self, job_name: str) -> str:
         if not self.core_v1:
@@ -270,8 +316,8 @@ class KubeServiceClient(ServiceClient):
                 if self._status == "DESTROYED":
                     return {"status": "DESTROYED"}
                 return {"status": "UNKNOWN", "error": "Job not found"}
-            print(f"[{self.name}] Error reading status for '{name}': {e}")
+            self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
             return {"status": "UNKNOWN", "error": str(e)}
         except Exception as e:
-            print(f"[{self.name}] Error reading status for '{name}': {e}")
+            self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
             return {"status": "UNKNOWN", "error": str(e)}

@@ -118,9 +118,9 @@ class AmSCROTManager:
         cr, dl = sutil.dump_plan(resources=resources, to_json=to_json, summary=summary)
         
         # Phase 2: Plan jobs
-        logger.info("Phase 2: Planning jobs...")
         jobs = self._get_jobs()
         if jobs:
+            logger.info("Phase 2: Planning jobs...")
             job_summaries = []
             for job in jobs:
                 # Check for Job object via duck typing (imported Job is not avail here due to circular dep risk)
@@ -183,9 +183,9 @@ class AmSCROTManager:
         
         # Phase 2: Create jobs (only after resources are successfully created)
         if not workflow_failed:
-            logger.info("Phase 2: Creating jobs...")
             jobs = self._get_jobs()
             if jobs:
+                logger.info("Phase 2: Creating jobs...")
                 job_summaries = []
                 for job in jobs:
                     if hasattr(job, 'service_client') and job.service_client:
@@ -299,9 +299,9 @@ class AmSCROTManager:
             return
 
         # Phase 1: Destroy jobs first (before resources)
-        logger.info("Phase 1: Destroying jobs...")
         jobs = self._get_jobs()
         if jobs:
+            logger.info("Phase 1: Destroying jobs...")
             job_summaries = []
             for job in jobs:
                 if hasattr(job, 'service_client') and job.service_client:

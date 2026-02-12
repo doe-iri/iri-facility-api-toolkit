@@ -133,9 +133,27 @@ class Session:
 
     def _get_manager(self) -> AmSCROTManager:
         import yaml
+        import copy
+        
         config_list = self._build_config()
+        
+        # Create a deep copy for sanitization to avoid modifying the actual config
+        sanitized_config = copy.deepcopy(config_list)
+        
+        def sanitize(data):
+            if isinstance(data, dict):
+                return {k: sanitize(v) if k.lower() not in ['password', 'secret'] else '******' for k, v in data.items()}
+            elif isinstance(data, list):
+                return [sanitize(v) for v in data]
+            else:
+                return data
+                
+        sanitized_config = sanitize(sanitized_config)
+        
+        print(yaml.dump(sanitized_config))
+        
+        # Use the original config content for the manager
         config_content = yaml.dump(config_list)
-        print (config_content)
         return AmSCROTManager(config_content=config_content, jobs=self._jobs)
         
     def plan(self) -> Any:
