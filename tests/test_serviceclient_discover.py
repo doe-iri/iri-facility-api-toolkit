@@ -59,7 +59,7 @@ class TestServiceClientDiscovery(unittest.TestCase):
         """Test EsnetIriServiceClient.discover()."""
         print("\n--- Testing EsnetIriServiceClient.discover ---")
         # Use a name that matches an entry in credentials.yml
-        client = EsnetIriServiceClient(name="esnet-iri-east", profile="esnet-iri-east")
+        client = EsnetIriServiceClient(name="esnet-iri-west", profile="esnet-iri-west")
         # Discovery is a stub, so it should always succeed returned empty list
         try:
             discovery = client.discover()

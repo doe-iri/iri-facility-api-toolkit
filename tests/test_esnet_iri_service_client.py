@@ -24,9 +24,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         It first discovers available compute resources from the API, then uses one to test job submission.
         """
         
-        # Import the get_resources API
-        from amscrot.serviceclient.esnet_iri.generated.esnet_iri.api.status import get_resources
-        from amscrot.serviceclient.esnet_iri.generated.esnet_iri.models.resource_type import ResourceType
+
         
         # Create the service client (will load credentials automatically)
         iri_client = ServiceClient.create(
@@ -39,49 +37,28 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         self.assertIsNotNone(iri_client)
         self.assertTrue(iri_client._available, "ESnet IRI client should be available with valid credentials")
         
-        # Discover available compute resources from the API
+        # Discover available compute resources using the client interface
         print("\n--- Discovering Resources ---")
         try:
-            response = get_resources.sync_detailed(
-                client=iri_client._client,
-                resource_type=ResourceType.COMPUTE,
-                limit=10
-            )
+            # discover() returns a list of dicts: [{'type': 'compute', 'data': {...}}, ...]
+            all_resources = iri_client.discover()
             
-            print(f"Response status: {response.status_code}")
-            print(f"Response content (first 500 chars): {response.content[:500]}")
-            print(f"Response parsed type: {type(response.parsed)}")
+            # Filter for compute resources
+            compute_resources = [r for r in all_resources if r.get('type') == 'compute']
+            print(f"Response type: {type(all_resources)}")
             
-            # Check the status code
-            if response.status_code != 200:
-                self.skipTest(f"APIs returned status {response.status_code}: {response.parsed}")
+            if not compute_resources:
+                self.skipTest("No compute resources available.")
             
-            # Try to parse the response manually if parsed is None
-            if response.parsed is None and response.content:
-                import json
-                try:
-                    data = json.loads(response.content)
-                    print(f"Manually parsed JSON type: {type(data)}")
-                    print(f"Manually parsed JSON: {data}")
-                    
-                    # If it's a list, use it directly
-                    if isinstance(data, list) and len(data) > 0:
-                        resource_id = data[0].get('id')
-                        print(f"Found {len(data)} compute resource(s). Using resource ID: {resource_id}")
-                    else:
-                        self.skipTest(f"No compute resources in response. Data: {data}")
-                except json.JSONDecodeError as je:
-                    self.skipTest(f"Failed to parse JSON response: {je}")
+            # Extract ID from the first compute resource
+            resource_data = compute_resources[0].get('data', {})
+            resource_id = resource_data.get('id')
+            
+            if resource_id:
+                print(f"Found {len(compute_resources)} compute resource(s). Using resource ID: {resource_id}")
             else:
-                resources_response = response.parsed
+                self.skipTest("Compute resource found but ID is missing.")
                 
-                # The response should be a list of resources
-                if isinstance(resources_response, list) and len(resources_response) > 0:
-                    # Extract the first resource's ID
-                    resource_id = resources_response[0].id
-                    print(f"Found {len(resources_response)} compute resource(s). Using resource ID: {resource_id}")
-                else:
-                    self.skipTest(f"No compute resources available. Response type: {type(resources_response)}, Response: {resources_response}")
         except Exception as e:
             import traceback
             error_msg = str(e)
@@ -119,10 +96,10 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             # 1. Test Plan
             print("\n--- Test Plan ---")
             plan_result = iri_client.plan(spec, job_name)
+            print(f"Plan result: {plan_result}")
             self.assertEqual(plan_result["status"], "PLANNED")
             self.assertEqual(len(plan_result["errors"]), 0)
-            print(f"Plan result: {plan_result}")
-            
+
             # 2. Test Create (Real API call)
             print("\n--- Test Create ---")
             iri_client.create(spec, job_name)
@@ -199,7 +176,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         """
         iri_client = ServiceClient.create(
             type="esnet-iri",
-            name="test-iri"
+            name="test-iri",
+            profile="esnet-iri-east"
         )
         
         # Test with resource_id in attributes

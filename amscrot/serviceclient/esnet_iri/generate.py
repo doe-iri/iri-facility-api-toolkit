@@ -35,7 +35,7 @@ def check_tool_installed() -> bool:
     return shutil.which("openapi-python-client") is not None
 
 
-def generate_client(api_url: str, config_file: str, output_dir: str) -> bool:
+def generate_client(api_url: str, config_file: str, output_dir: str, package_name: str) -> bool:
     """
     Generate the Python client.
     
@@ -52,12 +52,21 @@ def generate_client(api_url: str, config_file: str, output_dir: str) -> bool:
         shutil.rmtree(output_path)
     
     # Build command
+    #cmd = [
+    #    "openapi-python-client",
+    #    "generate",
+    #    "--url", api_url,
+    #    "--config", str(config_path),
+    #    "--output-path", str(output_path),
+    #]
+    
     cmd = [
-        "openapi-python-client",
+        "openapi-generator",
         "generate",
-        "--url", api_url,
-        "--config", str(config_path),
-        "--output-path", str(output_path),
+        "-i", api_url,
+        "-g", "python",
+        "-o", str(output_path),
+        "--package-name", str(package_name)
     ]
     
     print(f"⚙️  Generating Python client...")
@@ -101,6 +110,11 @@ def main():
         action="store_true",
         help="Skip API accessibility check",
     )
+    parser.add_argument(
+        "--package-name",
+        default="esnet_iri",
+        help="Package name (default: esnet_iri)",
+    )
     
     args = parser.parse_args()
     
@@ -111,14 +125,15 @@ def main():
     print(f"API URL: {args.api_url}")
     print(f"Config:  {args.config}")
     print(f"Output:  {args.output}")
+    print(f"Package name:  {args.package_name}")
     print()
     
     # Check if tool is installed
     if not check_tool_installed():
-        print("❌ openapi-python-client is not installed")
+        print("❌ openapi-generator is not installed")
         print()
-        print("To install, run:")
-        print("  pip install openapi-python-client")
+        print("To install (macOS), run:")
+        print("  brew install openapi-generator")
         print()
         sys.exit(1)
     
@@ -139,7 +154,7 @@ def main():
             sys.exit(1)
     
     # Generate client
-    if generate_client(args.api_url, args.config, args.output):
+    if generate_client(args.api_url, args.config, args.output, args.package_name):
         print()
         print("=" * 60)
         print("  ✅ Client generated successfully!")

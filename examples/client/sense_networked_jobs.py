@@ -102,7 +102,7 @@ class SENSENetworkedJobs(unittest.TestCase):
 
         # 10. Show Status (Poll)
         print("\n--- Session Status (Poll) ---")
-        for i in range(20):
+        for i in range(30):
             #session.show()
 
             # Check individual job statuses via client
@@ -127,7 +127,7 @@ class SENSENetworkedJobs(unittest.TestCase):
         return
 
         # Verify cleanup with pulling
-        for i in range(10):
+        for i in range(30):
             s1 = east_client.status(job_name="job-1")
             s2 = west_client.status(job_name="job-2")
             if (s1.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"] and 
