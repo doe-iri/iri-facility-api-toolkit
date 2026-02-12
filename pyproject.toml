@@ -1,0 +1,10 @@
+[project]
+name = "amsc-isro-toolkit"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "pip>=25.3",
+    "pydantic>=2.12.5",
+]
