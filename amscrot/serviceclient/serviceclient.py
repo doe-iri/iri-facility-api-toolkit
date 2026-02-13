@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import List, Any, Dict, Optional, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
+
+from amscrot.controller.metadata_manager import MetadataManager
 from amscrot.util import utils
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
-
-from amscrot.controller.metadata_manager import MetadataManager
 
 
 class ServiceClient(ABC):
@@ -32,13 +32,12 @@ class ServiceClient(ABC):
         self.credential_file = credential_file
         self.logger = utils.get_logger()
 
-<<<<<<< HEAD
     #################################################
-    # Global Metadata Discovery
+    # Global Metadata Discovery (local/remote metadata records)
     #################################################
 
     @classmethod
-    def DISCOVER(cls, **kwargs) -> Dict:
+    def discover(cls, **kwargs) -> Dict:
         """
         Discover (retrieve) global metadata using MetadataManager.
 
@@ -62,14 +61,9 @@ class ServiceClient(ABC):
 
         return metadata or {}
 
-    ##################################################
-    @abstractmethod
-    def list(self, job_name: str = None):
-=======
-    @abstractmethod
-    def discover(self) -> List[Any]:
->>>>>>> 59bb0f31fcb362e2685af0b3821c261847281035
-        pass
+    #################################################
+    # ServiceClient API (subclasses implement these)
+    #################################################
 
     @abstractmethod
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
@@ -119,3 +113,29 @@ class ServiceClient(ABC):
 
     def __repr__(self):
         return f"<ServiceClient name={self.name} type={self.type} uri={self.endpoint_uri}>"
+
+
+def _main() -> int:
+    """
+    Module entrypoint for:
+        python -m amscrot.serviceclient.serviceclient
+
+    Defaults are:
+        metadata_preference="local"
+        metadata_id="gmetadata"
+    """
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="ServiceClient metadata discovery helper")
+    parser.add_argument("--metadata-preference", default="local", help="local | remote | local|remote | remote|local")
+    parser.add_argument("--metadata-id", default="gmetadata", help="Local metadata cache file stem")
+    args = parser.parse_args()
+
+    metadata = ServiceClient.discover(metadata_preference=args.metadata_preference, metadata_id=args.metadata_id)
+    print(json.dumps(metadata, indent=2, default=str))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_main())
