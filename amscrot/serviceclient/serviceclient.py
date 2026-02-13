@@ -142,4 +142,7 @@ if __name__ == "__main__":
     raise SystemExit(_main())
 
 
-# Test (amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --metadata-preference local --metadata-id service_client_metadata
+# Test:
+# (amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --metadata-preference local --metadata-id service_client_metadata
+# Test:
+#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --metadata-preference remote --metadata-id anees-test

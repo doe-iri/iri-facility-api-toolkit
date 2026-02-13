@@ -1,10 +1,10 @@
-
 import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
+import sys
+import os
 
-from amscrot.provider.sense.sense_client import get_client
 from amscrot.util.utils import get_logger
 
 logger = get_logger()
@@ -14,20 +14,16 @@ logger = get_logger()
 class MetadataConfig:
     """
     Metadata manager configuration.
-
-    Attributes:
-        metadata_id: Local metadata record identifier (also used as local file name stem).
-        local_base_dir: Base directory to store local metadata cache.
-        local_file_ext: Extension for the local metadata file.
-        remote_domain: Remote metadata domain (SENSE-O metadata API expects /meta/{domain}/{name}).
-        remote_name: Remote metadata record name.
+    # ... existing code ...
     """
 
     metadata_id: str
     local_base_dir: Path
     local_file_ext: str = "json"
     remote_domain: str = "INSTANCE"
-    remote_name: str = "fetch_metadata"
+    # This value is a *record name* in the remote metadata repository (not an API operation name).
+    # If you don't override it via config, MetadataManager._build_config() will default it to metadata_id.
+    remote_name: str = "gmetadata"
 
     @property
     def local_file_path(self) -> Path:
@@ -38,8 +34,7 @@ class MetadataConfig:
 class MetadataManager:
     """
     Retrieve metadata from either local cache or a remote metadata service.
-
-    The remote implementation uses the SENSE-O Python client `MetadataApi()`.
+    # ... existing code ...
     """
 
     def __init__(self, config_metadata: Optional[Dict[str, Any]], metadata_preference: str, metadata_id: str):
@@ -55,7 +50,7 @@ class MetadataManager:
         config_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
-        Convenience helper used by ServiceClient.DISCOVER().
+        Convenience helper used by ServiceClient.discover().
 
         Returns:
             Metadata dict if found; otherwise None.
@@ -71,7 +66,12 @@ class MetadataManager:
         base_dir.mkdir(parents=True, exist_ok=True)
 
         remote_domain = str(config_metadata.get("remote_domain", "INSTANCE"))
-        remote_name = str(config_metadata.get("remote_name", "fetch_metadata"))
+
+        # IMPORTANT: remote_name is the *metadata record name*.
+        # Previous default "get_metadata" looked like an API operation and caused remote 404s.
+        # Defaulting to metadata_id makes behavior predictable:
+        #   metadata_id="gmetadata" -> GET /meta/<domain>/gmetadata
+        remote_name = str(config_metadata.get("remote_name") or metadata_id)
 
         return MetadataConfig(
             metadata_id=str(metadata_id),
@@ -100,21 +100,147 @@ class MetadataManager:
             logger.warning(f"Unable to read local metadata file: {path}: {e}")
             return None
 
-    def _get_remote_metadata(self) -> Dict[str, Any]:
+    def _import_sense_metadata_api(self):
+        """
+        Import MetadataApi from the SENSE-O python client.
+
+        Supports:
+          1) installed package import (preferred)
+          2) local repo checkout at <repo>/sense-o-py-client by adding it to sys.path
+        """
+        try:
+            from sense.client.metadata_api import MetadataApi  # type: ignore
+            return MetadataApi
+        except ModuleNotFoundError as first_err:
+            # Try to locate a local checkout by walking up from this file.
+            here = Path(__file__).resolve()
+
+            candidates: list[Path] = []
+
+            # Optional explicit override (useful in CI / custom layouts)
+            override = os.environ.get("SENSE_O_PY_CLIENT_PATH")
+            if override:
+                candidates.append(Path(override).expanduser().resolve())
+
+            # Look for <ancestor>/sense-o-py-client (original behavior)
+            for parent in here.parents:
+                candidates.append(parent / "sense-o-py-client")
+
+                # Also look for a sibling: <ancestor>/../sense-o-py-client
+                # This matches layouts like:
+                #   Projects/
+                #     amsc-isro-toolkit/
+                #     sense-o-py-client/
+                if parent.parent != parent:
+                    candidates.append(parent.parent / "sense-o-py-client")
+
+            def _iter_possible_package_roots(checkout_dir: Path) -> list[Path]:
+                """
+                Return directories that might be the actual import root for the `sense` package.
+                Supports both:
+                  - <checkout>/sense/...
+                  - <checkout>/src/sense/...
+                """
+                roots: list[Path] = []
+                roots.append(checkout_dir)
+                roots.append(checkout_dir / "src")
+                return roots
+
+            def _looks_like_sense_client_root(root: Path) -> bool:
+                return (root / "sense" / "client" / "metadata_api.py").is_file()
+
+            added_any = False
+            for checkout in candidates:
+                if not (checkout.exists() and checkout.is_dir()):
+                    continue
+
+                for root in _iter_possible_package_roots(checkout):
+                    if not (root.exists() and root.is_dir()):
+                        continue
+                    if not _looks_like_sense_client_root(root):
+                        continue
+
+                    root_str = str(root)
+                    if root_str not in sys.path:
+                        sys.path.insert(0, root_str)
+                        added_any = True
+
+            if added_any:
+                # If some other `sense` package was imported earlier, Python may keep using it
+                # even after sys.path changes. Drop it from the import cache so the retry
+                # resolves `sense` from the newly-added checkout path.
+                for modname in list(sys.modules.keys()):
+                    if modname == "sense" or modname.startswith("sense."):
+                        sys.modules.pop(modname, None)
+
+                try:
+                    from sense.client.metadata_api import MetadataApi  # type: ignore
+                    return MetadataApi
+                except ModuleNotFoundError:
+                    pass
+
+            raise ModuleNotFoundError(
+                "Unable to import `sense.client.metadata_api` required for remote metadata fetch.\n"
+                "Tried importing from the active environment, then adding a local `sense-o-py-client/` checkout to sys.path.\n"
+                "Verify that either:\n"
+                "  - the SENSE-O client package is installed in this environment, OR\n"
+                "  - a `sense-o-py-client/` directory exists and contains `sense/client/metadata_api.py`.\n"
+                "Tip: if your checkout is a sibling of this repo, this code now searches that layout too.\n"
+                "You can also set SENSE_O_PY_CLIENT_PATH to the checkout directory.\n"
+                f"Original error: {first_err}"
+            ) from first_err
+
+    def _is_remote_not_found(self, err: Exception) -> bool:
+        """
+        Heuristic for SENSE-O client behavior:
+        it raises ValueError for HTTP errors and includes 404/NOT_FOUND in the message.
+        """
+        msg = str(err)
+        return ("Returned code 404" in msg) or ("NOT_FOUND" in msg) or ("Record not found" in msg)
+
+    def _get_remote_metadata(self) -> Optional[Dict[str, Any]]:
         """
         Fetch metadata from the remote repository using SENSE-O `MetadataApi()`.
+
+        Returns:
+            dict when found and valid; otherwise None (e.g., record not found).
         """
-        from sense.client.metadata_api import MetadataApi
+        MetadataApi = self._import_sense_metadata_api()
 
-        client = get_client()
-        if client is None:
-            raise RuntimeError("SENSE client is not initialized. Initialize it before remote metadata operations.")
+        # Preflight: the SENSE-O client expects an auth config file.
+        auth_path = Path.home() / ".sense-o-auth.yaml"
+        if not auth_path.exists():
+            raise FileNotFoundError(
+                f"SENSE-O auth config not found at '{auth_path}'. "
+                "Remote metadata fetch expects the SENSE-O client default configuration "
+                "(same behavior as sense_util.py)."
+            )
 
-        metadata_api = MetadataApi(req_wrapper=client)
-        record = metadata_api.get_metadata(domain=self.config.remote_domain, name=self.config.remote_name)
+        metadata_api = MetadataApi()
 
+        try:
+            record = metadata_api.get_metadata(domain=self.config.remote_domain, name=self.config.remote_name)
+        except ValueError as e:
+            # If the record doesn't exist, treat it as "no remote metadata" so
+            # local|remote / remote|local preference works without crashing.
+            if self._is_remote_not_found(e):
+                logger.info(
+                    "Remote metadata not found (404): "
+                    f"{self.config.remote_domain}/{self.config.remote_name}"
+                )
+                return None
+            raise
+
+        # Normalize return types for the rest of amscrot.
         if isinstance(record, str):
-            return json.loads(record)
+            try:
+                parsed = json.loads(record)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Remote metadata returned a string but not valid JSON: {e}") from e
+            if not isinstance(parsed, dict):
+                raise TypeError(f"Unexpected remote metadata JSON type: {type(parsed)}")
+            return parsed
+
         if not isinstance(record, dict):
             raise TypeError(f"Unexpected remote metadata type: {type(record)}")
 
@@ -138,7 +264,11 @@ class MetadataManager:
         elif preference == "local|remote":
             metadata = self._get_local_metadata()
             if metadata is None:
-                metadata = self._get_remote_metadata()
+                try:
+                    metadata = self._get_remote_metadata()
+                except Exception as e:
+                    logger.warning(f"Remote metadata fetch failed (local|remote), leaving metadata as None: {e}")
+                    metadata = None
         elif preference == "remote|local":
             try:
                 metadata = self._get_remote_metadata()
@@ -152,6 +282,14 @@ class MetadataManager:
             print(json.dumps(metadata, indent=2, default=str))
 
         return metadata
+##############################################################################
+##############################################################################
+##############################################################################
+
+
+##############################################################################
+##############################################################################
+##############################################################################
 
 # import os
 # from amscrot.util import utils
