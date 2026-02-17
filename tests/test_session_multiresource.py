@@ -73,7 +73,14 @@ class TestSessionMultiResource(unittest.TestCase):
         
         # 7. Plan
         print("\n--- Session Plan ---")
-        session.plan()
+        try:
+            session.plan()
+        except Exception as e:
+            # Check for K8s connectivity error
+            if "Kubernetes cluster unreachable" in str(e) or "Max retries exceeded" in str(e):
+                self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
+            else:
+                raise
         
         # 8. Apply
         print("\n--- Session Apply ---")

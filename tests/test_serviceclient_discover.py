@@ -48,6 +48,10 @@ class TestServiceClientDiscovery(unittest.TestCase):
             print("--- End JSON Dump ---")
             
         except Exception as e:
+            # Re-raise SkipTest so it's not treated as a failure
+            if isinstance(e, unittest.SkipTest):
+                raise
+
             # Check for connection errors and skip if appropriate
             error_msg = str(e)
             if "Max retries exceeded" in error_msg or "Connection refused" in error_msg: 

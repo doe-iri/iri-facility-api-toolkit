@@ -192,6 +192,15 @@ class KubeServiceClient(ServiceClient):
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         name = job_name or self.name 
+        
+        # Check connectivity if client is available
+        if self._available:
+            try:
+                self.core_v1.list_namespace(limit=1, _request_timeout=2)
+            except Exception as e:
+                # Raise exception so tests can catch it and skip
+                raise Exception(f"Kubernetes cluster unreachable during plan: {e}")
+
         self.logger.info(f"[{self.name}] Planning Kube service for '{name}'...")
         job = self._create_job_object(job_spec, name)
         

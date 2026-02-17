@@ -11,19 +11,19 @@ echo "VAR_FILE=$var_file"
 script_dir=$(dirname $0)
 
 mkdir -p ~/work/fabric_config # workaround for now. 1.6.4 ould not need this
-mkdir -p ~/.fabfed
+mkdir -p ~/.amscrot
 
-cp $script_dir/fabfed_credentials.yml.cicd ~/.fabfed/
-sed -i "s/FABRIC_PROJECT/$FABRIC_PROJECT/" ~/.fabfed/fabfed_credentials.yml.cicd
-sed -i "s/FABRIC_USER/$FABRIC_USER/" ~/.fabfed/fabfed_credentials.yml.cicd
+cp $script_dir/credentials.yml.cicd ~/.amscrot/credentials.yml.cicd
+sed -i "s/FABRIC_PROJECT/$FABRIC_PROJECT/" ~/.amscrot/credentials.yml.cicd
+sed -i "s/FABRIC_USER/$FABRIC_USER/" ~/.amscrot/credentials.yml.cicd
 
 # SENSE
-sed -i "s/SENSE_USER/$SENSE_USER/" ~/.fabfed/fabfed_credentials.yml.cicd
-sed -i "s/SENSE_PASSWORD/$SENSE_PASSWORD/" ~/.fabfed/fabfed_credentials.yml.cicd
-sed -i "s/SENSE_SECRET/$SENSE_SECRET/" ~/.fabfed/fabfed_credentials.yml.cicd
+sed -i "s/SENSE_USER/$SENSE_USER/" ~/.amscrot/credentials.yml.cicd
+sed -i "s/SENSE_PASSWORD/$SENSE_PASSWORD/" ~/.amscrot/credentials.yml.cicd
+sed -i "s/SENSE_SECRET/$SENSE_SECRET/" ~/.amscrot/credentials.yml.cicd
 
 # CLAB
-sed -i "s/CLAB_USER/$CLAB_USER/" ~/.fabfed/fabfed_credentials.yml.cicd
+sed -i "s/CLAB_USER/$CLAB_USER/" ~/.amscrot/credentials.yml.cicd
 
 if [ -n "$var_file" ]
 then
