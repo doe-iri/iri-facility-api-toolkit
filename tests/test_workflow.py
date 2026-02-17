@@ -21,6 +21,11 @@ def get_stats(*, states: List[ProviderState]):
     return utils.get_counters(states=states)
 
 
+def cleanup_test_state(session: str):
+    sutil.destroy_session(session)
+    default_provider_factory._providers.clear()
+
+
 def run_plan_workflow(*, session, config_str):
     config = WorkflowConfig.parse(content=config_str)
 
@@ -83,6 +88,7 @@ resource:
            image: ubuntu
     '''
     session = "test_simple"
+    cleanup_test_state(session)
     cr, dl = run_plan_workflow(session=session, config_str=config_str)
     assert cr == 1 and dl == 0
     states = run_apply_workflow(session=session, config_str=config_str)
@@ -131,6 +137,7 @@ resource:
            count: 3
             '''
     session = "test_plan_workflow"
+    cleanup_test_state(session)
     cr, dl = run_plan_workflow(session=session, config_str=config_str)
     assert (cr, dl) == (1, 0)
     states = run_apply_workflow(session=session, config_str=config_str)
@@ -162,6 +169,7 @@ resource:
            image: ubuntu
     '''
     session = "test_simple_workflow_with_create_failing"
+    cleanup_test_state(session)
     clazz = DummyService
     orig = clazz.create
 
@@ -200,6 +208,7 @@ resource:
            image: ubuntu
     '''
     session = "test_service_dependency"
+    cleanup_test_state(session)
     states = run_apply_workflow(session=session, config_str=config_str)
     assert len(states) == 2
     assert get_stats(states=states) == (0, 0, 2, 0, 0)
@@ -230,6 +239,7 @@ resource:
            image: ubuntu
     '''
     session = "test_service_dependency"
+    cleanup_test_state(session)
     clazz = DummyService
     orig = clazz.create
 
@@ -270,6 +280,7 @@ resource:
            image: ubuntu
     '''
     session = "test_attribute_dependency"
+    cleanup_test_state(session)
     states = run_apply_workflow(session=session, config_str=config_str)
     assert len(states) == 2
 
@@ -315,6 +326,7 @@ resource:
  
     '''
     session = "test_multiple_service_dependency"
+    cleanup_test_state(session)
     states = run_apply_workflow(session=session, config_str=config_str)
     assert len(states) == 2
     assert get_stats(states=states) == (0, 0, 15, 0, 0)

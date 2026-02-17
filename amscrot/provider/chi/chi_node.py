@@ -32,7 +32,7 @@ import chi.clients
 import chi.network
 
 from amscrot.model import Node
-import fabfed.provider.chi.chi_util as util
+import amscrot.provider.chi.chi_util as util
 from amscrot.util.constants import Constants
 from .chi_constants import INCLUDE_ROUTER
 

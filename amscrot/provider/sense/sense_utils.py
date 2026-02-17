@@ -1,4 +1,5 @@
 import json
+import uuid
 from types import SimpleNamespace
 
 from sense.client.discover_api import DiscoverApi
@@ -33,7 +34,7 @@ def describe_profile(*, client=None, uuid: str):
     client = client or get_client()
     profile_api = ProfileApi(req_wrapper=client)
     profile_details = profile_api.profile_describe(uuid)
-    profile_details = json.loads(profile_details, object_hook=lambda dct: SimpleNamespace(**dct))
+    #profile_details = json.loads(profile_details, object_hook=lambda dct: SimpleNamespace(**dct))
 
     if hasattr(profile_details, "edit"):
         from requests import utils
@@ -86,13 +87,18 @@ def populate_options_using_interfaces(options, interfaces, edit_uri_entries):
 
 
 def get_profile_uuid(*, client=None, profile):
+    try:
+        uuid.UUID(profile)
+        return profile
+    except Exception:
+        pass
     client = client or get_client()
     profile_api = ProfileApi(req_wrapper=client)
 
     try:
         profile = profile_api.profile_search_get_with_http_info(search=profile)
-        profile = json.loads(profile, object_hook=lambda dct: SimpleNamespace(**dct))
-        profile_uuid = profile.uuid
+        #profile = json.loads(profile, object_hook=lambda dct: SimpleNamespace(**dct))
+        profile_uuid = profile.get('uuid')
         return profile_uuid
     except Exception as e:
         raise SenseException(f"Exception searching for profile:{e}")
@@ -173,9 +179,9 @@ def create_instance(*, client=None, bandwidth, profile, alias, layer3, peering, 
         try:
             logger.info(f"creating instance: {alias}:attempt={attempt + 1}")
             response = workflow_api.instance_create(intent)  # service_uuid, intent_uuid, queries, model
-            temp = json.loads(response)
+            #temp = json.loads(response)
             status = workflow_api.instance_get_status()
-            return temp['service_uuid'], status
+            return response['service_uuid'], status
         except Exception as e:
             logger.warning(f"exception while creating instance {e}")
 
@@ -294,7 +300,7 @@ def service_instance_details(*, client=None, si_uuid, alias):
     discover_api = DiscoverApi(req_wrapper=client)
     response = discover_api.discover_service_instances_get(search=alias)
     # print(json.dumps(json.loads(response), indent=2))
-    response = json.loads(response)
+    # response = json.loads(response)
     instances = response['instances']
 
     for instance in instances:
@@ -316,8 +322,8 @@ def discover_service_instances(*, client=None):
     client = client or get_client()
     discover_api = DiscoverApi(req_wrapper=client)
     response = discover_api.discover_service_instances_get()
-    # print(json.dumps(json.loads(response), indent=2))
-    response = json.loads(response)
+    # print(json.dumps(json.loads(response), indent=2)) 
+    # response = json.loads(response) # apparently sense client returns dicts now
     instances = response['instances']
 
     for instance in instances:
@@ -335,7 +341,7 @@ def find_instance_by_alias(*, client=None, alias):
     client = client or get_client()
     discover_api = DiscoverApi(req_wrapper=client)
     response = discover_api.discover_service_instances_get(search=alias)
-    response = json.loads(response)
+    #response = json.loads(response) # apparently sense client returns dicts now
     instances = response['instances']
 
     if not instances:
@@ -388,8 +394,9 @@ def manifest_create(*, client=None, template_file=None, alias=None, si_uuid=None
 
         try:
             response = json.loads(response, object_hook=lambda dct: SimpleNamespace(**dct))
-            details = json.loads(response.jsonTemplate)
-            return details
+            print (response)
+            #details = json.loads(response.jsonTemplate)
+            return response.get('jsonTemplate')
         except JSONDecodeError:
             logger.warning(f"Could not decode sense manifest from response={response}")
 

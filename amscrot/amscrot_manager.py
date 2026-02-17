@@ -30,9 +30,12 @@ manager.show_sessions()
 
 
 class AmSCROTManager:
-    def __init__(self, *, config_dir: str, var_dict: Union[Dict[str, str], None] = None):
+    def __init__(self, *, config_dir: str = '.', var_dict: Union[Dict[str, str], None] = None,
+                 config_content: Union[str, Dict, None] = None, jobs: List[Any] = None):
         self.config_dir = config_dir
+        self.config_content = config_content
         self.var_dict = var_dict or dict()
+        self.jobs = jobs or []
         self.controller: Union[Controller, None] = None
         self.provider_states: List[ProviderState] = list()
         self.sessions: List[Any] = list()
@@ -48,15 +51,19 @@ class AmSCROTManager:
 
     def _delete_session_if_empty(self, *, session):
         self.provider_states = sutil.load_states(session)
+        jobs = self._get_jobs()
 
-        if not self.provider_states:
+        if not self.provider_states and not jobs:
             sutil.destroy_session(session)
 
         self._load_sessions()
 
     def _init_controller(self, *, session: str):
         self.provider_states = sutil.load_states(session)
-        config = WorkflowConfig.parse(dir_path=self.config_dir, var_dict=self.var_dict)
+        dir_path = self.config_dir if not self.config_content else None
+        config = WorkflowConfig.parse(dir_path=dir_path,
+                                      content=self.config_content,
+                                      var_dict=self.var_dict)
         controller: Controller = Controller(config=config)
 
         from amscrot.controller.provider_factory import default_provider_factory
@@ -66,14 +73,79 @@ class AmSCROTManager:
         self.controller = controller
 
     def validate(self):
-        config = WorkflowConfig.parse(dir_path=self.config_dir, var_dict=self.var_dict)
+        dir_path = self.config_dir if not self.config_content else None
+        config = WorkflowConfig.parse(dir_path=dir_path,
+                                      content=self.config_content,
+                                      var_dict=self.var_dict)
         return config
 
+    def _get_jobs(self) -> List[Any]:
+        if self.jobs:
+            return self.jobs
+
+        import yaml
+        content = self.config_content
+        if not content:
+            if self.config_dir:
+                 pass
+            return []
+
+        if isinstance(content, str):
+            try:
+                content = yaml.safe_load(content)
+            except yaml.YAMLError:
+                return []
+        
+        if not isinstance(content, dict):
+            return []
+        
+        jobs = []
+        
+        # content['job'] is a list of dicts like [{name1: config1}, {name2: config2}]
+        if 'job' in content:
+             for item in content['job']:
+                 # item is {job_name: job_config}
+                 jobs.extend(item.values())
+
+        return jobs
+
     def plan(self, *, session: str, to_json: bool = False, summary: bool = True):
+        # Phase 1: Plan resources (nodes, networks, services)
+        logger.info("Phase 1: Planning resources (nodes, networks, services)...")
         self._init_controller(session=session)
         self.controller.plan(provider_states=self.provider_states)
         resources = self.controller.resources
         cr, dl = sutil.dump_plan(resources=resources, to_json=to_json, summary=summary)
+        
+        # Phase 2: Plan jobs
+        jobs = self._get_jobs()
+        if jobs:
+            logger.info("Phase 2: Planning jobs...")
+            job_summaries = []
+            for job in jobs:
+                # Check for Job object via duck typing (imported Job is not avail here due to circular dep risk)
+                if hasattr(job, 'service_client') and job.service_client:
+                    # Execute real plan
+                    result = job.service_client.plan(job.job_spec, job_name=job.name)
+                    job_summaries.append({
+                        "name": job.name,
+                        "type": str(job.type),
+                        "service_client": job.service_client.name,
+                        "plan_status": result.get("status"),
+                        "errors": result.get("errors"),
+                        "warnings": result.get("warnings")
+                    })
+                else:
+                    # Config dict fallback
+                    job_summaries.append({
+                        "name": job.get("name"),
+                        "type": job.get("type"),
+                        "service_type": job.get("service_type"),
+                        "service_client": job.get("service_client"),
+                        "action": "CREATE" # Mock action
+                    })
+            sutil.dump_objects(objects={"job_plan": job_summaries}, to_json=to_json)
+            logger.info(f"Jobs planned: {len(job_summaries)} job(s)")
 
         logger.warning(f"Applying this plan would create {cr} resource(s) and destroy {dl} resource(s)")
         self._delete_session_if_empty(session=session)
@@ -81,6 +153,9 @@ class AmSCROTManager:
 
     def apply(self, *, session: str):
         self._init_controller(session=session)
+        
+        # Phase 1: Plan and create resources (nodes, networks, services)
+        logger.info("Phase 1: Planning and creating resources (nodes, networks, services)...")
         self.controller.plan(provider_states=self.provider_states)
         self.controller.add(provider_states=self.provider_states)
         workflow_failed = False
@@ -104,14 +179,67 @@ class AmSCROTManager:
         workflow_failed = workflow_failed or pending or failed
         self.provider_states = sutil.reconcile_states(self.provider_states, session)
         sutil.save_states(self.provider_states, session)
-        logger.info(f"nodes={nodes}, networks={networks}, services={services}, pending={pending}, failed={failed}")
+        logger.info(f"Resources created: nodes={nodes}, networks={networks}, services={services}, pending={pending}, failed={failed}")
+        
+        # Phase 2: Create jobs (only after resources are successfully created)
+        if not workflow_failed:
+            jobs = self._get_jobs()
+            if jobs:
+                logger.info("Phase 2: Creating jobs...")
+                job_summaries = []
+                for job in jobs:
+                    if hasattr(job, 'service_client') and job.service_client:
+                        # Execute real create
+                        job.service_client.create(job.job_spec, job_name=job.name)
+                        job_summaries.append({
+                            "name": job.name,
+                            "service_client": job.service_client.name,
+                            "status": "SUBMITTED" # Status after create call
+                        })
+                    else:
+                        # Fallback
+                        job_summaries.append({
+                            "name": job.get("name"),
+                            "service_client": job.get("service_client"),
+                            "status": "SUBMITTED",
+                            "id": f"mock-id-{job.get('name')}"
+                        })
+                sutil.dump_objects(objects={"job_submission": job_summaries}, to_json=False) # Log to stdout
+                logger.info(f"Jobs created: {len(job_summaries)} job(s) submitted")
+        else:
+            logger.warning("Skipping job creation due to resource creation failures")
+        
         return 1 if workflow_failed else 0
+
 
     def show(self, *, session: str, to_json: bool = False, summary: bool = True):
         self._load_sessions()
         session_names = [session_meta['session'] for session_meta in self.sessions]
         self.provider_states = sutil.load_states(session) if session in session_names else []
         sutil.dump_states(self.provider_states, to_json, summary)
+        
+        # Handle Jobs        
+        jobs = self._get_jobs()
+        if jobs:
+             job_summaries = []
+             for job in jobs:
+                 if hasattr(job, 'service_client') and job.service_client:
+                     status = job.service_client.status(job_name=job.name)
+                     job_summaries.append({
+                        "name": job.name,
+                        "status": status.get("status"),
+                        "logs": status.get("logs", "")[:200] + "..." if status.get("logs") else "", # Truncate logs for summary
+                        "service_client": job.service_client.name,
+                    })
+                 else:
+                     job_summaries.append({
+                        "name": job.get("name"),
+                        "status": "UNKNOWN", # No interaction with real backend yet
+                        "service_client": job.get("service_client"),
+                        "dependency": job.get("dependency")
+                    })
+             sutil.dump_objects(objects={"job_status": job_summaries}, to_json=to_json)
+             
         self._delete_session_if_empty(session=session)
 
     def stitch_info(self, session: str, to_json: bool = False, summary: bool = True):
@@ -163,12 +291,37 @@ class AmSCROTManager:
         sutil.dump_objects(objects=stitch_info_summaries, to_json=to_json)
 
     def destroy(self, *, session: str):
+        self._init_controller(session=session)
         self._load_sessions()
         session_names = [session_meta['session'] for session_meta in self.sessions]
 
         if session not in session_names:
             return
 
+        # Phase 1: Destroy jobs first (before resources)
+        jobs = self._get_jobs()
+        if jobs:
+            logger.info("Phase 1: Destroying jobs...")
+            job_summaries = []
+            for job in jobs:
+                if hasattr(job, 'service_client') and job.service_client:
+                    job.service_client.destroy(job_name=job.name)
+                    job_summaries.append({
+                        "name": job.name,
+                        "service_client": job.service_client.name,
+                        "action": "DELETE"
+                    })
+                else:
+                    job_summaries.append({
+                        "name": job.get("name"),
+                        "service_client": job.get("service_client"),
+                        "action": "DELETE"
+                    })
+            sutil.dump_objects(objects={"job_destroy": job_summaries}, to_json=False)
+            logger.info(f"Jobs destroyed: {len(job_summaries)} job(s) deleted")
+
+        # Phase 2: Destroy resources (nodes, networks, services)
+        logger.info("Phase 2: Destroying resources (nodes, networks, services)...")
         self.provider_states = sutil.load_states(session)
 
         if not self.provider_states:

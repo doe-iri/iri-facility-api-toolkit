@@ -1,15 +1,15 @@
 provider:
   - sense:
       - sense_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: sense
   - fabric:
       - fabric_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: fabric
   - janus:
       - janus_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: janus
           url: '{{ node.fabric_node }}'
 config:

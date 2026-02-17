@@ -12,6 +12,6 @@ AGGREGATE_STATUS = "aggregate_status"
 NODES = 'nodes'
 NODE = 'node'
 
-# {'ipv4': '155.98.36.152', 'hostname': 'node.aes-cloudlab.fabfed.emulab.net'}
+# {'ipv4': '155.98.36.152', 'hostname': 'node.aes-cloudlab.amscrot.emulab.net'}
 IPV4 = "ipv4"
 HOSTNAME = "hostname"

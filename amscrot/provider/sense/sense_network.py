@@ -46,7 +46,8 @@ class SenseNetwork(Network):
             logger.debug(f"Provisioning {self.name}")
             sense_utils.instance_operate(si_uuid=si_uuid)
 
-        statuses = ('CREATE - READY', 'REINSTATE - READY', 'CREATE - COMMITTED', 'REINSTATE - COMMITTED')
+        # statuses = ('CREATE - READY', 'REINSTATE - READY', 'CREATE - COMMITTED', 'REINSTATE - COMMITTED')
+        statuses = ('CREATE - READY', 'REINSTATE - READY')
         status = sense_utils.wait_for_instance_operate(si_uuid=si_uuid, statuses=statuses)
 
         if status not in statuses:

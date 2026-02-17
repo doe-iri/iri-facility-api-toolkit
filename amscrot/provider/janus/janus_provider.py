@@ -160,7 +160,7 @@ class JanusProvider(Provider):
 
         label = resource.get(Constants.LABEL)
         states = resource.get(Constants.SAVED_STATES)
-        force = resource.get("force", True)
+        force = resource.get("force", False)
         created = False
         for s in states:
             created = s.attributes.get('created', True)

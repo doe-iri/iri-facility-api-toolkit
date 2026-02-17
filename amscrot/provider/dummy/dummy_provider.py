@@ -1,12 +1,12 @@
 import logging
 
-from amscrot.model import Service, Node, SSHNode
+from amscrot.model import Service, Node, SSHNode, Network
 from amscrot.provider.api.provider import Provider
 from amscrot.util.constants import Constants
 
 '''
 
-To add a provider, all you should need is to add its classpath to fabfed.util.constants.Constants.PROVIDER_CLASSES
+To add a provider, all you should need is to add its classpath to amscrot.util.constants.Constants.PROVIDER_CLASSES
 
 
 see tests/examples/dummy-service for a simple example.
@@ -19,11 +19,11 @@ Useful Commands:
 see tests/examples/dummy-service  # for a simple example
 see tests/examples/dummy-service/config.fab 
 
->fabfed workflow --session <session> -validate
->fabfed workflow --session <session> -plan
->fabfed workflow --session <session> -apply
->fabfed workflow --session <session> -show
->fabfed workflow --session <session> -destroy
+>amscrot workflow --session <session> -validate
+>amscrot workflow --session <session> -plan
+>amscrot workflow --session <session> -apply
+>amscrot workflow --session <session> -show
+>amscrot workflow --session <session> -destroy
 '''
 
 
@@ -38,7 +38,6 @@ class DummyNode(Node, SSHNode):
         self.logger = logger
 
     def create(self):
-        import random
         self.logger.info(f" Dummy Node {self.name} created.")
         self.user = "dummy_user"
         self.host = f"localhost_{self.name}"
@@ -61,6 +60,20 @@ class DummyNode(Node, SSHNode):
 
     def get_dataplane_address(self, network=None, interface=None, af=None):
         return "192.168.1.10"
+
+class DummyNetwork(Network):
+    def __init__(self, *, label, name: str, site, logger: logging.Logger):
+        super().__init__(label=label, name=name, site=site)
+        self.logger = logger
+        
+    def create(self):
+        self.logger.info(f" Dummy Network {self.name} created at site {self.site}")
+        
+    def delete(self):
+        self.logger.info(f" Dummy Network {self.name} deleted")
+        
+    def get_reservation_id(self):
+        return f"res-{self.name}"
 
 class DummyService(Service):
     def __init__(self, *, label, name: str, image, x=None, logger: logging.Logger):
@@ -102,7 +115,6 @@ class DummyProvider(Provider):
         assert resource.get(Constants.RES_TYPE) in Constants.RES_SUPPORTED_TYPES
         assert resource.get(Constants.RES_NAME_PREFIX)
         assert resource.get(Constants.RES_COUNT, 1)
-        assert resource.get(Constants.RES_IMAGE)
 
         label = resource.get(Constants.LABEL)
         self.logger.info(f"Validated:OK Resource={label} using {self.label}")
@@ -126,7 +138,7 @@ class DummyProvider(Provider):
         exposed_attribute_x = resource.get("exposed_attribute_x")
 
         # In the dependency example, exposed_attribute_x is an external dependency
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
 
         if util.has_resolved_external_dependencies(resource=resource, attribute='exposed_attribute_x'):
             # Service dtn1 depends on service dtn2. dtn1 and dtn2 have different providers.
@@ -155,6 +167,17 @@ class DummyProvider(Provider):
                 node = DummyNode(label=label, name=name, site=site, image=image, flavor=flavor, logger=self.logger)
                 self.nodes.append(node)
                 self.resource_listener.on_added(source=self, provider=self, resource=node)
+
+        elif rtype == Constants.RES_TYPE_NETWORK.lower():
+            network_count = resource.get(Constants.RES_COUNT, 1)
+            name_prefix = resource.get(Constants.RES_NAME_PREFIX)
+            site = resource.get(Constants.RES_SITE)
+
+            for i in range(network_count):
+                name = f"{name_prefix}{i}"
+                network = DummyNetwork(label=label, name=name, site=site, logger=self.logger)
+                self.networks.append(network)
+                self.resource_listener.on_added(source=self, provider=self, resource=network)
 
         elif rtype == Constants.RES_TYPE_SERVICE.lower():
             service_count = resource.get(Constants.RES_COUNT, 1)
@@ -207,7 +230,12 @@ class DummyProvider(Provider):
                 node.delete()
                 self.resource_listener.on_deleted(source=self, provider=self, resource=node)
         elif rtype == Constants.RES_TYPE_NETWORK.lower():
-            pass
+            network_count = resource.get(Constants.RES_COUNT, 1)
+            for i in range(network_count):
+                name = f"{name_prefix}{i}"
+                network = DummyNetwork(label=label, name=name, site=None, logger=self.logger)
+                network.delete()
+                self.resource_listener.on_deleted(source=self, provider=self, resource=network)
         elif rtype == Constants.RES_TYPE_SERVICE.lower():
             service_count = resource.get(Constants.RES_COUNT, 1)
             image = resource.get(Constants.RES_IMAGE)

@@ -1,0 +1,3 @@
+KUBE_VERSION="v1.33.5+k3s1"
+KUBE_DEFAULT_CNI="flannel"
+

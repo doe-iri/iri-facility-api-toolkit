@@ -41,6 +41,11 @@ class Controller:
             init_provider_map[resource.provider.label] = init_provider_map[resource.provider.label] or count > 0
 
         for provider_state in provider_states:
+            # Skip provider states that don't exist in current configuration
+            # This can happen when running tests in sequence where old provider states persist
+            if provider_state.label not in init_provider_map:
+                self.logger.warning(f"Skipping provider state {provider_state.label}: not in current configuration")
+                continue
             init_provider_map[provider_state.label] = init_provider_map[provider_state.label] \
                 or len(provider_state.states()) > 0
 
@@ -223,7 +228,24 @@ class Controller:
                 state = states[0]
                 resource_dict = state.attributes.copy()
                 provider_state = resource_dict.pop(Constants.PROVIDER_STATE)
+
+                # Handle case where provider is missing from configuration
+                if not pf.has_provider(label=provider_state.label):
+                     self.logger.warning(
+                        f"Provider {provider_state.label} not found in current configuration. "
+                        f"Ignoring resource {state_label}."
+                    )
+                     continue
+
                 provider = pf.get_provider(label=provider_state.label)
+
+                # Handle case where creation_details is missing for a stored resource
+                if state_label not in provider_state.creation_details:
+                    self.logger.warning(
+                        f"Resource {state_label} found in saved state but missing creation details. "
+                        f"This might be due to a manual edit, ignoring."
+                    )
+                    continue
 
                 import copy
 

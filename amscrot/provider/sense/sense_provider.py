@@ -21,6 +21,8 @@ class SenseProvider(Provider):
                 raise ProviderException(f"{self.name}: Expecting a value for {attr}")
 
         pkey = self.config[SENSE_SLICE_PRIVATE_KEY_LOCATION]
+        if not pkey:
+            return
 
         from amscrot.util.utils import can_read, is_private_key, absolute_path
 
@@ -38,10 +40,13 @@ class SenseProvider(Provider):
         return self.config.get(SENSE_SLICE_PRIVATE_KEY_LOCATION)
 
     def _handle_peering_config(self, resource):
-        import fabfed.provider.api.dependency_util as util
+        import amscrot.provider.api.dependency_util as util
         from amscrot.model import Network
 
         peering = resource.get(Constants.RES_PEERING)
+        if not peering:
+            self.logger.info(f"{self.name}: No peering config found for {resource.get(Constants.LABEL)}")
+            return
         prop = 'stitch_interface'
         assert Constants.RES_SECURITY in peering.attributes
 
@@ -85,7 +90,7 @@ class SenseProvider(Provider):
 
         if rtype == Constants.RES_TYPE_NODE:
             from .sense_node import SenseNode
-            import fabfed.provider.api.dependency_util as util
+            import amscrot.provider.api.dependency_util as util
             from . import sense_utils
 
             assert util.has_resolved_internal_dependencies(resource=resource, attribute='network')
@@ -113,7 +118,7 @@ class SenseProvider(Provider):
         sense_stitch_port = get_stitch_port_for_provider(resource=resource, provider=self.type)
         interfaces = resource.get(Constants.RES_INTERFACES)
 
-        if not interfaces and 'option' in sense_stitch_port:
+        if not interfaces and sense_stitch_port and 'option' in sense_stitch_port:
             interfaces = sense_stitch_port['option'].get('interface')
 
         if interfaces:

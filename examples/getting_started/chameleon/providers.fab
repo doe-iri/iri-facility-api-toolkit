@@ -1,5 +1,5 @@
 provider:
   - chi:
     - chi_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: chi 

@@ -5,6 +5,7 @@ from typing import List, Dict, Union
 from amscrot.model import Resource, Node, Network, Service
 from amscrot.model.state import ProviderState
 from amscrot.util.constants import Constants
+from amscrot.util.utils import normalize_alias
 
 
 class Provider(ABC):
@@ -161,7 +162,12 @@ class Provider(ABC):
         return False
 
     def resource_name(self, resource: dict, idx: int = 0):
-        return f"{self.name}-{resource[Constants.RES_NAME_PREFIX]}-{idx}"
+        if idx < 0:
+           name = f"{self.name}-{resource[Constants.RES_NAME_PREFIX]}"
+        else:
+           name = f"{self.name}-{resource[Constants.RES_NAME_PREFIX]}-{idx}"
+
+        return normalize_alias(name)
 
     def add_to_existing_map(self, resource: dict):
         label = resource.get(Constants.LABEL)

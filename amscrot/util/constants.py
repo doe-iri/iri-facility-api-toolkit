@@ -14,8 +14,16 @@ class Constants:
     RES_CREATION_DETAILS = "creation_details"
     RES_IMAGE = "image"
     RES_NIC_MODEL = "nic_model"
-    RES_NETWORK = "network"
     RES_NAME_PREFIX = "name_prefix"
+    
+    # Named resources
+    RES_NETWORK = "network"
+    RES_COMPUTE = "compute"
+    RES_STORAGE = "storage"
+    RES_ALLOCATION = "allocation"
+    RES_PROJECT = "project"
+    RES_FACILITY = "facility"
+    RES_CAPABILITY = "capability"
 
     RES_TYPE_NODE = "node"
     RES_TYPE_NETWORK = "network"
@@ -100,17 +108,28 @@ class Constants:
     NETWORK_STITCH_CONFIG = "policy"
     PROVIDER = 'provider'
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
+    
+    class ServiceType:
+        IRI = "iri"
+        KUBE = "kube"
+        ESNET_IRI = "esnet-iri"
 
     PROVIDER_CLASSES = {
         "fabric": "amscrot.provider.fabric.fabric_provider.FabricProvider",
         "chi": "amscrot.provider.chi.chi_provider.ChiProvider",
         "sense": "amscrot.provider.sense.sense_provider.SenseProvider",
         "janus": "amscrot.provider.janus.janus_provider.JanusProvider",
-        "kube": "amscrot.provider.kube.kube_provider.KubeProvider",
+        ServiceType.KUBE: "amscrot.provider.kube.kube_provider.KubeProvider",
         "cloudlab": "amscrot.provider.cloudlab.cloudlab_provider.CloudlabProvider",
         "gcp": "amscrot.provider.gcp.gcp_provider.GcpProvider",
         "aws": "amscrot.provider.aws.aws_provider.AwsProvider",
         "dummy": "amscrot.provider.dummy.dummy_provider.DummyProvider"
+    }
+
+    SERVICE_CLIENT_CLASSES = {
+        ServiceType.IRI: "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
+        ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
+        ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient"
     }
 
     RECONCILE_STATES = True

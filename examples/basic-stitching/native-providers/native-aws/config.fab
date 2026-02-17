@@ -11,11 +11,11 @@ variable:
 provider:
   - aws:
       - aws_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: aws 
   - fabric:
       - fabric_provider:
-          credential_file: ~/.fabfed/fabfed_credentials.yml
+          credential_file: ~/.amscrot/credentials.yml
           profile: fabric
 config:
   - layer3:
