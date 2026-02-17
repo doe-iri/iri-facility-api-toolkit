@@ -228,7 +228,24 @@ class Controller:
                 state = states[0]
                 resource_dict = state.attributes.copy()
                 provider_state = resource_dict.pop(Constants.PROVIDER_STATE)
+
+                # Handle case where provider is missing from configuration
+                if not pf.has_provider(label=provider_state.label):
+                     self.logger.warning(
+                        f"Provider {provider_state.label} not found in current configuration. "
+                        f"Ignoring resource {state_label}."
+                    )
+                     continue
+
                 provider = pf.get_provider(label=provider_state.label)
+
+                # Handle case where creation_details is missing for a stored resource
+                if state_label not in provider_state.creation_details:
+                    self.logger.warning(
+                        f"Resource {state_label} found in saved state but missing creation details. "
+                        f"This might be due to a manual edit, ignoring."
+                    )
+                    continue
 
                 import copy
 
