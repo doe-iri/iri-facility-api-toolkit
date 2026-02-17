@@ -1,4 +1,4 @@
 include requirements.txt
 include README.md
 include LICENSE
-recursive-include fabfed *.json *.yml *.j2
+recursive-include amscrot *.json *.yml *.j2

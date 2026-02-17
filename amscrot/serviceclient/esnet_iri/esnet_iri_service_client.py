@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Dict, List, Any, TYPE_CHECKING
 from ..serviceclient import ServiceClient
 from ...util.constants import Constants
+from ...model.discovery import DiscoveryResult, DiscoveredResource
 
 # Import the generated ESnet IRI client (installed via pip from generated/)
 from esnet_iri.configuration import Configuration as IriConfiguration
@@ -64,34 +65,34 @@ class EsnetIriServiceClient(ServiceClient):
         # Track submitted jobs: {job_name: (resource_id, job_id)}
         self._submitted_jobs = {}
     
-    def discover(self) -> List[Any]:
+    def discover(self) -> DiscoveryResult:
         """Discover resources (compute, facilities, capabilities, allocations)."""
         if not self._api_client:
             self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
-            return []
+            return DiscoveryResult()
 
-        discovery_info = []
+        items = []
         try:
             # 1. Discover Compute Resources
             self.logger.info(f"[{self.name}] Discovering compute resources...")
             resources = self._status_api.get_resources(resource_type=ResourceType.COMPUTE)
             if resources:
                 for res in resources:
-                    discovery_info.append({"type": "compute", "data": res.to_dict()})
+                    items.append(DiscoveredResource(type="compute", data=res.to_dict()))
 
             # 2. Discover Facilities (Sites)
             self.logger.info(f"[{self.name}] Discovering facilities...")
             sites = self._facility_api.get_sites()
             if sites:
                 for site in sites:
-                    discovery_info.append({"type": "facility", "data": site.to_dict()})
+                    items.append(DiscoveredResource(type="facility", data=site.to_dict()))
 
             # 3. Discover Capabilities
             self.logger.info(f"[{self.name}] Discovering capabilities...")
             capabilities = self._account_api.get_capabilities()
             if capabilities:
                 for cap in capabilities:
-                    discovery_info.append({"type": "capability", "data": cap.to_dict()})
+                    items.append(DiscoveredResource(type="capability", data=cap.to_dict()))
 
             # 4. Discover Allocations (via Projects)
             self.logger.info(f"[{self.name}] Discovering allocations...")
@@ -106,15 +107,15 @@ class EsnetIriServiceClient(ServiceClient):
                             # Enrich allocation data with project info if needed
                             alloc_data = alloc.to_dict()
                             alloc_data['_project_name'] = project.name
-                            discovery_info.append({"type": "allocation", "data": alloc_data})
+                            items.append(DiscoveredResource(type="allocation", data=alloc_data))
 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
             # We assume if one fails others might too, or partial results are okay. 
             # For now, just print error and return what we have.
 
-        self.logger.info(f"[{self.name}] Discovery complete. Found {len(discovery_info)} items.")
-        return discovery_info
+        self.logger.info(f"[{self.name}] Discovery complete. Found {len(items)} items.")
+        return DiscoveryResult(items=items)
 
     def _load_credentials(self):
         """Load ESnet IRI credentials."""

@@ -29,6 +29,7 @@ class ProviderCredential:
 class Client:
     def __init__(self):
         self._providers: List[Provider] = []
+        self._sessions: List[Session] = []
         self._service_clients: List["ServiceClient"] = []
         self._credentials = {}
 
@@ -106,6 +107,11 @@ class Client:
 
         provider = Provider(label, type, **attributes)
         self._providers.append(provider)
+
+        # Forward to any existing sessions so providers can be added after create_session
+        for session in self._sessions:
+            session.add_provider(provider)
+
         return provider
 
     def add_service_client(self, service_client: "ServiceClient"):
@@ -113,4 +119,6 @@ class Client:
         return service_client
 
     def create_session(self, name: str) -> Session:
-        return Session(name=name, providers=self._providers, service_clients=self._service_clients)
+        session = Session(name=name, providers=list(self._providers), service_clients=self._service_clients)
+        self._sessions.append(session)
+        return session

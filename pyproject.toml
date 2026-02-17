@@ -22,13 +22,15 @@ classifiers = [
 dependencies = [
     "fabrictestbed-extensions",
     "python-chi==0.17.11",
-    "sense-o-api==1.26",
+    "sense-o-api==1.42",
     "ansible==9.5.1",
     "ansible-runner==2.3.6",
     "xmltodict",
     "boto3",
     "google-cloud-compute",
-    "pydantic"
+    "pydantic",
+    "paramiko==4.0.0",
+    "esnet-iri==1.0.0"
 ]
 
 [project.urls]
@@ -44,3 +46,6 @@ version = {attr = "amscrot.__VERSION__"}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["*"]
+
+[tool.setuptools.package-data]
+amscrot = ["**/*.json", "**/*.yml", "**/*.j2"]

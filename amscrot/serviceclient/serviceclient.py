@@ -4,6 +4,7 @@ from amscrot.util import utils
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
+    from amscrot.model.discovery import DiscoveryResult
 
 class ServiceClient(ABC):
     def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
@@ -22,7 +23,7 @@ class ServiceClient(ABC):
         self.logger = utils.get_logger()
 
     @abstractmethod
-    def discover(self) -> List[Any]:
+    def discover(self) -> "DiscoveryResult":
         pass
 
     @abstractmethod

@@ -14,8 +14,16 @@ class Constants:
     RES_CREATION_DETAILS = "creation_details"
     RES_IMAGE = "image"
     RES_NIC_MODEL = "nic_model"
-    RES_NETWORK = "network"
     RES_NAME_PREFIX = "name_prefix"
+    
+    # Named resources
+    RES_NETWORK = "network"
+    RES_COMPUTE = "compute"
+    RES_STORAGE = "storage"
+    RES_ALLOCATION = "allocation"
+    RES_PROJECT = "project"
+    RES_FACILITY = "facility"
+    RES_CAPABILITY = "capability"
 
     RES_TYPE_NODE = "node"
     RES_TYPE_NETWORK = "network"

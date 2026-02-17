@@ -4,6 +4,7 @@ import logging
 from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
 from amscrot.serviceclient.esnet_iri.esnet_iri_service_client import EsnetIriServiceClient
 from amscrot.serviceclient.iri.iri_service_client import IriServiceClient
+from amscrot.model.discovery import DiscoveryResult
 from amscrot.util.constants import Constants
 
 # Configure logging to show output during tests (if -s is used)
@@ -29,22 +30,23 @@ class TestServiceClientDiscovery(unittest.TestCase):
             discovery = client.discover()
             
             # Basic assertions
-            self.assertIsInstance(discovery, list)
+            self.assertIsInstance(discovery, DiscoveryResult)
             
-            nodes = [item for item in discovery if item.get('type') == 'node']
-            crds = [item for item in discovery if item.get('type') == 'crd']
+            nodes = discovery.by_type('node')
+            crds = discovery.by_type('crd')
             
             print(f"Discovery Summary:")
             print(f"  Total items: {len(discovery)}")
             print(f"  Nodes found: {len(nodes)}")
             print(f"  CRDs found: {len(crds)}")
+            print(f"  Types: {discovery.summary()}")
             
             if not discovery:
                  self.skipTest("KubeServiceClient likely connected but returned no resources (empty cluster?).")
 
             # Dump complete JSON
             print("\n--- Discovery JSON Dump ---")
-            print(json.dumps(discovery, indent=2, default=str)) # default=str handles non-serializable objects if any
+            print(json.dumps(discovery.to_list(), indent=2, default=str))
             print("--- End JSON Dump ---")
             
         except Exception as e:
@@ -68,34 +70,30 @@ class TestServiceClientDiscovery(unittest.TestCase):
         try:
             discovery = client.discover()
             
-            # If no credentials, it returns empty list (which is valid behavior for client itself, 
+            # If no credentials, it returns empty result (which is valid behavior for client itself, 
             # though locally we expect credentials to be present now).
             if not discovery:
                  print("EsnetIriServiceClient returned empty discovery. Check credentials if this is unexpected.")
                  return
 
             # Basic assertions for extended discovery
-            self.assertIsInstance(discovery, list)
-            
-            compute = [item for item in discovery if item.get('type') == 'compute']
-            facilities = [item for item in discovery if item.get('type') == 'facility']
-            capabilities = [item for item in discovery if item.get('type') == 'capability']
-            allocations = [item for item in discovery if item.get('type') == 'allocation']
+            self.assertIsInstance(discovery, DiscoveryResult)
             
             print(f"Esnet IRI Discovery Summary:")
             print(f"  Total items: {len(discovery)}")
-            print(f"  Compute resources: {len(compute)}")
-            print(f"  Facilities: {len(facilities)}")
-            print(f"  Capabilities: {len(capabilities)}")
-            print(f"  Allocations: {len(allocations)}")
+            print(f"  Compute resources: {len(discovery.compute)}")
+            print(f"  Facilities: {len(discovery.facility)}")
+            print(f"  Capabilities: {len(discovery.capability)}")
+            print(f"  Allocations: {len(discovery.allocation)}")
+            print(f"  Types: {discovery.summary()}")
 
             # We expect at least some of these if connected to a real environment
-            if not (compute or facilities or capabilities or allocations):
+            if not (discovery.compute or discovery.facility or discovery.capability or discovery.allocation):
                  self.skipTest("EsnetIriServiceClient connected but found no resources of any type.")
 
             # Dump JSON for manual inspection
             print("\n--- Esnet IRI Discovery JSON Dump ---")
-            print(json.dumps(discovery, indent=2, default=str))
+            print(json.dumps(discovery.to_list(), indent=2, default=str))
             print("--- End JSON Dump ---")
 
         except Exception as e:
@@ -108,7 +106,8 @@ class TestServiceClientDiscovery(unittest.TestCase):
         client = IriServiceClient(name="test-iri")
         # Discovery is a stub
         discovery = client.discover()
-        self.assertEqual(discovery, [], "IriServiceClient.discover should return empty list")
+        self.assertIsInstance(discovery, DiscoveryResult)
+        self.assertEqual(len(discovery), 0, "IriServiceClient.discover should return empty DiscoveryResult")
 
 if __name__ == '__main__':
     unittest.main()
