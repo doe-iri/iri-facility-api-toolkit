@@ -141,7 +141,8 @@ class EsnetIriServiceClient(ServiceClient):
         default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
         # self.credential_file is populated by ServiceClient.__init__
         cred_file = self.credential_file or default_file
-
+        cred_file = os.path.expanduser(cred_file)
+        
         if not os.path.exists(cred_file):
             if self.credential_file:
                  self.logger.warning(f"[{self.name}] Warning: Custom credentials file not found at {cred_file}")
