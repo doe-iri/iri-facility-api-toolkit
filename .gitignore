@@ -160,3 +160,6 @@ exp_fabfed_credentials.yml
 fabfed_credentials.yml
 exp_*
 fabfed_home
+
+# dotenv
+.env
