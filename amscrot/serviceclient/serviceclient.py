@@ -42,18 +42,18 @@ class ServiceClient(ABC):
         Discover (retrieve) global metadata using MetadataManager.
 
         Keyword Args:
-            metadata_preference: 'local', 'remote', 'local|remote', 'remote|local'. Defaults to 'local'.
-            metadata_id: Local cache file stem. Defaults to 'gmetadata'.
+            fetch_mode: 'local', 'remote', 'local|remote', 'remote|local'. Defaults to 'local'.
+            metadata_id: Local cache file stem. Defaults to 'service_client_metadata'.
             config_metadata: Optional config forwarded to MetadataManager (e.g., remote_domain/remote_name).
 
         Returns:
             Metadata dict if found; otherwise an empty dict.
         """
-        metadata_preference = str(kwargs.get("metadata_preference", "local"))
-        metadata_id = str(kwargs.get("metadata_id", "gmetadata"))
+        fetch_mode = str(kwargs.get("fetch_mode", "local|remote"))
+        metadata_id = str(kwargs.get("metadata_id", "service_client_metadata"))
         config_metadata = kwargs.get("config_metadata")
 
-        metadata = MetadataManager.fetch(metadata_fetch_mode=metadata_preference, metadata_id=metadata_id,
+        metadata = MetadataManager.fetch(metadata_fetch_mode=fetch_mode, metadata_id=metadata_id,
                                          config_metadata=config_metadata)
 
         return metadata or {}
@@ -118,18 +118,18 @@ def _main() -> int:
         python -m amscrot.serviceclient.serviceclient
 
     Defaults are:
-        metadata_preference="local"
-        metadata_id="gmetadata"
+        fetch_mode="local|remote"
+        metadata_id="service_client_metadata"
     """
     import argparse
     import json
 
     parser = argparse.ArgumentParser(description="ServiceClient metadata discovery helper")
-    parser.add_argument("--metadata-preference", default="local", help="local | remote | local|remote | remote|local")
-    parser.add_argument("--metadata-id", default="gmetadata", help="Local metadata cache file stem")
+    parser.add_argument("--fetch_mode", default="local|remote", help="local | remote | local|remote | remote|local")
+    parser.add_argument("--metadata-id", default="service_client_metadata", help="Local metadata cache file stem")
     args = parser.parse_args()
 
-    metadata = ServiceClient.discover(metadata_preference=args.metadata_preference, metadata_id=args.metadata_id)
+    metadata = ServiceClient.discover(fetch_mode=args.fetch_mode, metadata_id=args.metadata_id)
     print(json.dumps(metadata, indent=2, default=str))
     return 0
 
@@ -139,7 +139,9 @@ if __name__ == "__main__":
     raise SystemExit(_main())
 
 
-# Test:
-# (amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --metadata-preference local --metadata-id service_client_metadata
-# Test:
-#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --metadata-preference remote --metadata-id anees-test
+# Sense-o test:
+# (amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --fetch_mode local --metadata-id service_client_metadata
+# Local cache test:
+#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --fetch_mode remote --metadata-id service_client_metadata
+# Default Test
+#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient

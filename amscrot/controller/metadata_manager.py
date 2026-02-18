@@ -16,11 +16,10 @@ class MetadataConfig:
     Metadata manager configuration.
     # ... existing code ...
     """
-
     metadata_id: str
     local_base_dir: Path
     local_file_ext: str = "json"
-    remote_domain: str = "INSTANCE"
+    remote_domain: str = "WORKSPACE"
     # This value is a *record name* in the remote metadata repository.
     # If you don't override it via config, MetadataManager._build_config() will default it to metadata_id.
 
@@ -46,7 +45,7 @@ class MetadataManager:
         cls,
         *,
         metadata_fetch_mode: str,
-        metadata_id: str = "gmetadata",
+        metadata_id: str = "service_client_metadata",
         config_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """
@@ -65,10 +64,10 @@ class MetadataManager:
         base_dir = Path.home() / ".amscrot" / "metadata"
         base_dir.mkdir(parents=True, exist_ok=True)
 
-        remote_domain = str(config_metadata.get("remote_domain", "INSTANCE"))
+        remote_domain = str(config_metadata.get("remote_domain", "WORKSPACE"))
 
         # Defaulting to metadata_id makes behavior predictable:
-        #   metadata_id="gmetadata" -> GET /meta/<domain>/gmetadata
+        #   metadata_id="service_client_metadata" -> GET /meta/<domain>/service_client_metadata
 
         return MetadataConfig(
             metadata_id=str(metadata_id),
