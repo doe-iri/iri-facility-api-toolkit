@@ -53,11 +53,8 @@ class ServiceClient(ABC):
         metadata_id = str(kwargs.get("metadata_id", "gmetadata"))
         config_metadata = kwargs.get("config_metadata")
 
-        metadata = MetadataManager.fetch(
-            metadata_preference=metadata_preference,
-            metadata_id=metadata_id,
-            config_metadata=config_metadata,
-        )
+        metadata = MetadataManager.fetch(metadata_fetch_mode=metadata_preference, metadata_id=metadata_id,
+                                         config_metadata=config_metadata)
 
         return metadata or {}
 
