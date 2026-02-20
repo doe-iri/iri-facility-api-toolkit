@@ -163,3 +163,7 @@ fabfed_home
 
 # dotenv
 .env
+
+ # uv / project metadata (requested)
+uv.lock
+pyproject.toml

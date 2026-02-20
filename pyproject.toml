@@ -7,7 +7,7 @@ name = "amscrot-py"
 dynamic = ["version"]
 description = "AmSC Resource Orchestration Client Toolkit"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 keywords = ["AmSC Resource Orchestration Toolkit", "Fabfed Framework", "Cloud", "FABRIC", "Chameleon", "MOC"]
 license = {text = "MIT License"}
 authors = [
