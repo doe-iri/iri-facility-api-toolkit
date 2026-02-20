@@ -44,7 +44,7 @@ class MetadataManager:
     def fetch(
         cls,
         *,
-        metadata_fetch_mode: str,
+        metadata_fetch_mode: str = "local|remote",
         metadata_id: str = "service_client_metadata",
         config_metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
@@ -183,3 +183,8 @@ class MetadataManager:
             print(json.dumps(metadata, indent=2, default=str))
 
         return metadata
+
+    # how to run
+    # from amscrot.controller.metadata_manager import MetadataManager
+    # mtd=MetadataManager.fetch(metadata_fetch_mode='remote', metadata_id='service_client_metadata')
+    # print(mtd)
