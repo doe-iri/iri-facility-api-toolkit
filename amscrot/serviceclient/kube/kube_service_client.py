@@ -32,7 +32,13 @@ class KubeServiceClient(ServiceClient):
         # self.job_name = None # Removed stateful job_name
         self.namespace = "default" # Could be configurable
 
-    def discover(self) -> DiscoveryResult:
+    def discover(self, native: bool = True) -> DiscoveryResult:
+        if native:
+            return self._discover_native()
+        return self._discover_normalized()
+
+    def _discover_native(self) -> DiscoveryResult:
+        """Return raw Kubernetes resources (nodes, CRDs) as DiscoveredResource items."""
         if not self._available:
             return DiscoveryResult()
 
@@ -76,6 +82,61 @@ class KubeServiceClient(ServiceClient):
              self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
         return DiscoveryResult(items=items)
+
+    def _discover_normalized(self) -> DiscoveryResult:
+        """Return a normalized Facility object aggregating all Kube nodes as Compute resources."""
+        from ...model.metadata import Compute, Facility
+
+        if not self._available:
+            return DiscoveryResult()
+
+        compute_list = []
+
+        try:
+            self.logger.info(f"[{self.name}] Discovering nodes for normalization...")
+            nodes = self.core_v1.list_node()
+            for node in nodes.items:
+                allocatable = node.status.allocatable or {}
+                node_info = node.status.node_info
+                labels = node.metadata.labels or {}
+
+                # Parse CPU (e.g. "4" or "4000m")
+                cpu_raw = allocatable.get("cpu", "0")
+                try:
+                    if cpu_raw.endswith("m"):
+                        cores = int(round(int(cpu_raw[:-1]) / 1000))
+                    else:
+                        cores = int(cpu_raw)
+                except (ValueError, AttributeError):
+                    cores = None
+
+                # Parse GPU count
+                gpu_raw = allocatable.get("nvidia.com/gpu")
+                gpus = int(gpu_raw) if gpu_raw else None
+
+                compute_list.append(Compute(
+                    cores=cores,
+                    memory=allocatable.get("memory"),
+                    architecture=node_info.architecture if node_info else None,
+                    gpus_per_node=gpus,
+                    gpu_type=labels.get("nvidia.com/gpu.product"),
+                    container_runtime=node_info.container_runtime_version if node_info else None,
+                    node_selector=labels,
+                ))
+
+        except ApiException as e:
+            self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
+
+        facility = Facility(name=self.name, compute=compute_list)
+        item = DiscoveredResource(
+            type="facility",
+            data={"name": self.name},
+            name=self.name,
+            metadata=facility,
+        )
+        return DiscoveryResult(items=[item])
 
     def _create_job_object(self, job_spec: "JobSpec", job_name: str) -> client.V1Job:
         # Extract attributes

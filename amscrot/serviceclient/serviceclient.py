@@ -23,7 +23,7 @@ class ServiceClient(ABC):
         self.logger = utils.get_logger()
 
     @abstractmethod
-    def discover(self) -> "DiscoveryResult":
+    def discover(self, native: bool = True) -> "DiscoveryResult":
         pass
 
     @abstractmethod

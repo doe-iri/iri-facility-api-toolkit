@@ -7,7 +7,17 @@ class IriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
         super().__init__(type=Constants.ServiceType.IRI, **kwargs)
 
-    def discover(self) -> DiscoveryResult:
+    def discover(self, native: bool = True) -> DiscoveryResult:
+        if native:
+            return self._discover_native()
+        return self._discover_normalized()
+
+    def _discover_native(self) -> DiscoveryResult:
+        """Return raw IRI resources (currently empty — IRI API not yet integrated)."""
+        return DiscoveryResult()
+
+    def _discover_normalized(self) -> DiscoveryResult:
+        """Return normalized Facility objects (stub until IRI API is integrated)."""
         return DiscoveryResult()
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:

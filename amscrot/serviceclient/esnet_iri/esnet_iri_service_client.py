@@ -65,20 +65,32 @@ class EsnetIriServiceClient(ServiceClient):
         # Track submitted jobs: {job_name: (resource_id, job_id)}
         self._submitted_jobs = {}
     
-    def discover(self) -> DiscoveryResult:
-        """Discover resources (compute, facilities, capabilities, allocations)."""
+    def discover(self, native: bool = True) -> DiscoveryResult:
+        """Discover resources. native=True returns raw DiscoveredResource items;
+        native=False returns normalized Facility objects."""
+        if native:
+            return self._discover_native()
+        return self._discover_normalized()
+
+    def _discover_native(self) -> DiscoveryResult:
+        """Return raw API resources (compute, storage, network, facilities, capabilities, allocations)."""
         if not self._api_client:
             self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
             return DiscoveryResult()
 
         items = []
         try:
-            # 1. Discover Compute Resources
-            self.logger.info(f"[{self.name}] Discovering compute resources...")
-            resources = self._status_api.get_resources(resource_type=ResourceType.COMPUTE)
-            if resources:
-                for res in resources:
-                    items.append(DiscoveredResource(type="compute", data=res.to_dict()))
+            # 1. Discover typed resources (compute, storage, network)
+            for res_type, item_type in [
+                (ResourceType.COMPUTE,  "compute"),
+                (ResourceType.STORAGE,  "storage"),
+                (ResourceType.NETWORK,  "network"),
+            ]:
+                self.logger.info(f"[{self.name}] Discovering {item_type} resources...")
+                resources = self._status_api.get_resources(resource_type=res_type)
+                if resources:
+                    for res in resources:
+                        items.append(DiscoveredResource(type=item_type, data=res.to_dict()))
 
             # 2. Discover Facilities (Sites)
             self.logger.info(f"[{self.name}] Discovering facilities...")
@@ -104,18 +116,173 @@ class EsnetIriServiceClient(ServiceClient):
                     )
                     if allocations:
                         for alloc in allocations:
-                            # Enrich allocation data with project info if needed
                             alloc_data = alloc.to_dict()
                             alloc_data['_project_name'] = project.name
                             items.append(DiscoveredResource(type="allocation", data=alloc_data))
 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
-            # We assume if one fails others might too, or partial results are okay. 
-            # For now, just print error and return what we have.
 
         self.logger.info(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
+
+    def _discover_normalized(self) -> DiscoveryResult:
+        """Aggregate raw API resources into typed Facility objects.
+
+        Relationships between facilities and resources are resolved by inspecting
+        each facility's ``resource_uris``, extracting the UUID tail of each URI,
+        and matching it against the ``id`` of native resource items — no extra
+        HTTP calls required.  Covers compute, storage, and network resource types.
+        """
+        from ...model.metadata import Compute, Storage, Network, Allocation, Facility
+
+        if not self._api_client:
+            self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
+            return DiscoveryResult()
+
+        # ── 1. Collect raw items ──────────────────────────────────────────────
+        native_result = self._discover_native()
+
+        # ── 2. Build resource_id → typed object maps ──────────────────────────
+        def _build_compute(d: dict) -> Compute:
+            return Compute(
+                id=d.get("id"),
+                name=d.get("name") or d.get("node_name"),
+                description=d.get("description"),
+                architecture=d.get("architecture"),
+                cores=d.get("cores") or d.get("cpu_cores"),
+                memory=str(d.get("memory_gb")) + "GiB" if d.get("memory_gb") else d.get("memory"),
+                nodes=d.get("node_count"),
+                gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
+                gpu_type=d.get("gpu_type"),
+            )
+
+        def _build_storage(d: dict) -> Storage:
+            return Storage(
+                id=d.get("id"),
+                name=d.get("name"),
+                description=d.get("description"),
+                type=d.get("storage_type") or d.get("type"),
+                quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
+                performance_tier=d.get("performance_tier"),
+            )
+
+        def _build_network(d: dict) -> Network:
+            return Network(
+                id=d.get("id"),
+                name=d.get("name"),
+                description=d.get("description"),
+                fabric=d.get("fabric") or d.get("network_type"),
+                bandwidth_limit=str(d.get("bandwidth_mbps")) + "Mbps" if d.get("bandwidth_mbps") else d.get("bandwidth_limit"),
+                external_connectivity=d.get("external_connectivity"),
+            )
+
+        # resource_id -> typed metadata object (Compute | Storage | Network)
+        resource_map: dict = {}
+        for item in native_result.by_type("compute"):
+            d = item.data
+            if d.get("id"):
+                resource_map[d["id"]] = ("compute", _build_compute(d))
+        for item in native_result.by_type("storage"):
+            d = item.data
+            if d.get("id"):
+                resource_map[d["id"]] = ("storage", _build_storage(d))
+        for item in native_result.by_type("network"):
+            d = item.data
+            if d.get("id"):
+                resource_map[d["id"]] = ("network", _build_network(d))
+
+        claimed_ids: set = set()
+
+        # ── 3. Build per-facility resource lists via resource_uris ────────────
+        site_meta: dict    = {}   # site_key -> raw site dict
+        site_compute: dict = {}   # site_key -> List[Compute]
+        site_storage: dict = {}   # site_key -> List[Storage]
+        site_network: dict = {}   # site_key -> List[Network]
+        site_alloc: dict   = {}   # site_key -> List[Allocation]
+
+        for item in native_result.by_type("facility"):
+            d = item.data
+            site_key = d.get("id") or d.get("name") or "unknown"
+            site_meta[site_key]    = d
+            site_compute[site_key] = []
+            site_storage[site_key] = []
+            site_network[site_key] = []
+            site_alloc[site_key]   = []
+
+            for uri in d.get("resource_uris") or []:
+                resource_id = uri.rstrip("/").rsplit("/", 1)[-1]
+                if resource_id in resource_map:
+                    rtype, robj = resource_map[resource_id]
+                    if rtype == "compute":
+                        site_compute[site_key].append(robj)
+                    elif rtype == "storage":
+                        site_storage[site_key].append(robj)
+                    elif rtype == "network":
+                        site_network[site_key].append(robj)
+                    claimed_ids.add(resource_id)
+                    self.logger.debug(
+                        f"[{self.name}] Linked {rtype} {resource_id} → facility {site_key}"
+                    )
+                else:
+                    self.logger.debug(
+                        f"[{self.name}] URI tail {resource_id!r} has no matching native resource."
+                    )
+
+        # ── 4. Unclaimed resources → 'default' fallback bucket ─────────────── 
+        unclaimed_compute = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "compute"]
+        unclaimed_storage = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "storage"]
+        unclaimed_network = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "network"]
+        if unclaimed_compute or unclaimed_storage or unclaimed_network:
+            site_meta.setdefault("default", {"id": "default", "name": "default"})
+            site_compute.setdefault("default", []).extend(unclaimed_compute)
+            site_storage.setdefault("default", []).extend(unclaimed_storage)
+            site_network.setdefault("default", []).extend(unclaimed_network)
+            site_alloc.setdefault("default", [])
+
+        # ── 5. Map allocations to their project ───────────────────────────────
+        for item in native_result.by_type("allocation"):
+            d = item.data
+            project_name = d.get("_project_name", "default")
+            site_alloc.setdefault(project_name, [])
+            site_compute.setdefault(project_name, [])
+            site_storage.setdefault(project_name, [])
+            site_network.setdefault(project_name, [])
+            site_meta.setdefault(project_name, {"id": project_name, "name": project_name})
+            site_alloc[project_name].append(Allocation(
+                id=d.get("id"),
+                name=d.get("name"),
+                description=d.get("description"),
+                account=project_name,
+                qos=d.get("qos"),
+                walltime_limit=d.get("walltime_limit") or d.get("max_walltime"),
+                exclusive=d.get("exclusive"),
+            ))
+
+        # ── 6. Build one Facility per site ────────────────────────────────────
+        result_items = []
+        for site_key, raw in site_meta.items():
+            facility = Facility(
+                id=raw.get("id"),
+                name=raw.get("name") or site_key,
+                description=raw.get("description"),
+                compute=site_compute.get(site_key) or None,
+                storage=site_storage.get(site_key) or None,
+                networks=site_network.get(site_key) or None,
+                allocations=site_alloc.get(site_key) or None,
+            )
+            result_items.append(DiscoveredResource(
+                type="facility",
+                data=raw,
+                name=facility.name,
+                metadata=facility,
+            ))
+
+        self.logger.info(
+            f"[{self.name}] Normalized discovery complete. "
+            f"{len(result_items)} facilities, {len(claimed_ids)} resource(s) linked via URI."
+        )
+        return DiscoveryResult(items=result_items)
 
     def _load_credentials(self):
         """Load ESnet IRI credentials."""
