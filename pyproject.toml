@@ -30,7 +30,8 @@ dependencies = [
     "google-cloud-compute",
     "pydantic",
     "paramiko==4.0.0",
-    "esnet-iri==1.0.0"
+    "esnet-iri==1.0.0",
+    "kubernetes==35.0.0"
 ]
 
 [project.urls]
