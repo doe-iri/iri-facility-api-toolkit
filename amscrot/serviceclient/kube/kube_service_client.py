@@ -3,6 +3,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from ..serviceclient import ServiceClient
 from ...util.constants import Constants
+from ...model.discovery import DiscoveryResult, DiscoveredResource
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
@@ -31,11 +32,11 @@ class KubeServiceClient(ServiceClient):
         # self.job_name = None # Removed stateful job_name
         self.namespace = "default" # Could be configurable
 
-    def discover(self) -> List[Any]:
+    def discover(self) -> DiscoveryResult:
         if not self._available:
-            return []
+            return DiscoveryResult()
 
-        discovery_info = []
+        items = []
 
         try:
             # 1. Discover Nodes
@@ -54,7 +55,7 @@ class KubeServiceClient(ServiceClient):
                     "labels": node.metadata.labels,
                     "annotations": node.metadata.annotations
                 }
-                discovery_info.append({"type": "node", "data": node_data})
+                items.append(DiscoveredResource(type="node", data=node_data))
 
             # 2. Discover CRDs
             if self.apiextensions_v1:
@@ -67,14 +68,14 @@ class KubeServiceClient(ServiceClient):
                         "versions": [v.name for v in crd.spec.versions],
                         "scope": crd.spec.scope
                     }
-                    discovery_info.append({"type": "crd", "data": crd_data})
+                    items.append(DiscoveredResource(type="crd", data=crd_data))
 
         except ApiException as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
         except Exception as e:
              self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
-        return discovery_info
+        return DiscoveryResult(items=items)
 
     def _create_job_object(self, job_spec: "JobSpec", job_name: str) -> client.V1Job:
         # Extract attributes
@@ -192,6 +193,15 @@ class KubeServiceClient(ServiceClient):
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         name = job_name or self.name 
+        
+        # Check connectivity if client is available
+        if self._available:
+            try:
+                self.core_v1.list_namespace(limit=1, _request_timeout=2)
+            except Exception as e:
+                # Raise exception so tests can catch it and skip
+                raise Exception(f"Kubernetes cluster unreachable during plan: {e}")
+
         self.logger.info(f"[{self.name}] Planning Kube service for '{name}'...")
         job = self._create_job_object(job_spec, name)
         

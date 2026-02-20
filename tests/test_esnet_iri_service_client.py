@@ -40,18 +40,18 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         # Discover available compute resources using the client interface
         print("\n--- Discovering Resources ---")
         try:
-            # discover() returns a list of dicts: [{'type': 'compute', 'data': {...}}, ...]
+            # discover() returns a DiscoveryResult container
             all_resources = iri_client.discover()
             
-            # Filter for compute resources
-            compute_resources = [r for r in all_resources if r.get('type') == 'compute']
+            # Filter for compute resources using typed accessor
+            compute_resources = all_resources.compute
             print(f"Response type: {type(all_resources)}")
             
             if not compute_resources:
                 self.skipTest("No compute resources available.")
             
             # Extract ID from the first compute resource
-            resource_data = compute_resources[0].get('data', {})
+            resource_data = compute_resources[0].data
             resource_id = resource_data.get('id')
             
             if resource_id:

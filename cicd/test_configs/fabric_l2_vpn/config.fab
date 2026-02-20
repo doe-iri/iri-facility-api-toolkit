@@ -4,7 +4,7 @@ variable:
 provider:
   - fabric:
     - fabric_provider:
-         credential_file: ~/.fabfed/fabfed_credentials.yml.cicd
+         credential_file: ~/.amscrot/credentials.yml.cicd
          profile: fabric
 config:
   - layer3:

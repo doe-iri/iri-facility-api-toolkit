@@ -1,26 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, TYPE_CHECKING
-
-from amscrot.controller.metadata_manager import MetadataManager
+from typing import List, Any, Dict, Optional, TYPE_CHECKING
 from amscrot.util import utils
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
-
+    from amscrot.model.discovery import DiscoveryResult
 
 class ServiceClient(ABC):
-    def __init__(
-        self,
-        name: str,
-        type: str,
-        endpoint_uri: Optional[str] = None,
-        status: str = "ACTIVE",
-        capabilities: List[Any] = None,
-        allocated: List[Any] = None,
-        credential: Any = None,
-        profile: str = None,
-        credential_file: str = None,
-    ):
+    def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
+                 status: str = "ACTIVE", capabilities: List[Any] = None, 
+                 allocated: List[Any] = None,
+                 credential: Any = None, profile: str = None, credential_file: str = None):
         self.name = name
         self.endpoint_uri = endpoint_uri
         self.type = type
@@ -32,35 +22,9 @@ class ServiceClient(ABC):
         self.credential_file = credential_file
         self.logger = utils.get_logger()
 
-    #################################################
-    # Global Metadata Discovery (local/remote metadata records)
-    #################################################
-
-    @classmethod
-    def discover(cls, **kwargs) -> Dict:
-        """
-        Discover (retrieve) global metadata using MetadataManager.
-
-        Keyword Args:
-            fetch_mode: 'local', 'remote', 'local|remote', 'remote|local'. Defaults to 'local'.
-            metadata_id: Local cache file stem. Defaults to 'service_client_metadata'.
-            config_metadata: Optional config forwarded to MetadataManager (e.g., remote_domain/remote_name).
-
-        Returns:
-            Metadata dict if found; otherwise an empty dict.
-        """
-        fetch_mode = str(kwargs.get("fetch_mode", "local|remote"))
-        metadata_id = str(kwargs.get("metadata_id", "service_client_metadata"))
-        config_metadata = kwargs.get("config_metadata")
-
-        metadata = MetadataManager.fetch(metadata_fetch_mode=fetch_mode, metadata_id=metadata_id,
-                                         config_metadata=config_metadata)
-
-        return metadata or {}
-
-    #################################################
-    # ServiceClient API (subclasses implement these)
-    #################################################
+    @abstractmethod
+    def discover(self) -> "DiscoveryResult":
+        pass
 
     @abstractmethod
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
@@ -85,10 +49,10 @@ class ServiceClient(ABC):
 
         class_path = Constants.SERVICE_CLIENT_CLASSES.get(type)
         if not class_path:
-            raise ValueError(f"Unknown ServiceClient type: {type}")
+             raise ValueError(f"Unknown ServiceClient type: {type}")
 
         try:
-            module_name, class_name = class_path.rsplit(".", 1)
+            module_name, class_name = class_path.rsplit('.', 1)
             module = importlib.import_module(module_name)
             client_class = getattr(module, class_name)
             return client_class(**kwargs)
@@ -97,12 +61,12 @@ class ServiceClient(ABC):
 
     def to_config(self) -> Dict:
         return {
-            "service_client": [
+            'service_client': [
                 {
                     self.name: {
-                        "type": self.type,
-                        "endpoint_uri": self.endpoint_uri,
-                        "status": self._status,
+                        'type': self.type,
+                        'endpoint_uri': self.endpoint_uri,
+                        'status': self._status
                     }
                 }
             ]
@@ -110,38 +74,3 @@ class ServiceClient(ABC):
 
     def __repr__(self):
         return f"<ServiceClient name={self.name} type={self.type} uri={self.endpoint_uri}>"
-
-
-def _main() -> int:
-    """
-    Module entrypoint for:
-        python -m amscrot.serviceclient.serviceclient
-
-    Defaults are:
-        fetch_mode="local|remote"
-        metadata_id="service_client_metadata"
-    """
-    import argparse
-    import json
-
-    parser = argparse.ArgumentParser(description="ServiceClient metadata discovery helper")
-    parser.add_argument("--fetch_mode", default="local|remote", help="local | remote | local|remote | remote|local")
-    parser.add_argument("--metadata-id", default="service_client_metadata", help="Local metadata cache file stem")
-    args = parser.parse_args()
-
-    metadata = ServiceClient.discover(fetch_mode=args.fetch_mode, metadata_id=args.metadata_id)
-    print(json.dumps(metadata, indent=2, default=str))
-    return 0
-
-
-
-if __name__ == "__main__":
-    raise SystemExit(_main())
-
-
-# Sense-o test:
-# (amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --fetch_mode local --metadata-id service_client_metadata
-# Local cache test:
-#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient --fetch_mode remote --metadata-id service_client_metadata
-# Default Test
-#(amsc-isro-toolkit) PS C:\Users\4ua\Projects\amsc-isro-toolkit> python -m amscrot.serviceclient.serviceclient

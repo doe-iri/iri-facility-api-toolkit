@@ -25,7 +25,13 @@ class TestServiceClientMethods(unittest.TestCase):
         client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
         spec = JobSpec(image="busybox", executable=["echo", "hello"])
         
-        plan_result = client.plan(spec)
+        try:
+            plan_result = client.plan(spec)
+        except Exception as e:
+            if "Kubernetes cluster unreachable" in str(e):
+                self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
+            else:
+                raise
         self.assertIsInstance(plan_result, dict)
         # It might be PLANNED or FAILED depending on env, but for simple busybox it should be PLANNED 
         # unless Kube client is missing completely, in which case it is PLANNED with warnings.
@@ -43,7 +49,13 @@ class TestServiceClientMethods(unittest.TestCase):
             executable=["python", "-c", "import time; print('Hello K8s Logs'); time.sleep(5); print('Done Sleep')"]
         )
         
-        plan_result = client.plan(spec)
+        try:
+            plan_result = client.plan(spec)
+        except Exception as e:
+            if "Kubernetes cluster unreachable" in str(e):
+                self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
+            else:
+                raise
         self.assertEqual(plan_result["status"], "PLANNED")
         
         client.create(spec)

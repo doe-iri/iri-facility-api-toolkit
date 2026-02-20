@@ -1,13 +1,14 @@
 from typing import Dict, List, Any
 from ..serviceclient import ServiceClient
 from ...util.constants import Constants
+from ...model.discovery import DiscoveryResult
 
 class IriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
         super().__init__(type=Constants.ServiceType.IRI, **kwargs)
 
-    def discover(self) -> List[Any]:
-        return []
+    def discover(self) -> DiscoveryResult:
+        return DiscoveryResult()
 
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         self.logger.info(f"[{self.name}] Planning IRI service for '{job_name or self.name}' with spec: {job_spec}")
