@@ -1,13 +1,12 @@
 import os
-import json
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, TYPE_CHECKING
 from ..serviceclient import ServiceClient
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
+from ...client.job import JobStatus
 
-# Import the generated ESnet IRI client (installed via pip from generated/)
 from esnet_iri.configuration import Configuration as IriConfiguration
 from esnet_iri.api_client import ApiClient as IriApiClient
 from esnet_iri.api.compute_api import ComputeApi
@@ -18,13 +17,25 @@ from esnet_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 from esnet_iri.models.resource_type import ResourceType
 from esnet_iri.models.resource_spec import ResourceSpec
 from esnet_iri.models.job_attributes import JobAttributes
+from esnet_iri.models.job_state import JobState as IriJobState
+from esnet_iri.models.job import Job as IriJob
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
 class EsnetIriServiceClient(ServiceClient):
     """ServiceClient implementation for ESnet IRI compute jobs."""
-    
+
+    # Map IRI JobState enum → AmSCROT normalized status strings
+    _STATE_MAP = {
+        IriJobState.NEW:       "NEW",
+        IriJobState.QUEUED:    "QUEUED",
+        IriJobState.ACTIVE:    "RUNNING",
+        IriJobState.COMPLETED: "DONE",
+        IriJobState.FAILED:    "ERROR",
+        IriJobState.CANCELED:  "DESTROYED",
+    }
+
     def __init__(self, **kwargs):
         super().__init__(type=Constants.ServiceType.ESNET_IRI, **kwargs)
         
@@ -86,28 +97,28 @@ class EsnetIriServiceClient(ServiceClient):
                 (ResourceType.STORAGE,  "storage"),
                 (ResourceType.NETWORK,  "network"),
             ]:
-                self.logger.info(f"[{self.name}] Discovering {item_type} resources...")
+                self.logger.debug(f"[{self.name}] Discovering {item_type} resources...")
                 resources = self._status_api.get_resources(resource_type=res_type)
                 if resources:
                     for res in resources:
                         items.append(DiscoveredResource(type=item_type, data=res.to_dict()))
 
             # 2. Discover Facilities (Sites)
-            self.logger.info(f"[{self.name}] Discovering facilities...")
+            self.logger.debug(f"[{self.name}] Discovering facilities...")
             sites = self._facility_api.get_sites()
             if sites:
                 for site in sites:
                     items.append(DiscoveredResource(type="facility", data=site.to_dict()))
 
             # 3. Discover Capabilities
-            self.logger.info(f"[{self.name}] Discovering capabilities...")
+            self.logger.debug(f"[{self.name}] Discovering capabilities...")
             capabilities = self._account_api.get_capabilities()
             if capabilities:
                 for cap in capabilities:
                     items.append(DiscoveredResource(type="capability", data=cap.to_dict()))
 
             # 4. Discover Allocations (via Projects)
-            self.logger.info(f"[{self.name}] Discovering allocations...")
+            self.logger.debug(f"[{self.name}] Discovering allocations...")
             projects = self._account_api.get_projects()
             if projects:
                 for project in projects:
@@ -123,16 +134,15 @@ class EsnetIriServiceClient(ServiceClient):
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
-        self.logger.info(f"[{self.name}] Discovery complete. Found {len(items)} items.")
+        self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
 
     def _discover_normalized(self) -> DiscoveryResult:
-        """Aggregate raw API resources into typed Facility objects.
+        """Aggregate raw API resources into a single typed Facility object.
 
-        Relationships between facilities and resources are resolved by inspecting
-        each facility's ``resource_uris``, extracting the UUID tail of each URI,
-        and matching it against the ``id`` of native resource items — no extra
-        HTTP calls required.  Covers compute, storage, and network resource types.
+        Any resources found (compute, storage, network, allocations) can be assumed 
+        to belong to the single facility found in the resources query.  There is no
+        longer a 'default' catch-all facility.
         """
         from ...model.metadata import Compute, Storage, Network, Allocation, Facility
 
@@ -140,10 +150,8 @@ class EsnetIriServiceClient(ServiceClient):
             self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
             return DiscoveryResult()
 
-        # ── 1. Collect raw items ──────────────────────────────────────────────
         native_result = self._discover_native()
 
-        # ── 2. Build resource_id → typed object maps ──────────────────────────
         def _build_compute(d: dict) -> Compute:
             return Compute(
                 id=d.get("id"),
@@ -151,7 +159,7 @@ class EsnetIriServiceClient(ServiceClient):
                 description=d.get("description"),
                 architecture=d.get("architecture"),
                 cores=d.get("cores") or d.get("cpu_cores"),
-                memory=str(d.get("memory_gb")) + "GiB" if d.get("memory_gb") else d.get("memory"),
+                memory=d.get("memory"),
                 nodes=d.get("node_count"),
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
@@ -173,83 +181,38 @@ class EsnetIriServiceClient(ServiceClient):
                 name=d.get("name"),
                 description=d.get("description"),
                 fabric=d.get("fabric") or d.get("network_type"),
-                bandwidth_limit=str(d.get("bandwidth_mbps")) + "Mbps" if d.get("bandwidth_mbps") else d.get("bandwidth_limit"),
+                bandwidth_limit=d.get("bandwidth_limit"),
                 external_connectivity=d.get("external_connectivity"),
             )
 
-        # resource_id -> typed metadata object (Compute | Storage | Network)
-        resource_map: dict = {}
+        compute_resources = []
         for item in native_result.by_type("compute"):
             d = item.data
             if d.get("id"):
-                resource_map[d["id"]] = ("compute", _build_compute(d))
+                res_obj = _build_compute(d)
+                compute_resources.append(res_obj)
+
+                # Cache the first one as default
+                if not hasattr(self, '_default_resource_id') or not self._default_resource_id:
+                    self._default_resource_id = res_obj.id
+
+        storage_resources = []
         for item in native_result.by_type("storage"):
             d = item.data
             if d.get("id"):
-                resource_map[d["id"]] = ("storage", _build_storage(d))
+                storage_resources.append(_build_storage(d))
+
+        network_resources = []
         for item in native_result.by_type("network"):
             d = item.data
             if d.get("id"):
-                resource_map[d["id"]] = ("network", _build_network(d))
+                network_resources.append(_build_network(d))
 
-        claimed_ids: set = set()
-
-        # ── 3. Build per-facility resource lists via resource_uris ────────────
-        site_meta: dict    = {}   # site_key -> raw site dict
-        site_compute: dict = {}   # site_key -> List[Compute]
-        site_storage: dict = {}   # site_key -> List[Storage]
-        site_network: dict = {}   # site_key -> List[Network]
-        site_alloc: dict   = {}   # site_key -> List[Allocation]
-
-        for item in native_result.by_type("facility"):
-            d = item.data
-            site_key = d.get("id") or d.get("name") or "unknown"
-            site_meta[site_key]    = d
-            site_compute[site_key] = []
-            site_storage[site_key] = []
-            site_network[site_key] = []
-            site_alloc[site_key]   = []
-
-            for uri in d.get("resource_uris") or []:
-                resource_id = uri.rstrip("/").rsplit("/", 1)[-1]
-                if resource_id in resource_map:
-                    rtype, robj = resource_map[resource_id]
-                    if rtype == "compute":
-                        site_compute[site_key].append(robj)
-                    elif rtype == "storage":
-                        site_storage[site_key].append(robj)
-                    elif rtype == "network":
-                        site_network[site_key].append(robj)
-                    claimed_ids.add(resource_id)
-                    self.logger.debug(
-                        f"[{self.name}] Linked {rtype} {resource_id} → facility {site_key}"
-                    )
-                else:
-                    self.logger.debug(
-                        f"[{self.name}] URI tail {resource_id!r} has no matching native resource."
-                    )
-
-        # ── 4. Unclaimed resources → 'default' fallback bucket ─────────────── 
-        unclaimed_compute = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "compute"]
-        unclaimed_storage = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "storage"]
-        unclaimed_network = [obj for rid, (t, obj) in resource_map.items() if rid not in claimed_ids and t == "network"]
-        if unclaimed_compute or unclaimed_storage or unclaimed_network:
-            site_meta.setdefault("default", {"id": "default", "name": "default"})
-            site_compute.setdefault("default", []).extend(unclaimed_compute)
-            site_storage.setdefault("default", []).extend(unclaimed_storage)
-            site_network.setdefault("default", []).extend(unclaimed_network)
-            site_alloc.setdefault("default", [])
-
-        # ── 5. Map allocations to their project ───────────────────────────────
+        allocations = []
         for item in native_result.by_type("allocation"):
             d = item.data
             project_name = d.get("_project_name", "default")
-            site_alloc.setdefault(project_name, [])
-            site_compute.setdefault(project_name, [])
-            site_storage.setdefault(project_name, [])
-            site_network.setdefault(project_name, [])
-            site_meta.setdefault(project_name, {"id": project_name, "name": project_name})
-            site_alloc[project_name].append(Allocation(
+            allocations.append(Allocation(
                 id=d.get("id"),
                 name=d.get("name"),
                 description=d.get("description"),
@@ -259,28 +222,41 @@ class EsnetIriServiceClient(ServiceClient):
                 exclusive=d.get("exclusive"),
             ))
 
-        # ── 6. Build one Facility per site ────────────────────────────────────
-        result_items = []
-        for site_key, raw in site_meta.items():
-            facility = Facility(
-                id=raw.get("id"),
-                name=raw.get("name") or site_key,
-                description=raw.get("description"),
-                compute=site_compute.get(site_key) or None,
-                storage=site_storage.get(site_key) or None,
-                networks=site_network.get(site_key) or None,
-                allocations=site_alloc.get(site_key) or None,
-            )
-            result_items.append(DiscoveredResource(
+        # ── 3. Find the single facility ───────────────────────────────────────
+        facilities = list(native_result.by_type("facility"))
+        if not facilities:
+            self.logger.warning(f"[{self.name}] No facilities found, returning empty discovery.")
+            return DiscoveryResult()
+
+        # We assume all resources belong to the FIRST facility returned
+        facility_item = facilities[0]
+        raw = facility_item.data
+        site_key = raw.get("id") or raw.get("name") or "unknown"
+
+        facility = Facility(
+            id=raw.get("id"),
+            name=raw.get("name") or site_key,
+            description=raw.get("description"),
+            compute=compute_resources if compute_resources else None,
+            storage=storage_resources if storage_resources else None,
+            networks=network_resources if network_resources else None,
+            allocations=allocations if allocations else None,
+        )
+
+        result_items = [
+            DiscoveredResource(
                 type="facility",
                 data=raw,
                 name=facility.name,
                 metadata=facility,
-            ))
+            )
+        ]
 
         self.logger.info(
             f"[{self.name}] Normalized discovery complete. "
-            f"{len(result_items)} facilities, {len(claimed_ids)} resource(s) linked via URI."
+            f"1 facility created with {len(compute_resources)} compute, "
+            f"{len(storage_resources)} storage, {len(network_resources)} network resources, "
+            f"and {len(allocations)} allocations."
         )
         return DiscoveryResult(items=result_items)
 
@@ -410,14 +386,16 @@ class EsnetIriServiceClient(ServiceClient):
         if job_spec.attributes and 'resource_id' in job_spec.attributes:
             return job_spec.attributes['resource_id']
         
-        # Fallback to a default if not specified (for testing)
-        self.logger.warning(f"[{self.name}] Warning: No resource_id in job attributes! Using default.")
-        return "fb0aafe1-c780-55c0-b635-a7121f1b0ce5"
+        # Fallback: if we've run discovery, use the first compute resource
+        if hasattr(self, '_default_resource_id') and self._default_resource_id:
+            return self._default_resource_id
+            
+        return None
     
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         """Validate the job specification."""
         name = job_name or self.name
-        self.logger.info(f"[{self.name}] Planning ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Planning ESnet IRI job for '{name}'...")
         
         errors = []
         warnings = []
@@ -453,7 +431,7 @@ class EsnetIriServiceClient(ServiceClient):
         if errors:
             self.logger.error(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
         else:
-            self.logger.info(f"[{self.name}] ESnet IRI Job Validated: {name}")
+            self.logger.debug(f"[{self.name}] ESnet IRI Job Validated: {name}")
             if resource_id:
                 self.logger.debug(f"[{self.name}]   Resource ID: {resource_id}")
         
@@ -466,7 +444,7 @@ class EsnetIriServiceClient(ServiceClient):
     def create(self, job_spec: "JobSpec", job_name: str = None):
         """Submit a job to ESnet IRI."""
         name = job_name or self.name
-        self.logger.info(f"[{self.name}] Creating ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Creating ESnet IRI job for '{name}'...")
         
         if not self._available:
             self.logger.warning(f"[{self.name}] ESnet IRI client unavailable. Skipping submission.")
@@ -478,24 +456,15 @@ class EsnetIriServiceClient(ServiceClient):
             resource_id = self._get_resource_id(job_spec)
             iri_spec = self._convert_to_iri_job_spec(job_spec, name=name)
             
-            # Submit the job using raw response to avoid JobState deserialization issues
-            raw_response = self._compute_api.launch_job_without_preload_content(
+            # Submit the job via the typed API (returns an IriJob model)
+            iri_job: IriJob = self._compute_api.launch_job(
                 resource_id=resource_id,
                 job_spec_input=iri_spec
             )
             
-            # Parse the raw JSON response
-            response_data = json.loads(raw_response.data.decode('utf-8'))
-            
-            if raw_response.status == 200 and 'id' in response_data:
-                job_id = response_data['id']
-                self._submitted_jobs[name] = (resource_id, job_id)
-                self._status = "SUBMITTED"
-                self.logger.info(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {job_id}")
-            else:
-                # Error response
-                self.logger.error(f"[{self.name}] Error submitting job '{name}': {response_data}")
-                self._status = "ERROR"
+            self._submitted_jobs[name] = (resource_id, iri_job.id)
+            self._status = "SUBMITTED"
+            self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
                 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error submitting job '{name}': {e}")
@@ -504,7 +473,7 @@ class EsnetIriServiceClient(ServiceClient):
     def destroy(self, job_name: str = None):
         """Cancel a job on ESnet IRI."""
         name = job_name or self.name
-        self.logger.info(f"[{self.name}] Destroying ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Destroying ESnet IRI job for '{name}'...")
         
         if not self._available:
             self.logger.warning(f"[{self.name}] ESnet IRI client unavailable.")
@@ -524,7 +493,7 @@ class EsnetIriServiceClient(ServiceClient):
                 job_id=job_id
             )
             
-            self.logger.info(f"[{self.name}] Job '{name}' (ID: {job_id}) cancelled.")
+            self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job_id}) cancelled.")
             self._status = "DESTROYED"
             
             # Remove from tracking
@@ -533,80 +502,48 @@ class EsnetIriServiceClient(ServiceClient):
         except Exception as e:
             self.logger.error(f"[{self.name}] Error cancelling job '{name}': {e}")
     
-    def status(self, job_name: str = None) -> Dict:
+    def status(self, job_name: str = None) -> JobStatus:
         """Get the status of a job on ESnet IRI."""
         name = job_name or self.name
         
         if not self._available:
-            return {"status": self._status}
+            return JobStatus(state=self._status)
         
         # Check if we have a job ID for this job
         if name not in self._submitted_jobs:
-            return {
-                "status": "UNKNOWN",
-                "error": "Job not found or not yet submitted"
-            }
+            return JobStatus(
+                state="UNKNOWN",
+                message="Job not found or not yet submitted"
+            )
         
         try:
             resource_id, job_id = self._submitted_jobs[name]
             
-            # Get job status using raw response to avoid JobState deserialization issues
-            raw_response = self._compute_api.get_job_without_preload_content(
+            # Get job via the typed API (returns an IriJob model)
+            iri_job: IriJob = self._compute_api.get_job(
                 resource_id=resource_id,
                 job_id=job_id,
                 historical=False,
                 include_spec=False
             )
             
-            if raw_response.status == 200:
-                response_data = json.loads(raw_response.data.decode('utf-8'))
-                
-                # Map IRI job state to AmSCROT status
-                status_str = "UNKNOWN"
-                job_status = response_data.get('status', {})
-                if isinstance(job_status, dict):
-                    job_state = job_status.get('state')
-                elif isinstance(job_status, str):
-                    job_state = job_status
-                else:
-                    job_state = None
-                    
-                if job_state is not None:
-                    # Map job states (API returns string names)
-                    state_map = {
-                        0: "NEW",           # NEW
-                        1: "QUEUED",      # QUEUED
-                        2: "RUNNING",     # ACTIVE
-                        3: "DONE",        # COMPLETED
-                        4: "ERROR",       # FAILED
-                        5: "DESTROYED",   # CANCELED
-                        "NEW": "NEW",
-                        "QUEUED": "QUEUED",
-                        "ACTIVE": "RUNNING",
-                        "COMPLETED": "DONE",
-                        "FAILED": "ERROR",
-                        "CANCELED": "DESTROYED"
-                    }
-                    status_str = state_map.get(job_state, "UNKNOWN")
-                
-                return {
-                    "status": status_str,
-                    "job_id": job_id,
-                    "resource_id": resource_id,
-                    "iri_response": job_status
-                }
-            else:
-                # Non-200 response
-                error_body = raw_response.data.decode('utf-8') if raw_response.data else 'No response body'
-                self.logger.error(f"[{self.name}] Status check returned HTTP {raw_response.status}: {error_body}")
-                return {
-                    "status": "UNKNOWN",
-                    "error": f"HTTP {raw_response.status}: {error_body}"
-                }
+            # Map IRI JobState enum → AmSCROT status string
+            state_str = "UNKNOWN"
+            if iri_job.status and iri_job.status.state:
+                state_str = self._STATE_MAP.get(iri_job.status.state, "UNKNOWN")
+            
+            return JobStatus(
+                state=state_str,
+                message=iri_job.status.message if iri_job.status else None,
+                exit_code=iri_job.status.exit_code if iri_job.status else None,
+                job_id=job_id,
+                resource_id=resource_id,
+                provider_status=iri_job.status.to_dict() if iri_job.status else None,
+            )
                 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
-            return {
-                "status": "UNKNOWN",
-                "error": str(e)
-            }
+            return JobStatus(
+                state="UNKNOWN",
+                message=str(e)
+            )

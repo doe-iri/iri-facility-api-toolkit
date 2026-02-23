@@ -1,6 +1,6 @@
 
 import unittest
-from amscrot.client import Job, JobSpec, JobType, JobServiceType, JobStatus
+from amscrot.client import Job, JobSpec, JobType, JobServiceType, JobState
 from amscrot.serviceclient import ServiceClient
 from amscrot.util.constants import Constants
 
@@ -34,7 +34,7 @@ class TestClientJob(unittest.TestCase):
         self.assertEqual(job.name, "job1")
         self.assertEqual(job.type, JobType.COMPUTE)
         self.assertEqual(job.service_type, JobServiceType.BATCH)
-        self.assertEqual(job.status, JobStatus.INIT)
+        self.assertEqual(job.status, JobState.INIT)
         self.assertEqual(job.service_client, sc)
         self.assertEqual(job.job_spec, spec)
         self.assertEqual(job.preferences['site'], 'nersc')

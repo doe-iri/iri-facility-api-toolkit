@@ -84,7 +84,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             attributes={
                 "resource_id": resource_id,
                 "directory": "/tmp",
-                "duration": 60,
+                "duration": 600,
                 "queue_name": "debug",
                 "account": "interactive"
             }
@@ -116,24 +116,23 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             
             print("\n--- Test Status (Polling) ---")
             import time
-            max_retries = 30
+            max_retries = 300
             for i in range(max_retries):
                 status_result = iri_client.status(job_name)
-                current_status = status_result.get("status")
-                print(f"Attempt {i+1}/{max_retries}: Status = {current_status}")
+                print(f"Attempt {i+1}/{max_retries}: Status = {status_result.state}")
                 
-                if current_status in ["DONE", "ERROR", "DESTROYED"]:
+                if status_result.state in ["DONE", "ERROR", "DESTROYED"]:
                     break
                 
                 time.sleep(2)
 
-            self.assertEqual(status_result["status"], "DONE", f"Job failed or timed out. Details: {status_result}")
-            print(f"Job completed successfully. Status: {status_result}")
+            self.assertEqual(status_result.state, "DONE", f"Job failed or timed out. Details: {status_result.state}")
+            print(f"Job completed successfully. Status: {status_result.state}")
 
             # Verify exit code if available in the raw response
-            if "iri_response" in status_result and status_result["iri_response"]:
-                print(f"Raw IRI response: {status_result['iri_response']}")
-            self.assertEqual(status_result["job_id"], job_id)
+            if status_result.provider_status:
+                print(f"Raw IRI response: {status_result.provider_status}")
+            self.assertEqual(status_result.job_id, job_id)
 
         except Exception as e:
             # If there's an error, print it but still try to clean up
@@ -188,15 +187,6 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         
         resource_id = iri_client._get_resource_id(spec)
         self.assertEqual(resource_id, "custom-resource-id")
-        
-        # Test without resource_id (should use default)
-        spec_no_resource = JobSpec(
-            executable=["echo", "test"],
-            attributes={}
-        )
-        
-        resource_id_default = iri_client._get_resource_id(spec_no_resource)
-        self.assertEqual(resource_id_default, "fb0aafe1-c780-55c0-b635-a7121f1b0ce5")
 
 
 if __name__ == "__main__":

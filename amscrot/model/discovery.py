@@ -75,8 +75,6 @@ class DiscoveryResult:
     def capability(self) -> List[DiscoveredResource]:
         return self.by_type(Constants.RES_CAPABILITY)
 
-    # -- Generic access --
-
     @property
     def all(self) -> List[DiscoveredResource]:
         """Return all discovered resources."""
@@ -101,8 +99,7 @@ class DiscoveryResult:
         """Return a hierarchical representation of normalized (native=False) Facility results.
 
         Each Facility is serialized with its nested compute, storage, network,
-        and allocation resources. Named facilities are listed first; any
-        ``"default"`` unclaimed-resource bucket is appended last.
+        and allocation resources.
         """
         from amscrot.model.metadata import Facility
 
@@ -127,9 +124,7 @@ class DiscoveryResult:
             }
 
         facilities = self.facilities  # List[Facility] from typed .metadata
-        named   = [f for f in facilities if f.name != "default"]
-        default = [f for f in facilities if f.name == "default"]
-        return [_fac_to_dict(f) for f in named + default]
+        return [_fac_to_dict(f) for f in facilities]
 
     # -- Container protocol --
 

@@ -39,7 +39,7 @@ class ServiceClient(ABC):
         pass
 
     @abstractmethod
-    def status(self, job_name: str = None) -> Dict:
+    def status(self, job_name: str = None) -> "JobStatus":
         pass
 
     @classmethod

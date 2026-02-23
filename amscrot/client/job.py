@@ -14,7 +14,7 @@ class JobType(str, Enum):
     DATA = "DATA"
     INSTRUMENT = "INSTRUMENT"
 
-class JobStatus(str, Enum):
+class JobState(str, Enum):
     INIT = "INIT"
     PLAN = "PLAN"
     READY = "READY"
@@ -22,6 +22,51 @@ class JobStatus(str, Enum):
     PENDING = "PENDING"
     ERROR = "ERROR"
     DONE = "DONE"
+
+class JobStatus:
+    """Result of a ServiceClient.status() call.
+
+    Wraps a normalized status with the serialized provider-specific response.
+    """
+    def __init__(
+        self,
+        state: str = "UNKNOWN",
+        message: Optional[str] = None,
+        exit_code: Optional[int] = None,
+        job_id: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        provider_status: Optional[Dict[str, Any]] = None,
+    ):
+        self.state = state
+        self.message = message
+        self.exit_code = exit_code
+        self.job_id = job_id
+        self.resource_id = resource_id
+        self.provider_status = provider_status
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {"state": self.state}
+        if self.message is not None:
+            d["message"] = self.message
+        if self.exit_code is not None:
+            d["exit_code"] = self.exit_code
+        if self.job_id is not None:
+            d["job_id"] = self.job_id
+        if self.resource_id is not None:
+            d["resource_id"] = self.resource_id
+        if self.provider_status is not None:
+            d["provider_status"] = self.provider_status
+        return d
+
+    def __repr__(self):
+        parts = [f"state={self.state!r}"]
+        if self.message:
+            parts.append(f"message={self.message!r}")
+        if self.exit_code is not None:
+            parts.append(f"exit_code={self.exit_code}")
+        if self.job_id:
+            parts.append(f"job_id={self.job_id!r}")
+        return f"<JobStatus {' '.join(parts)}>"
 
 class JobSpec:
     def __init__(self, resources: Dict = None, image: str = None, executable: List[str] = None, attributes: Dict = None):
@@ -52,13 +97,10 @@ class Job:
         outputs: Dict = None
     ):
         self.name = name
-        # Allow string or Enum, convert to Enum if possible or keep as is? 
-        # Plan implies strict typing where specified but flexibility is often good.
-        # Let's enforce Enum for known types but cast from string if passed.
         self.type = JobType(type) if isinstance(type, str) else type
         self.service_type = JobServiceType(service_type) if isinstance(service_type, str) else service_type
         
-        self.status = JobStatus.INIT
+        self.status = JobState.INIT
         self.service_client = service_client
         self.job_spec = job_spec or JobSpec()
         self.dependency = dependency
@@ -84,8 +126,8 @@ class Job:
             
         return {self.name: config}
 
-    def set_status(self, status: Union[JobStatus, str]):
-        self.status = JobStatus(status) if isinstance(status, str) else status
+    def set_status(self, status: Union[JobState, str]):
+        self.status = JobState(status) if isinstance(status, str) else status
 
     def __repr__(self):
         return f"<Job name={self.name} type={self.type} status={self.status}>"

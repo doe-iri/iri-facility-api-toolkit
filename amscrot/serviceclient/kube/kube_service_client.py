@@ -33,6 +33,13 @@ class KubeServiceClient(ServiceClient):
         self.namespace = "default" # Could be configurable
 
     def discover(self, native: bool = True) -> DiscoveryResult:
+        # Check connectivity if client is available
+        if self._available:
+            try:
+                self.core_v1.list_namespace(limit=1, _request_timeout=2)
+            except Exception as e:
+                # Raise exception so tests can catch it and skip
+                raise Exception(f"Kubernetes cluster unreachable during discover: {e}")
         if native:
             return self._discover_native()
         return self._discover_normalized()

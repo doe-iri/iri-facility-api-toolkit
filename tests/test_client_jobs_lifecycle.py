@@ -8,8 +8,6 @@ from amscrot.util.constants import Constants
 class TestClientJobsLifecycle(unittest.TestCase):
     def test_jobs_lifecycle(self):
         client = Client()
-        # Add a dummy provider to satisfy Parser validation
-        client.add_provider(label="dummy_prov", type="dummy", config={})
         
         session = client.create_session("test_jobs_lifecycle")
         

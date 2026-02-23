@@ -139,34 +139,34 @@ class SENSENetworkedJobs(unittest.TestCase):
             s1 = east_client.status(job_name="job-1")
             s2 = west_client.status(job_name="job-2")
 
-            print(f"Poll {i}: Job1={s1.get('status')} Job2={s2.get('status')}")
+            print(f"Poll {i}: Job1={s1.state} Job2={s2.state}")
 
-            if (s1.get('status') in ["DONE", "ERROR", "DESTROYED"] and 
-                s2.get('status') in ["DONE", "ERROR", "DESTROYED"]):
+            if (s1.state in ["DONE", "ERROR", "DESTROYED"] and 
+                s2.state in ["DONE", "ERROR", "DESTROYED"]):
                 break
 
             time.sleep(2)
 
-        self.assertEqual(s1.get('status'), "DONE", f"Job failed or timed out. Details: {s1}")
-        self.assertEqual(s2.get('status'), "DONE", f"Job failed or timed out. Details: {s2}")
-        print(f"Jobs completed successfully. Status: {s1.get('status')} {s2.get('status')}")
+        self.assertEqual(s1.state, "DONE", f"Job failed or timed out. Details: {s1}")
+        self.assertEqual(s2.state, "DONE", f"Job failed or timed out. Details: {s2}")
+        print(f"Jobs completed successfully. Status: {s1.state} {s2.state}")
 
         # 11. Destroy
         print("\n--- Session Destroy ---")
         #session.destroy()
         return
 
-        # Verify cleanup with pulling
+        # Verify cleanup with polling
         for i in range(30):
             s1 = east_client.status(job_name="job-1")
             s2 = west_client.status(job_name="job-2")
-            if (s1.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"] and 
-                s2.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"]):
+            if (s1.state in ["DESTROYED", "UNKNOWN", "KILLED"] and 
+                s2.state in ["DESTROYED", "UNKNOWN", "KILLED"]):
                 break
             time.sleep(1)
         
-        self.assertIn(s1.get('status'), ["DESTROYED", "UNKNOWN", "KILLED"])
-        self.assertIn(s2.get('status'), ["DESTROYED", "UNKNOWN", "KILLED"])
+        self.assertIn(s1.state, ["DESTROYED", "UNKNOWN", "KILLED"])
+        self.assertIn(s2.state, ["DESTROYED", "UNKNOWN", "KILLED"])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ESnet IRI networked jobs example")
