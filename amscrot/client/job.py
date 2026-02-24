@@ -15,13 +15,19 @@ class JobType(str, Enum):
     INSTRUMENT = "INSTRUMENT"
 
 class JobState(str, Enum):
-    INIT = "INIT"
-    PLAN = "PLAN"
-    READY = "READY"
-    SUBMITTED = "SUBMITTED"
-    PENDING = "PENDING"
-    ERROR = "ERROR"
-    DONE = "DONE"
+    # amscrot lifecycle states (not from esnet-iri)
+    INIT      = "INIT"       # Job object created, not yet planned
+    PLANNED   = "PLANNED"    # Job validated/planned successfully
+    PENDING   = "PENDING"    # Submitted, awaiting provider scheduling
+    UNKNOWN   = "UNKNOWN"    # State cannot be determined
+
+    # States aligned with esnet-iri JobState
+    NEW       = "NEW"        # Job created at the provider
+    QUEUED    = "QUEUED"     # Job queued at the provider
+    ACTIVE    = "ACTIVE"     # Job is actively running
+    COMPLETED = "COMPLETED"  # Job completed successfully
+    FAILED    = "FAILED"     # Job failed
+    CANCELED  = "CANCELED"   # Job was canceled/destroyed
 
 class JobStatus:
     """Result of a ServiceClient.status() call.

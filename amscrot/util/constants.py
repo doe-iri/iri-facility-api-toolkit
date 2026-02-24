@@ -113,6 +113,7 @@ class Constants:
         IRI = "iri"
         KUBE = "kube"
         ESNET_IRI = "esnet-iri"
+        DUMMY = "dummy-sc"
 
     PROVIDER_CLASSES = {
         "fabric": "amscrot.provider.fabric.fabric_provider.FabricProvider",
@@ -129,7 +130,8 @@ class Constants:
     SERVICE_CLIENT_CLASSES = {
         ServiceType.IRI: "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
         ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
-        ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient"
+        ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient",
+        ServiceType.DUMMY: "amscrot.serviceclient.dummy.dummy_service_client.DummyServiceClient",
     }
 
     RECONCILE_STATES = True

@@ -1,8 +1,7 @@
 import unittest
-import time
 from amscrot.client.client import Client
-from amscrot.client.job import Job, JobType, JobServiceType, JobSpec
-from amscrot.serviceclient import ServiceClient
+from amscrot.client.job import Job, JobType, JobServiceType, JobSpec, JobState
+from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
 class TestSessionMultiResource(unittest.TestCase):
@@ -71,55 +70,47 @@ class TestSessionMultiResource(unittest.TestCase):
         session.add_job(job1)
         session.add_job(job2)
         
-        # 7. Plan
         print("\n--- Session Plan ---")
         try:
             session.plan()
-        except Exception as e:
-            # Check for K8s connectivity error
-            if "Kubernetes cluster unreachable" in str(e) or "Max retries exceeded" in str(e):
+        except PlanError as e:
+            if any("unreachable" in err for err in e.errors):
                 self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
-            else:
-                raise
+            self.fail(f"Plan failed with validation errors: {e}")
         
         # 8. Apply
         print("\n--- Session Apply ---")
         session.apply()
         
-        # 9. Show Status (Poll)
-        print("\n--- Session Status (Poll) ---")
-        for i in range(10):
-            session.show()
-            
-            # Check individual job statuses via client
-            s1 = k_client.status(job_name="job-1")
-            s2 = k_client.status(job_name="job-2")
-            
-            print(f"Poll {i}: Job1={s1.get('status')} Job2={s2.get('status')}")
-            
-            if (s1.get('status') in ["DONE", "RUNNING"] and 
-                s2.get('status') in ["DONE", "RUNNING"]):
-                # Success if both are at least running or done
-                # Since busybox jobs might finish instantly, "DONE" is good.
-                break
-                
-            time.sleep(1)
+        # 9. Wait for Jobs (ACTIVE means submitted, COMPLETED means done)
+        print("\n--- Session Status (Wait) ---")
+        results = session.wait(
+            jobs=[job1, job2],
+            target_states=[JobState.COMPLETED, JobState.ACTIVE, JobState.FAILED, JobState.CANCELED],
+            timeout=20.0,
+            interval=1.0,
+            verbose=True,
+        )
+        s1 = results["job-1"]
+        s2 = results["job-2"]
+        print(f"Settled: job-1={s1.state} job-2={s2.state}")
             
         # 10. Destroy
         print("\n--- Session Destroy ---")
         session.destroy()
         
-        # Verify cleanup with pulling
-        for i in range(10):
-            s1 = k_client.status(job_name="job-1")
-            s2 = k_client.status(job_name="job-2")
-            if (s1.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"] and 
-                s2.get('status') in ["DESTROYED", "UNKNOWN", "KILLED"]):
-                break
-            time.sleep(1)
-        
-        self.assertIn(s1.get('status'), ["DESTROYED", "UNKNOWN", "KILLED"])
-        self.assertIn(s2.get('status'), ["DESTROYED", "UNKNOWN", "KILLED"])
+        # Verify cleanup with wait
+        cleanup = session.wait(
+            jobs=[job1, job2],
+            target_states=[JobState.CANCELED, JobState.UNKNOWN],
+            timeout=20.0,
+            interval=1.0,
+            verbose=True,
+        )
+        s1 = cleanup["job-1"]
+        s2 = cleanup["job-2"]
+        self.assertIn(s1.state, [JobState.CANCELED, JobState.UNKNOWN])
+        self.assertIn(s2.state, [JobState.CANCELED, JobState.UNKNOWN])
 
 if __name__ == "__main__":
     unittest.main()

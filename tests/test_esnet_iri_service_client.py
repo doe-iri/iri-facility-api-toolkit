@@ -2,8 +2,8 @@ import unittest
 import pytest
 import os
 from pathlib import Path
-from amscrot.client.job import JobSpec
-from amscrot.serviceclient import ServiceClient
+from amscrot.client.job import JobSpec, JobState
+from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
 
@@ -23,8 +23,6 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         This is an integration test that makes real API calls to ESnet IRI.
         It first discovers available compute resources from the API, then uses one to test job submission.
         """
-        
-
         
         # Create the service client (will load credentials automatically)
         iri_client = ServiceClient.create(
@@ -98,7 +96,6 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             plan_result = iri_client.plan(spec, job_name)
             print(f"Plan result: {plan_result}")
             self.assertEqual(plan_result["status"], "PLANNED")
-            self.assertEqual(len(plan_result["errors"]), 0)
 
             # 2. Test Create (Real API call)
             print("\n--- Test Create ---")
@@ -121,18 +118,23 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 status_result = iri_client.status(job_name)
                 print(f"Attempt {i+1}/{max_retries}: Status = {status_result.state}")
                 
-                if status_result.state in ["DONE", "ERROR", "DESTROYED"]:
+                if status_result.state in [JobState.COMPLETED, JobState.FAILED, JobState.CANCELED]:
                     break
                 
                 time.sleep(2)
 
-            self.assertEqual(status_result.state, "DONE", f"Job failed or timed out. Details: {status_result.state}")
+            self.assertEqual(status_result.state, JobState.COMPLETED, f"Job failed or timed out. Details: {status_result.state}")
             print(f"Job completed successfully. Status: {status_result.state}")
 
             # Verify exit code if available in the raw response
             if status_result.provider_status:
                 print(f"Raw IRI response: {status_result.provider_status}")
             self.assertEqual(status_result.job_id, job_id)
+
+        except PlanError as e:
+            if any("not available" in err or "credentials" in err.lower() for err in e.errors):
+                self.skipTest(f"Skipping test - ESnet IRI client not available: {e}")
+            raise
 
         except Exception as e:
             # If there's an error, print it but still try to clean up

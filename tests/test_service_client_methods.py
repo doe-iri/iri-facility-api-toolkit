@@ -1,7 +1,7 @@
 import unittest
-from amscrot.serviceclient import ServiceClient
+from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
-from amscrot.client.job import JobSpec
+from amscrot.client.job import JobSpec, JobState
 
 class TestServiceClientMethods(unittest.TestCase):
     def test_iri_methods(self):
@@ -11,32 +11,29 @@ class TestServiceClientMethods(unittest.TestCase):
         # Test Plan
         plan_result = client.plan(spec)
         self.assertIsInstance(plan_result, dict)
-        self.assertEqual(plan_result["status"], "PLANNED")
+        self.assertEqual(plan_result["status"], JobState.PLANNED)
         
         # Test Create
         client.create(spec)
-        self.assertEqual(client.status()["status"], "RUNNING")
+        self.assertEqual(client.status().state, JobState.ACTIVE)
         
         # Test Destroy
         client.destroy()
-        self.assertEqual(client.status()["status"], "STOPPED")
+        self.assertEqual(client.status().state, JobState.CANCELED)
         
     def test_kube_methods(self):
         client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
         spec = JobSpec(image="busybox", executable=["echo", "hello"])
-        
+
         try:
             plan_result = client.plan(spec)
-        except Exception as e:
-            if "Kubernetes cluster unreachable" in str(e):
+        except PlanError as e:
+            if any("unreachable" in err for err in e.errors):
                 self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
-            else:
-                raise
+            self.fail(f"Plan raised PlanError unexpectedly: {e}")
         self.assertIsInstance(plan_result, dict)
-        # It might be PLANNED or FAILED depending on env, but for simple busybox it should be PLANNED 
-        # unless Kube client is missing completely, in which case it is PLANNED with warnings.
-        self.assertEqual(plan_result["status"], "PLANNED")
-        
+        self.assertEqual(plan_result["status"], JobState.PLANNED)
+
         client.create(spec)
         client.destroy()
         client.status()
@@ -51,12 +48,11 @@ class TestServiceClientMethods(unittest.TestCase):
         
         try:
             plan_result = client.plan(spec)
-        except Exception as e:
-            if "Kubernetes cluster unreachable" in str(e):
+        except PlanError as e:
+            if any("unreachable" in err for err in e.errors):
                 self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
-            else:
-                raise
-        self.assertEqual(plan_result["status"], "PLANNED")
+            self.fail(f"Plan raised PlanError unexpectedly: {e}")
+        self.assertEqual(plan_result["status"], JobState.PLANNED)
         
         client.create(spec)
         
@@ -67,11 +63,11 @@ class TestServiceClientMethods(unittest.TestCase):
         
         try:
             for _ in range(max_retries):
-                status_dict = client.status()
-                logs = status_dict.get("logs", "")
+                job_status = client.status()
+                logs = (job_status.provider_status or {}).get("logs", "")
                 if "Hello K8s Logs" in logs:
                     found_log = True
-                    print (logs)
+                    print(logs)
                     break
                 time.sleep(1)
         finally:

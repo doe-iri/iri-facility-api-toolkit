@@ -2,10 +2,10 @@ import os
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, TYPE_CHECKING
-from ..serviceclient import ServiceClient
+from ..serviceclient import ServiceClient, PlanError
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
-from ...client.job import JobStatus
+from ...client.job import JobStatus, JobState as AmscrotJobState
 
 from esnet_iri.configuration import Configuration as IriConfiguration
 from esnet_iri.api_client import ApiClient as IriApiClient
@@ -15,8 +15,6 @@ from esnet_iri.api.facility_api import FacilityApi
 from esnet_iri.api.account_api import AccountApi
 from esnet_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 from esnet_iri.models.resource_type import ResourceType
-from esnet_iri.models.resource_spec import ResourceSpec
-from esnet_iri.models.job_attributes import JobAttributes
 from esnet_iri.models.job_state import JobState as IriJobState
 from esnet_iri.models.job import Job as IriJob
 
@@ -26,14 +24,14 @@ if TYPE_CHECKING:
 class EsnetIriServiceClient(ServiceClient):
     """ServiceClient implementation for ESnet IRI compute jobs."""
 
-    # Map IRI JobState enum → AmSCROT normalized status strings
-    _STATE_MAP = {
-        IriJobState.NEW:       "NEW",
-        IriJobState.QUEUED:    "QUEUED",
-        IriJobState.ACTIVE:    "RUNNING",
-        IriJobState.COMPLETED: "DONE",
-        IriJobState.FAILED:    "ERROR",
-        IriJobState.CANCELED:  "DESTROYED",
+    # Map IRI JobState enum → AmSCROT JobState (direct 1:1 alignment)
+    _IRI_TO_AMSCROT = {
+        IriJobState.NEW:       AmscrotJobState.NEW,
+        IriJobState.QUEUED:    AmscrotJobState.QUEUED,
+        IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
+        IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
+        IriJobState.FAILED:    AmscrotJobState.FAILED,
+        IriJobState.CANCELED:  AmscrotJobState.CANCELED,
     }
 
     def __init__(self, **kwargs):
@@ -328,8 +326,17 @@ class EsnetIriServiceClient(ServiceClient):
             self.logger.error(f"[{self.name}] Error loading credentials: {e}")
     
     def _convert_to_iri_job_spec(self, job_spec: "JobSpec", name: str = None) -> IriJobSpec:
-        """Convert AmSCROT JobSpec to ESnet IRI JobSpecInput format."""
-        # Extract the executable - use the first element if it's a list
+        """Convert AmSCROT JobSpec to ESnet IRI JobSpecInput format.
+
+        Constructs IriJobSpec using direct keyword arguments rather than from_dict()
+        to avoid pydantic setting None for absent fields in model_fields_set, which
+        would cause those fields to be serialized as null and rejected by the API's
+        min_length=1 constraints.
+        """
+        from esnet_iri.models.resource_spec import ResourceSpec as IriResourceSpec
+        from esnet_iri.models.job_attributes import JobAttributes as IriJobAttributes
+
+        # --- Executable / arguments ---
         executable = job_spec.executable
         arguments = None
         if isinstance(executable, list) and len(executable) > 0:
@@ -337,49 +344,69 @@ class EsnetIriServiceClient(ServiceClient):
                 arguments = executable[1:]
             executable = executable[0]
         elif not executable:
-            executable = "echo"  # Default fallback
+            executable = "echo"
 
-        # Build a plain dict to avoid pydantic cross-import validation issues
-        spec_dict = {"executable": executable}
+        # --- Keyword args for IriJobSpec (only set what we have) ---
+        kwargs: dict = {"executable": executable}
 
         if arguments:
-            spec_dict["arguments"] = arguments
+            kwargs["arguments"] = arguments
 
-        # Add name if present (prioritize argument, then check JobSpec attribute if exists)
-        if name:
-            spec_dict["name"] = name
-        elif hasattr(job_spec, 'name') and job_spec.name:
-            spec_dict["name"] = job_spec.name
+        # Job name
+        job_name = name or (job_spec.name if hasattr(job_spec, "name") and job_spec.name else None)
+        if job_name:
+            kwargs["name"] = job_name
 
-        # Add resources if present
+        # --- ResourceSpec (typed model, no from_dict) ---
         if job_spec.resources:
-            spec_dict["resources"] = job_spec.resources
+            res = job_spec.resources
+            res_kwargs: dict = {}
+            if res.get("node_count") is not None:
+                res_kwargs["node_count"] = res["node_count"]
+            if res.get("process_count") is not None:
+                res_kwargs["process_count"] = res["process_count"]
+            if res.get("processes_per_node") is not None:
+                res_kwargs["processes_per_node"] = res["processes_per_node"]
+            if res.get("cpu_cores_per_process") is not None:
+                res_kwargs["cpu_cores_per_process"] = res["cpu_cores_per_process"]
+            if res.get("gpu_cores_per_process") is not None:
+                res_kwargs["gpu_cores_per_process"] = res["gpu_cores_per_process"]
+            if res.get("exclusive_node_use") is not None:
+                res_kwargs["exclusive_node_use"] = res["exclusive_node_use"]
+            if res.get("memory") is not None:
+                res_kwargs["memory"] = res["memory"]
+            kwargs["resources"] = IriResourceSpec(**res_kwargs)
 
-        # Add attributes if present (excluding resource_id which is handled separately)
+        # --- Attributes and I/O paths ---
         if job_spec.attributes:
             attrs = job_spec.attributes.copy()
 
-            # Extract resource_id
-            if 'resource_id' in attrs:
-                del attrs['resource_id']
+            # Remove resource_id — handled separately via _get_resource_id
+            attrs.pop("resource_id", None)
 
-            # Extract directory if present
-            if 'directory' in attrs:
-                spec_dict["directory"] = attrs.pop('directory')
+            # I/O path fields live directly on IriJobSpec (min_length=1, only set if present)
+            for field in ("directory", "stdout_path", "stderr_path", "stdin_path"):
+                val = attrs.pop(field, None)
+                if val:
+                    kwargs[field] = val
 
-            # Extract standard I/O paths
-            if 'stdout_path' in attrs:
-                spec_dict["stdout_path"] = attrs.pop('stdout_path')
-            if 'stderr_path' in attrs:
-                spec_dict["stderr_path"] = attrs.pop('stderr_path')
-            if 'stdin_path' in attrs:
-                spec_dict["stdin_path"] = attrs.pop('stdin_path')
-                
-            # Remaining attributes go to JobAttributes
+            # Remaining attrs → JobAttributes typed model (no from_dict)
             if attrs:
-                spec_dict["attributes"] = attrs
-        
-        return IriJobSpec.from_dict(spec_dict)
+                attr_kwargs: dict = {}
+                if attrs.get("duration") is not None:
+                    attr_kwargs["duration"] = attrs.pop("duration")
+                if attrs.get("queue_name"):
+                    attr_kwargs["queue_name"] = attrs.pop("queue_name")
+                if attrs.get("account"):
+                    attr_kwargs["account"] = attrs.pop("account")
+                if attrs.get("reservation_id"):
+                    attr_kwargs["reservation_id"] = attrs.pop("reservation_id")
+                # Remaining unknown attrs go into custom_attributes
+                if attrs:
+                    attr_kwargs["custom_attributes"] = {k: str(v) for k, v in attrs.items()}
+                kwargs["attributes"] = IriJobAttributes(**attr_kwargs)
+
+        return IriJobSpec(**kwargs)
     
     def _get_resource_id(self, job_spec: "JobSpec") -> str:
         """Extract resource_id from JobSpec attributes."""
@@ -402,12 +429,7 @@ class EsnetIriServiceClient(ServiceClient):
         
         # Check if client is available
         if not self._available:
-            errors.append("ESnet IRI client not available - check credentials")
-            return {
-                "status": "FAILED",
-                "errors": errors,
-                "warnings": warnings
-            }
+            raise PlanError(errors=["ESnet IRI client not available - check credentials"])
         
         # Validate resource_id is present
         resource_id = None
@@ -426,19 +448,16 @@ class EsnetIriServiceClient(ServiceClient):
         except Exception as e:
             errors.append(f"Failed to convert job spec: {e}")
         
-        status = "PLANNED" if not errors else "FAILED"
-        
         if errors:
-            self.logger.error(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
-        else:
-            self.logger.debug(f"[{self.name}] ESnet IRI Job Validated: {name}")
-            if resource_id:
-                self.logger.debug(f"[{self.name}]   Resource ID: {resource_id}")
-        
+            raise PlanError(errors=errors, warnings=warnings)
+
+        self.logger.debug(f"[{self.name}] ESnet IRI Job Validated: {name}")
+        if resource_id:
+            self.logger.debug(f"[{self.name}]   Resource ID: {resource_id}")
+
         return {
-            "status": status,
-            "errors": errors,
-            "warnings": warnings
+            "status": AmscrotJobState.PLANNED.value,
+            "warnings": warnings,
         }
     
     def create(self, job_spec: "JobSpec", job_name: str = None):
@@ -463,7 +482,7 @@ class EsnetIriServiceClient(ServiceClient):
             )
             
             self._submitted_jobs[name] = (resource_id, iri_job.id)
-            self._status = "SUBMITTED"
+            self._status = AmscrotJobState.PENDING.value
             self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
                 
         except Exception as e:
@@ -494,7 +513,7 @@ class EsnetIriServiceClient(ServiceClient):
             )
             
             self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job_id}) cancelled.")
-            self._status = "DESTROYED"
+            self._status = AmscrotJobState.CANCELED.value
             
             # Remove from tracking
             del self._submitted_jobs[name]
@@ -527,10 +546,11 @@ class EsnetIriServiceClient(ServiceClient):
                 include_spec=False
             )
             
-            # Map IRI JobState enum → AmSCROT status string
-            state_str = "UNKNOWN"
+            # Map IRI JobState enum → AmSCROT JobState
+            amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
-                state_str = self._STATE_MAP.get(iri_job.status.state, "UNKNOWN")
+                amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
+            state_str = amscrot_state.value
             
             return JobStatus(
                 state=state_str,

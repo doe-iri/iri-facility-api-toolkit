@@ -2,6 +2,7 @@ from typing import Dict, List, Any
 from ..serviceclient import ServiceClient
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult
+from ...client.job import JobStatus, JobState
 
 class IriServiceClient(ServiceClient):
     def __init__(self, **kwargs):
@@ -26,11 +27,11 @@ class IriServiceClient(ServiceClient):
 
     def create(self, job_spec, job_name: str = None):
         self.logger.info(f"[{self.name}] Creating IRI service for '{job_name or self.name}' with spec: {job_spec}")
-        self._status = "RUNNING"
+        self._status = JobState.ACTIVE.value
 
     def destroy(self, job_name: str = None):
         self.logger.info(f"[{self.name}] Destroying IRI service for '{job_name or self.name}'...")
-        self._status = "STOPPED"
+        self._status = JobState.CANCELED.value
 
-    def status(self, job_name: str = None) -> Dict:
-        return {"status": self._status}
+    def status(self, job_name: str = None) -> JobStatus:
+        return JobStatus(state=self._status)
