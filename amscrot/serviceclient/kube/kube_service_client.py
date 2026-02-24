@@ -8,6 +8,9 @@ from ...model.discovery import DiscoveryResult, DiscoveredResource
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
+from amscrot.client.job import JobStatus, JobState
+from amscrot.serviceclient.serviceclient import PlanError
+
 class KubeServiceClient(ServiceClient):
     def __init__(self, **kwargs):
         super().__init__(type=Constants.ServiceType.KUBE, **kwargs)
@@ -32,7 +35,20 @@ class KubeServiceClient(ServiceClient):
         # self.job_name = None # Removed stateful job_name
         self.namespace = "default" # Could be configurable
 
-    def discover(self) -> DiscoveryResult:
+    def discover(self, native: bool = True) -> DiscoveryResult:
+        # Check connectivity if client is available
+        if self._available:
+            try:
+                self.core_v1.list_namespace(limit=1, _request_timeout=2)
+            except Exception as e:
+                # Raise exception so tests can catch it and skip
+                raise Exception(f"Kubernetes cluster unreachable during discover: {e}")
+        if native:
+            return self._discover_native()
+        return self._discover_normalized()
+
+    def _discover_native(self) -> DiscoveryResult:
+        """Return raw Kubernetes resources (nodes, CRDs) as DiscoveredResource items."""
         if not self._available:
             return DiscoveryResult()
 
@@ -76,6 +92,61 @@ class KubeServiceClient(ServiceClient):
              self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
         return DiscoveryResult(items=items)
+
+    def _discover_normalized(self) -> DiscoveryResult:
+        """Return a normalized Facility object aggregating all Kube nodes as Compute resources."""
+        from ...model.metadata import Compute, Facility
+
+        if not self._available:
+            return DiscoveryResult()
+
+        compute_list = []
+
+        try:
+            self.logger.info(f"[{self.name}] Discovering nodes for normalization...")
+            nodes = self.core_v1.list_node()
+            for node in nodes.items:
+                allocatable = node.status.allocatable or {}
+                node_info = node.status.node_info
+                labels = node.metadata.labels or {}
+
+                # Parse CPU (e.g. "4" or "4000m")
+                cpu_raw = allocatable.get("cpu", "0")
+                try:
+                    if cpu_raw.endswith("m"):
+                        cores = int(round(int(cpu_raw[:-1]) / 1000))
+                    else:
+                        cores = int(cpu_raw)
+                except (ValueError, AttributeError):
+                    cores = None
+
+                # Parse GPU count
+                gpu_raw = allocatable.get("nvidia.com/gpu")
+                gpus = int(gpu_raw) if gpu_raw else None
+
+                compute_list.append(Compute(
+                    cores=cores,
+                    memory=allocatable.get("memory"),
+                    architecture=node_info.architecture if node_info else None,
+                    gpus_per_node=gpus,
+                    gpu_type=labels.get("nvidia.com/gpu.product"),
+                    container_runtime=node_info.container_runtime_version if node_info else None,
+                    node_selector=labels,
+                ))
+
+        except ApiException as e:
+            self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
+
+        facility = Facility(name=self.name, compute=compute_list)
+        item = DiscoveredResource(
+            type="facility",
+            data={"name": self.name},
+            name=self.name,
+            metadata=facility,
+        )
+        return DiscoveryResult(items=[item])
 
     def _create_job_object(self, job_spec: "JobSpec", job_name: str) -> client.V1Job:
         # Extract attributes
@@ -199,26 +270,20 @@ class KubeServiceClient(ServiceClient):
             try:
                 self.core_v1.list_namespace(limit=1, _request_timeout=2)
             except Exception as e:
-                # Raise exception so tests can catch it and skip
-                raise Exception(f"Kubernetes cluster unreachable during plan: {e}")
+                raise PlanError(errors=[f"Kubernetes cluster unreachable: {e}"])
 
         self.logger.info(f"[{self.name}] Planning Kube service for '{name}'...")
         job = self._create_job_object(job_spec, name)
         
         errors, warnings = self._validate_resources(job, name)
         
-        status = "PLANNED"
         if errors:
-            status = "FAILED"
-            self.logger.error(f"[{self.name}] Plan FAILED for '{name}' with {len(errors)} errors.")
-        else:
-            self.logger.info(f"[{self.name}] Kubernetes Job Validated: {job.metadata.name}")
-            
+            raise PlanError(errors=errors, warnings=warnings)
+
         return {
-            "status": status,
-            "errors": errors,
+            "status": JobState.PLANNED.value,
             "warnings": warnings,
-            "job_object": job 
+            "job_object": job
         }
 
     def create(self, job_spec: "JobSpec", job_name: str = None):
@@ -236,11 +301,11 @@ class KubeServiceClient(ServiceClient):
                 body=job,
                 namespace=namespace
             )
-            self._status = "SUBMITTED"
+            self._status = JobState.ACTIVE.value
             self.logger.info(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
         except Exception as e:
             self.logger.error(f"[{self.name}] Error submitting job '{name}': {e}")
-            self._status = "ERROR"
+            self._status = JobState.FAILED.value
 
     def destroy(self, job_name: str = None):
         name = job_name or self.name
@@ -258,7 +323,7 @@ class KubeServiceClient(ServiceClient):
                 )
             )
             self.logger.info(f"[{self.name}] Job '{name}' deleted. Status='{api_response.status}'")
-            self._status = "DESTROYED"
+            self._status = JobState.CANCELED.value
         except Exception as e:
              self.logger.error(f"[{self.name}] Error deleting job '{name}': {e}")
 
@@ -290,44 +355,47 @@ class KubeServiceClient(ServiceClient):
         except Exception as e:
             return f"Error fetching logs: {str(e)}"
 
-    def status(self, job_name: str = None) -> Dict:
+    def status(self, job_name: str = None) -> JobStatus:
         name = job_name or self.name
-        
+
         if not self._available:
-             return {"status": self._status}
-        
+            return JobStatus(state=self._status)
+
         try:
             api_response = self.batch_v1.read_namespaced_job_status(
                 name=name,
                 namespace=self.namespace
             )
-            # Map k8s status to amscrot status
             k8s_status = api_response.status
-            status_str = "UNKNOWN"
+
+            # Map Kubernetes job status → aligned JobState
             if k8s_status.succeeded:
-                status_str = "DONE"
+                state = JobState.COMPLETED
             elif k8s_status.failed:
-                status_str = "ERROR"
+                state = JobState.FAILED
             elif k8s_status.active:
-                status_str = "RUNNING"
-                
+                state = JobState.ACTIVE
+            else:
+                state = JobState.UNKNOWN
+
             logs = self._get_job_logs(name)
-            
-            return {
-                "status": status_str,
-                "succeeded": k8s_status.succeeded,
-                "failed": k8s_status.failed,
-                "active": k8s_status.active,
-                "logs": logs
-            }
+
+            return JobStatus(
+                state=state.value,
+                provider_status={
+                    "succeeded": k8s_status.succeeded,
+                    "failed": k8s_status.failed,
+                    "active": k8s_status.active,
+                    "logs": logs,
+                }
+            )
         except ApiException as e:
             if e.status == 404:
-                # Job not found implies it was destroyed or never created
-                if self._status == "DESTROYED":
-                    return {"status": "DESTROYED"}
-                return {"status": "UNKNOWN", "error": "Job not found"}
+                # Job not found — either destroyed or never created
+                state = JobState.CANCELED if self._status == JobState.CANCELED.value else JobState.UNKNOWN
+                return JobStatus(state=state.value)
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
-            return {"status": "UNKNOWN", "error": str(e)}
+            return JobStatus(state=JobState.UNKNOWN.value, message=str(e))
         except Exception as e:
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
-            return {"status": "UNKNOWN", "error": str(e)}
+            return JobStatus(state=JobState.UNKNOWN.value, message=str(e))

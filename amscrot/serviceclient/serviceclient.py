@@ -6,6 +6,22 @@ if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
     from amscrot.model.discovery import DiscoveryResult
 
+
+class PlanError(Exception):
+    """Raised by ServiceClient.plan() when validation errors prevent job submission.
+
+    Attributes:
+        errors:   List of error messages that caused the failure.
+        warnings: List of non-fatal warning messages (may be empty).
+    """
+
+    def __init__(self, errors: List[str], warnings: List[str] = None):
+        self.errors = errors
+        self.warnings = warnings or []
+        error_summary = "; ".join(errors)
+        super().__init__(f"Plan failed with {len(errors)} error(s): {error_summary}")
+
+
 class ServiceClient(ABC):
     def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
                  status: str = "ACTIVE", capabilities: List[Any] = None, 
@@ -23,7 +39,7 @@ class ServiceClient(ABC):
         self.logger = utils.get_logger()
 
     @abstractmethod
-    def discover(self) -> "DiscoveryResult":
+    def discover(self, native: bool = True) -> "DiscoveryResult":
         pass
 
     @abstractmethod
@@ -39,7 +55,7 @@ class ServiceClient(ABC):
         pass
 
     @abstractmethod
-    def status(self, job_name: str = None) -> Dict:
+    def status(self, job_name: str = None) -> "JobStatus":
         pass
 
     @classmethod

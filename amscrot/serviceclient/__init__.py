@@ -1,1 +1,1 @@
-from .serviceclient import ServiceClient
+from .serviceclient import ServiceClient, PlanError

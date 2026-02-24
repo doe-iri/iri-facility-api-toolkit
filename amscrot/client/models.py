@@ -1,4 +1,5 @@
-from typing import Dict, List, Any, TYPE_CHECKING, Union
+import time
+from typing import Dict, List, Any, TYPE_CHECKING, Union, Optional, Set
 from amscrot.amscrot_manager import AmSCROTManager
 
 if TYPE_CHECKING:
@@ -69,6 +70,17 @@ class Service(Resource):
 
     def __str__(self):
         return f"{{{{ service.{self.label} }}}}"
+
+
+class WaitTimeoutError(TimeoutError):
+    """Raised by Session.wait() when the timeout expires before all jobs settle."""
+    def __init__(self, pending: Dict[str, Any], target_states):
+        self.pending = pending  # {job_name: last JobStatus}
+        names = list(pending.keys())
+        labels = [s.value if hasattr(s, 'value') else s for s in target_states]
+        super().__init__(
+            f"{len(names)} job(s) did not reach {labels} within the timeout: {names}"
+        )
 
 
 class Session:
@@ -167,6 +179,99 @@ class Session:
     def destroy(self) -> Any:
         manager = self._get_manager()
         return manager.destroy(session=self._name)
+
+    def wait(
+        self,
+        jobs: Optional[List["Job"]] = None,
+        target_states: Optional[List] = None,
+        *,
+        timeout: Optional[float] = 300.0,
+        interval: float = 2.0,
+        verbose: bool = False,
+    ) -> Dict[str, Any]:
+        """Poll jobs until all reach one of the target states.
+
+        Resolves each job's bound service_client automatically, grouping polls
+        per client to avoid redundant API calls.
+
+        Args:
+            jobs:          Jobs to monitor. Defaults to all jobs in the session.
+            target_states: Terminal states to wait for. Defaults to
+                           [JobState.COMPLETED, JobState.FAILED, JobState.CANCELED].
+            timeout:       Max seconds to wait total. None = wait forever.
+            interval:      Seconds between poll rounds.
+            verbose:       Print poll status to stdout each round.
+
+        Returns:
+            Dict of {job_name: JobStatus} for all jobs once settled.
+
+        Raises:
+            WaitTimeoutError: If timeout is reached before all jobs settle,
+                              carrying the last known status for unsettled jobs.
+        """
+        from amscrot.client.job import JobState
+
+        watch_jobs: List["Job"] = jobs if jobs is not None else list(self._jobs)
+
+        if target_states is None:
+            target_states = [JobState.COMPLETED, JobState.FAILED, JobState.CANCELED]
+
+        # Normalise target_states to a set of string values for comparison
+        target_set: Set[str] = {
+            s.value if hasattr(s, "value") else s for s in target_states
+        }
+
+        # pending: {job_name -> job}, results: {job_name -> JobStatus}
+        pending: Dict[str, "Job"] = {j.name: j for j in watch_jobs}
+        results: Dict[str, Any] = {}
+
+        start = time.monotonic()
+
+        while pending:
+            if timeout is not None and (time.monotonic() - start) >= timeout:
+                # Capture last status for unsettled jobs before raising
+                for job_name, job in pending.items():
+                    sc = job.service_client
+                    if sc:
+                        try:
+                            results[job_name] = sc.status(job_name=job_name)
+                        except Exception:
+                            pass
+                raise WaitTimeoutError(results, target_states)
+
+            # Group pending jobs by service_client
+            by_client: Dict[Any, List[str]] = {}
+            for job_name, job in pending.items():
+                sc = job.service_client
+                if sc is None:
+                    raise ValueError(
+                        f"Job '{job_name}' has no bound service_client — cannot poll status."
+                    )
+                by_client.setdefault(sc, []).append(job_name)
+
+            # Poll each client for its jobs
+            settled_this_round: List[str] = []
+            for sc, job_names in by_client.items():
+                for job_name in job_names:
+                    status = sc.status(job_name=job_name)
+                    results[job_name] = status
+                    if status.state in target_set:
+                        settled_this_round.append(job_name)
+
+            if verbose:
+                summary = ", ".join(
+                    f"{n}={results[n].state}" for n in sorted(results)
+                )
+                elapsed = time.monotonic() - start
+                print(f"[wait] {elapsed:.1f}s — {summary}")
+
+            for name in settled_this_round:
+                del pending[name]
+
+            if pending:
+                time.sleep(interval)
+
+        return results
 
     def show(self) -> Any:
         manager = self._get_manager()

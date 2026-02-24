@@ -1,6 +1,6 @@
 
 import unittest
-from amscrot.client import Job, JobSpec, JobType, JobServiceType, JobStatus
+from amscrot.client import Job, JobSpec, JobType, JobServiceType, JobState
 from amscrot.serviceclient import ServiceClient
 from amscrot.util.constants import Constants
 
@@ -9,7 +9,7 @@ class TestClientJob(unittest.TestCase):
         sc = ServiceClient.create(type=Constants.ServiceType.IRI, name="sc1", endpoint_uri="http://localhost:8000")
         self.assertEqual(sc.name, "sc1")
         self.assertEqual(sc.endpoint_uri, "http://localhost:8000")
-        self.assertEqual(sc.status(), {"status": "ACTIVE"})
+        self.assertEqual(sc.status().state, JobState.ACTIVE)
         self.assertEqual(sc.capabilities, [])
         
     def test_job_creation(self):
@@ -34,7 +34,7 @@ class TestClientJob(unittest.TestCase):
         self.assertEqual(job.name, "job1")
         self.assertEqual(job.type, JobType.COMPUTE)
         self.assertEqual(job.service_type, JobServiceType.BATCH)
-        self.assertEqual(job.status, JobStatus.INIT)
+        self.assertEqual(job.status, JobState.INIT)
         self.assertEqual(job.service_client, sc)
         self.assertEqual(job.job_spec, spec)
         self.assertEqual(job.preferences['site'], 'nersc')

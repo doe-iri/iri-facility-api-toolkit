@@ -1,8 +1,7 @@
 import unittest
-import time
 from amscrot.client.client import Client
-from amscrot.client.job import Job, JobType, JobServiceType, JobSpec
-from amscrot.serviceclient import ServiceClient
+from amscrot.client.job import Job, JobType, JobServiceType, JobSpec, JobState
+from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
 
@@ -44,50 +43,43 @@ class TestSessionLifecycle(unittest.TestCase):
         
         session.add_job(job)
         
-        # 5. Plan
         print("\n--- Session Plan ---")
         try:
             session.plan()
-        except Exception as e:
-            if "Kubernetes cluster unreachable" in str(e):
+        except PlanError as e:
+            if any("unreachable" in err for err in e.errors):
                 self.skipTest(f"Skipping test - K8s connectivity failed: {e}")
-            else:
-                raise
+            self.fail(f"Plan failed with validation errors: {e}")
         
         # 6. Apply
         print("\n--- Session Apply ---")
         session.apply()
-        
-        # 7. Show (Poll Status)
-        print("\n--- Session Show (Polling) ---")
+
+        # 7. Wait for Completion
+        print("\n--- Session Wait ---")
         try:
-            # Poll for completion
-            for i in range(10):
-                session.show()
-                
-                status = k_client.status(job_name="sess-job-1")
-                print(f"Poll {i}: {status.get('status')} - Succeeded: {status.get('succeeded')}")
-                
-                if status.get("succeeded") == 5:
-                    print("Job completed successfully via Session orchestration.")
-                    break
-                
-                if status.get("status") == "ERROR":
-                    print(f"FAILED STATUS: {status}")
-                    self.fail(f"Job failed during session execution: {status}")
-                    
-                time.sleep(2)
-            else:
-                 self.fail("Timed out waiting for session job completion")
+            results = session.wait(
+                jobs=[job],
+                target_states=[JobState.COMPLETED, JobState.FAILED, JobState.CANCELED],
+                timeout=180.0,
+                interval=2.0,
+                verbose=True,
+            )
+            final = results["sess-job-1"]
+            print(f"Final Status: {final.state}")
+            if final.provider_status:
+                succeeded = final.provider_status.get("succeeded", 0)
+                print(f"Succeeded count: {succeeded}")
+            self.assertEqual(final.state, JobState.COMPLETED, f"Job did not complete: {final}")
 
         finally:
             # 8. Destroy
             print("\n--- Session Destroy ---")
             session.destroy()
-            
+
             # Verify cleanup
             final_status = k_client.status(job_name="sess-job-1")
-            print(f"Final Status: {final_status}")
+            print(f"Final Status: {final_status.state}")
 
 
 if __name__ == "__main__":

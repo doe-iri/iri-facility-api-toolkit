@@ -1,8 +1,19 @@
 from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
-# Resource Models
-class Compute(BaseModel):
+
+# ── Common base ─────────────────────────────────────────────────────────────
+
+class ResourceBase(BaseModel):
+    """Common fields shared by all first-class resource metadata objects."""
+    id: Optional[str] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ── Resource Models ──────────────────────────────────────────────────────────
+
+class Compute(ResourceBase):
     # Common / Shared
     architecture: Optional[str] = None
     cores: Optional[int] = None
@@ -24,9 +35,8 @@ class Compute(BaseModel):
     container_runtime: Optional[str] = None
 
 
-class Storage(BaseModel):
+class Storage(ResourceBase):
     # Common
-    name: Optional[str] = None
     type: Optional[str] = None # lustre, nfs, ebs
     mount_point: Optional[str] = None
     quota: Optional[str] = None
@@ -61,7 +71,7 @@ class Layer3(BaseModel):
     gateway: Optional[str] = None
 
 
-class Network(BaseModel):
+class Network(ResourceBase):
     # HPC
     fabric: Optional[str] = None
     rdma_enabled: Optional[bool] = None
@@ -82,28 +92,27 @@ class Network(BaseModel):
     layer3: Optional[Layer3] = None
 
 
-class Allocation(BaseModel):
+class Allocation(ResourceBase):
     account: Optional[str] = None
     qos: Optional[str] = None
     walltime_limit: Optional[str] = None
     exclusive: Optional[bool] = None
 
 
-class Data(BaseModel):
+class Data(ResourceBase):
     caching_policy: Optional[str] = None
     sync_interval: Optional[str] = None
     retention_policy: Optional[str] = None
 
 
-class Operation(BaseModel):
+class Operation(ResourceBase):
     strategy: Optional[str] = None
     max_unavailable: Optional[str] = None
     max_surge: Optional[str] = None
 
 
-class Facility(BaseModel):
-    name: str
-    description: Optional[str] = None
+class Facility(ResourceBase):
+    name: str  # required — overrides the optional base field
     compute: Optional[List[Compute]] = None
     storage: Optional[List[Storage]] = None
     networks: Optional[List[Network]] = None

@@ -225,10 +225,11 @@ class AmSCROTManager:
              for job in jobs:
                  if hasattr(job, 'service_client') and job.service_client:
                      status = job.service_client.status(job_name=job.name)
+                     logs_raw = (status.provider_status or {}).get("logs", "") if status.provider_status else ""
                      job_summaries.append({
                         "name": job.name,
-                        "status": status.get("status"),
-                        "logs": status.get("logs", "")[:200] + "..." if status.get("logs") else "", # Truncate logs for summary
+                        "status": status.state,
+                        "logs": logs_raw[:200] + "..." if logs_raw else "",
                         "service_client": job.service_client.name,
                     })
                  else:

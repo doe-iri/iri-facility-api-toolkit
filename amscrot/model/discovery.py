@@ -1,6 +1,9 @@
-from typing import List, Optional, Dict, Any, Iterator
+from typing import List, Optional, Dict, Any, Iterator, TYPE_CHECKING
 from pydantic import BaseModel, Field
 from amscrot.util.constants import Constants
+
+if TYPE_CHECKING:
+    from amscrot.model.metadata import Facility
 
 
 class DiscoveredResource(BaseModel):
@@ -8,6 +11,10 @@ class DiscoveredResource(BaseModel):
     type: str
     data: Dict[str, Any] = Field(default_factory=dict)
     name: Optional[str] = None
+    metadata: Optional[Any] = Field(default=None, exclude=True)
+    """Typed metadata object (e.g. Facility) populated when native=False."""
+
+    model_config = {"arbitrary_types_allowed": True}
 
     def model_post_init(self, __context: Any) -> None:
         # Auto-extract name from data if not explicitly set
@@ -56,10 +63,17 @@ class DiscoveryResult:
         return self.by_type(Constants.RES_FACILITY)
 
     @property
+    def facilities(self) -> List["Facility"]:
+        """Return typed Facility objects from normalized (native=False) discovery."""
+        return [
+            item.metadata
+            for item in self.by_type(Constants.RES_FACILITY)
+            if item.metadata is not None
+        ]
+
+    @property
     def capability(self) -> List[DiscoveredResource]:
         return self.by_type(Constants.RES_CAPABILITY)
-
-    # -- Generic access --
 
     @property
     def all(self) -> List[DiscoveredResource]:
@@ -80,6 +94,37 @@ class DiscoveryResult:
     def to_list(self) -> List[Dict[str, Any]]:
         """Serialize to the legacy list-of-dicts format for backward compatibility."""
         return [item.to_dict() for item in self._items]
+
+    def to_hierarchical(self) -> List[Dict[str, Any]]:
+        """Return a hierarchical representation of normalized (native=False) Facility results.
+
+        Each Facility is serialized with its nested compute, storage, network,
+        and allocation resources.
+        """
+        from amscrot.model.metadata import Facility
+
+        def _resource_dict(obj) -> Dict[str, Any]:
+            """Generic typed-object → dict using only the base + declared fields."""
+            d: Dict[str, Any] = {}
+            for field in type(obj).model_fields:
+                val = getattr(obj, field, None)
+                if val is not None:
+                    d[field] = val
+            return d
+
+        def _fac_to_dict(fac: "Facility") -> Dict[str, Any]:
+            return {
+                "id": fac.id,
+                "name": fac.name,
+                "description": fac.description,
+                "compute":     [_resource_dict(c) for c in (fac.compute     or [])],
+                "storage":     [_resource_dict(s) for s in (fac.storage     or [])],
+                "networks":    [_resource_dict(n) for n in (fac.networks    or [])],
+                "allocations": [_resource_dict(a) for a in (fac.allocations or [])],
+            }
+
+        facilities = self.facilities  # List[Facility] from typed .metadata
+        return [_fac_to_dict(f) for f in facilities]
 
     # -- Container protocol --
 
