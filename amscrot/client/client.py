@@ -1,9 +1,10 @@
 
-from typing import Dict, List, Any, Union, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
 if TYPE_CHECKING:
     from amscrot.serviceclient import ServiceClient
 from amscrot.amscrot_manager import AmSCROTManager
 from amscrot.util.constants import Constants
+from amscrot.util import utils
 from .models import Session, Provider
 
 class ProviderCredential:
@@ -27,11 +28,16 @@ class ProviderCredential:
 
 
 class Client:
-    def __init__(self):
+    def __init__(self, *, create_service_clients: bool = False, credential_file: str = None):
         self._providers: List[Provider] = []
         self._sessions: List[Session] = []
-        self._service_clients: List["ServiceClient"] = []
+        self._service_clients: Dict[str, "ServiceClient"] = {}
         self._credentials = {}
+        self._logger = utils.get_logger()
+
+        if create_service_clients:
+            self.load_credentials(file_path=credential_file)
+            self._create_service_clients_from_credentials()
 
     def load_credentials(self, *, file_path: str = None):
         """
@@ -115,10 +121,55 @@ class Client:
         return provider
 
     def add_service_client(self, service_client: "ServiceClient"):
-        self._service_clients.append(service_client)
+        self._service_clients[service_client.name] = service_client
         return service_client
 
+    def get_service_client(self, name: str = None) -> Union[Optional["ServiceClient"], List["ServiceClient"]]:
+        """Retrieve a service client by name, or list all if no name given."""
+        if name is None:
+            return list(self._service_clients.values())
+        return self._service_clients.get(name)
+
+    def _create_service_clients_from_credentials(self):
+        """Auto-create ServiceClient instances from credential entries that
+        contain a ``client_type`` attribute mapping to a valid
+        ``Constants.ServiceType`` name (e.g. ``ESNET_IRI``, ``NERSC_IRI``).
+        """
+        from amscrot.serviceclient import ServiceClient as SC
+
+        for entry_name, cred in self._credentials.items():
+            client_type_attr = getattr(cred, 'client_type', None)
+            if not client_type_attr:
+                continue
+
+            # Resolve e.g. "ESNET_IRI" -> Constants.ServiceType.ESNET_IRI -> "esnet-iri"
+            service_type = getattr(Constants.ServiceType, client_type_attr, None)
+            if service_type is None:
+                self._logger.warning(
+                    f"[Client] Unknown client_type '{client_type_attr}' "
+                    f"in credential entry '{entry_name}', skipping."
+                )
+                continue
+
+            try:
+                sc = SC.create(
+                    type=service_type,
+                    name=entry_name,
+                    profile=entry_name,
+                    credential=cred,
+                )
+                self._service_clients[entry_name] = sc
+                self._logger.debug(
+                    f"[Client] Created service client '{entry_name}' "
+                    f"(type={service_type})"
+                )
+            except Exception as e:
+                self._logger.warning(
+                    f"[Client] Failed to create service client '{entry_name}' "
+                    f"(type={service_type}): {e}"
+                )
+
     def create_session(self, name: str) -> Session:
-        session = Session(name=name, providers=list(self._providers), service_clients=self._service_clients)
+        session = Session(name=name, providers=list(self._providers), service_clients=list(self._service_clients.values()))
         self._sessions.append(session)
         return session

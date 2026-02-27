@@ -7,22 +7,22 @@ from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 from ...client.job import JobStatus, JobState as AmscrotJobState
 
-from esnet_iri.configuration import Configuration as IriConfiguration
-from esnet_iri.api_client import ApiClient as IriApiClient
-from esnet_iri.api.compute_api import ComputeApi
-from esnet_iri.api.status_api import StatusApi
-from esnet_iri.api.facility_api import FacilityApi
-from esnet_iri.api.account_api import AccountApi
-from esnet_iri.models.job_spec_input import JobSpecInput as IriJobSpec
-from esnet_iri.models.resource_type import ResourceType
-from esnet_iri.models.job_state import JobState as IriJobState
-from esnet_iri.models.job import Job as IriJob
+from nersc_iri.configuration import Configuration as IriConfiguration
+from nersc_iri.api_client import ApiClient as IriApiClient
+from nersc_iri.api.compute_api import ComputeApi
+from nersc_iri.api.status_api import StatusApi
+from nersc_iri.api.facility_api import FacilityApi
+from nersc_iri.api.account_api import AccountApi
+from nersc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
+from nersc_iri.models.resource_type import ResourceType
+from nersc_iri.models.job_state import JobState as IriJobState
+from nersc_iri.models.job import Job as IriJob
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
-class EsnetIriServiceClient(ServiceClient):
-    """ServiceClient implementation for ESnet IRI compute jobs."""
+class NerscIriServiceClient(ServiceClient):
+    """ServiceClient implementation for NERSC IRI compute jobs."""
 
     # Map IRI JobState enum → AmSCROT JobState (direct 1:1 alignment)
     _IRI_TO_AMSCROT = {
@@ -35,7 +35,7 @@ class EsnetIriServiceClient(ServiceClient):
     }
 
     def __init__(self, **kwargs):
-        super().__init__(type=Constants.ServiceType.ESNET_IRI, **kwargs)
+        super().__init__(type=Constants.ServiceType.NERSC_IRI, **kwargs)
         
         # Load credentials
         self.api_key = None
@@ -69,7 +69,7 @@ class EsnetIriServiceClient(ServiceClient):
             self._available = True
         else:
             self._available = False
-            self.logger.warning(f"[{self.name}] Warning: Could not load ESnet IRI credentials.")
+            self.logger.warning(f"[{self.name}] Warning: Could not load NERSC IRI credentials.")
         
         # Track submitted jobs: {job_name: (resource_id, job_id)}
         self._submitted_jobs = {}
@@ -259,7 +259,7 @@ class EsnetIriServiceClient(ServiceClient):
         return DiscoveryResult(items=result_items)
 
     def _load_credentials(self):
-        """Load ESnet IRI credentials."""
+        """Load NERSC IRI credentials."""
         # 1. Use provided ProviderCredential object if available
         # self.credential is populated by ServiceClient.__init__
         if self.credential:
@@ -301,7 +301,7 @@ class EsnetIriServiceClient(ServiceClient):
             lookups = []
             if self.profile:
                 lookups.append(self.profile)
-            lookups.append(Constants.ServiceType.ESNET_IRI)
+            lookups.append(Constants.ServiceType.NERSC_IRI)
 
             section_creds = None
             used_key = None
@@ -320,21 +320,21 @@ class EsnetIriServiceClient(ServiceClient):
                     self.logger.warning(f"[{self.name}] Warning: Missing api_key or api_endpoint in credentials (section: {used_key})")
             else:
                  searched = f"'{self.profile}' or " if self.profile else ""
-                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.ESNET_IRI}' not found in credentials")
+                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.NERSC_IRI}' not found in credentials")
 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error loading credentials: {e}")
     
     def _convert_to_iri_job_spec(self, job_spec: "JobSpec", name: str = None) -> IriJobSpec:
-        """Convert AmSCROT JobSpec to ESnet IRI JobSpecInput format.
+        """Convert AmSCROT JobSpec to NERSC IRI JobSpecInput format.
 
         Constructs IriJobSpec using direct keyword arguments rather than from_dict()
         to avoid pydantic setting None for absent fields in model_fields_set, which
         would cause those fields to be serialized as null and rejected by the API's
         min_length=1 constraints.
         """
-        from esnet_iri.models.resource_spec import ResourceSpec as IriResourceSpec
-        from esnet_iri.models.job_attributes import JobAttributes as IriJobAttributes
+        from nersc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
+        from nersc_iri.models.job_attributes import JobAttributes as IriJobAttributes
 
         # --- Executable / arguments ---
         executable = job_spec.executable
@@ -396,14 +396,14 @@ class EsnetIriServiceClient(ServiceClient):
     def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
         """Validate the job specification."""
         name = job_name or self.name
-        self.logger.debug(f"[{self.name}] Planning ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Planning NERSC IRI job for '{name}'...")
         
         errors = []
         warnings = []
         
         # Check if client is available
         if not self._available:
-            raise PlanError(errors=["ESnet IRI client not available - check credentials"])
+            raise PlanError(errors=["NERSC IRI client not available - check credentials"])
         
         # Validate resource_id is present
         resource_id = None
@@ -425,7 +425,7 @@ class EsnetIriServiceClient(ServiceClient):
         if errors:
             raise PlanError(errors=errors, warnings=warnings)
 
-        self.logger.debug(f"[{self.name}] ESnet IRI Job Validated: {name}")
+        self.logger.debug(f"[{self.name}] NERSC IRI Job Validated: {name}")
         if resource_id:
             self.logger.debug(f"[{self.name}]   Resource ID: {resource_id}")
 
@@ -435,12 +435,12 @@ class EsnetIriServiceClient(ServiceClient):
         }
     
     def create(self, job_spec: "JobSpec", job_name: str = None):
-        """Submit a job to ESnet IRI."""
+        """Submit a job to NERSC IRI."""
         name = job_name or self.name
-        self.logger.debug(f"[{self.name}] Creating ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Creating NERSC IRI job for '{name}'...")
         
         if not self._available:
-            self.logger.warning(f"[{self.name}] ESnet IRI client unavailable. Skipping submission.")
+            self.logger.warning(f"[{self.name}] NERSC IRI client unavailable. Skipping submission.")
             self._status = "ERROR"
             return
         
@@ -464,12 +464,12 @@ class EsnetIriServiceClient(ServiceClient):
             self._status = "ERROR"
     
     def destroy(self, job_name: str = None):
-        """Cancel a job on ESnet IRI."""
+        """Cancel a job on NERSC IRI."""
         name = job_name or self.name
-        self.logger.debug(f"[{self.name}] Destroying ESnet IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Destroying NERSC IRI job for '{name}'...")
         
         if not self._available:
-            self.logger.warning(f"[{self.name}] ESnet IRI client unavailable.")
+            self.logger.warning(f"[{self.name}] NERSC IRI client unavailable.")
             return
         
         # Check if we have a job ID for this job
@@ -496,7 +496,7 @@ class EsnetIriServiceClient(ServiceClient):
             self.logger.error(f"[{self.name}] Error cancelling job '{name}': {e}")
     
     def status(self, job_name: str = None) -> JobStatus:
-        """Get the status of a job on ESnet IRI."""
+        """Get the status of a job on NERSC IRI."""
         name = job_name or self.name
         
         if not self._available:

@@ -113,6 +113,7 @@ class Constants:
         IRI = "iri"
         KUBE = "kube"
         ESNET_IRI = "esnet-iri"
+        NERSC_IRI = "nersc-iri"
         DUMMY = "dummy-sc"
 
     PROVIDER_CLASSES = {
@@ -131,6 +132,7 @@ class Constants:
         ServiceType.IRI: "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
         ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
         ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient",
+        ServiceType.NERSC_IRI: "amscrot.serviceclient.nersc_iri.nersc_iri_service_client.NerscIriServiceClient",
         ServiceType.DUMMY: "amscrot.serviceclient.dummy.dummy_service_client.DummyServiceClient",
     }
 

@@ -12,50 +12,61 @@ CREDENTIALS_FILE = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
 HAS_CREDENTIALS = os.path.exists(CREDENTIALS_FILE)
 
 
-class TestEsnetIriServiceClient(unittest.TestCase):
-    """Test ESnet IRI ServiceClient integration."""
+class TestNerscIriServiceClient(unittest.TestCase):
+    """Test NERSC IRI ServiceClient integration."""
     
     @pytest.mark.integration
     @pytest.mark.skipif(not HAS_CREDENTIALS, reason="Requires ~/.amscrot/credentials.yml")
-    def test_esnet_iri_job_lifecycle(self):
-        """Test the full lifecycle of an ESnet IRI job: plan -> create -> status -> destroy.
+    def test_nersc_iri_job_lifecycle(self):
+        """Test the full lifecycle of a NERSC IRI job: plan -> create -> status -> destroy.
         
-        This is an integration test that makes real API calls to ESnet IRI.
+        This is an integration test that makes real API calls to NERSC IRI.
         It first discovers available compute resources from the API, then uses one to test job submission.
         """
         
         # Create the service client (will load credentials automatically)
         iri_client = ServiceClient.create(
-            type=Constants.ServiceType.ESNET_IRI,
-            name="iri-compute",
-            profile="esnet-iri-east"
+            type=Constants.ServiceType.NERSC_IRI,
+            name="nersc-iri-compute",
+            profile="nersc-iri"
         )
         
         # Verify client was created successfully
         self.assertIsNotNone(iri_client)
-        self.assertTrue(iri_client._available, "ESnet IRI client should be available with valid credentials")
+        self.assertTrue(iri_client._available, "NERSC IRI client should be available with valid credentials")
         
         # Discover available compute resources using the client interface
         print("\n--- Discovering Resources ---")
         try:
             # discover() returns a DiscoveryResult container
             all_resources = iri_client.discover()
-            
+
             # Filter for compute resources using typed accessor
             compute_resources = all_resources.compute
             print(f"Response type: {type(all_resources)}")
-            
+
             if not compute_resources:
                 self.skipTest("No compute resources available.")
-            
-            # Extract ID from the first compute resource
-            resource_data = compute_resources[0].data
+
+            # Locate the compute resource with group "perlmutter" and named "compute"
+            target_resource = None
+            for resource in compute_resources:
+                data = resource.data
+                if data.get('group') == 'perlmutter' and data.get('name') == 'compute':
+                    target_resource = resource
+                    break
+
+            if not target_resource:
+                self.skipTest("Target compute resource (perlmutter/compute) not found.")
+
+            resource_data = target_resource.data
             resource_id = resource_data.get('id')
             
             if resource_id:
-                print(f"Found {len(compute_resources)} compute resource(s). Using resource ID: {resource_id}")
+                print(f"Found target compute resource: {resource_data}")
+                print(f"Using resource ID: {resource_id}")
             else:
-                self.skipTest("Compute resource found but ID is missing.")
+                self.skipTest("Target compute resource found but ID is missing.")
                 
         except Exception as e:
             import traceback
@@ -66,7 +77,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             
             print(f"Exception details: {traceback.format_exc()}")
             self.skipTest(f"Failed to discover resources: {e}")
-        
+
         # Create a job spec with resource_id in attributes
         spec = JobSpec(
             executable=["/bin/echo", "Hello AmSC"],
@@ -76,7 +87,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 "processes_per_node": 1,
                 "cpu_cores_per_process": 1,
                 "gpu_cores_per_process": None,
-                "exclusive_node_use": True,
+                "exclusive_node_use": False,
                 "memory": 268435456
             },
             attributes={
@@ -84,11 +95,12 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 "directory": "/tmp",
                 "duration": 600,
                 "queue_name": "debug",
-                "account": "interactive"
+                "account": "amsc013",
+                "pre_launch": ""
             }
         )
         
-        job_name = "iri-test-job"
+        job_name = "nersc-iri-test-job"
         
         try:
             # 1. Test Plan
@@ -133,7 +145,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
 
         except PlanError as e:
             if any("not available" in err or "credentials" in err.lower() for err in e.errors):
-                self.skipTest(f"Skipping test - ESnet IRI client not available: {e}")
+                self.skipTest(f"Skipping test - NERSC IRI client not available: {e}")
             raise
 
         except Exception as e:
@@ -155,16 +167,16 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 print(f"Warning: Failed to clean up job: {cleanup_error}")
 
     
-    def test_esnet_iri_client_creation(self):
-        """Test ESnet IRI ServiceClient creation."""
+    def test_nersc_iri_client_creation(self):
+        """Test NERSC IRI ServiceClient creation."""
         iri_client = ServiceClient.create(
-            type=Constants.ServiceType.ESNET_IRI,
-            name="test-iri"
+            type=Constants.ServiceType.NERSC_IRI,
+            name="test-nersc-iri"
         )
         
         self.assertIsNotNone(iri_client)
-        self.assertEqual(iri_client.type, Constants.ServiceType.ESNET_IRI)
-        self.assertEqual(iri_client.name, "test-iri")
+        self.assertEqual(iri_client.type, Constants.ServiceType.NERSC_IRI)
+        self.assertEqual(iri_client.name, "test-nersc-iri")
         
         # Client may or may not be available depending on credentials
         # Just verify it was created without errors
@@ -176,9 +188,9 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         This is a unit test but requires the client to be initialized.
         """
         iri_client = ServiceClient.create(
-            type="esnet-iri",
-            name="test-iri",
-            profile="esnet-iri-east"
+            type="nersc-iri",
+            name="test-nersc-iri",
+            profile="nersc-iri"
         )
         
         # Test with resource_id in attributes
