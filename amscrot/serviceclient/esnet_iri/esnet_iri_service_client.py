@@ -1,4 +1,5 @@
 import os
+import time
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, TYPE_CHECKING
@@ -13,13 +14,15 @@ from esnet_iri.api.compute_api import ComputeApi
 from esnet_iri.api.status_api import StatusApi
 from esnet_iri.api.facility_api import FacilityApi
 from esnet_iri.api.account_api import AccountApi
+from esnet_iri.api.filesystem_api import FilesystemApi
+from esnet_iri.api.task_api import TaskApi
 from esnet_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 from esnet_iri.models.resource_type import ResourceType
 from esnet_iri.models.job_state import JobState as IriJobState
 from esnet_iri.models.job import Job as IriJob
 
 if TYPE_CHECKING:
-    from amscrot.client.job import JobSpec
+    from amscrot.client.job import Job, JobSpec
 
 class EsnetIriServiceClient(ServiceClient):
     """ServiceClient implementation for ESnet IRI compute jobs."""
@@ -59,13 +62,16 @@ class EsnetIriServiceClient(ServiceClient):
             configuration = IriConfiguration(
                 host=self.api_endpoint,
                 api_key={'APIKeyHeader': self.api_key},
-                api_key_prefix={'APIKeyHeader': 'Bearer'}
+                api_key_prefix={'APIKeyHeader': 'Bearer'},
+                access_token=self.api_key
             )
             self._api_client = IriApiClient(configuration)
             self._compute_api = ComputeApi(self._api_client)
             self._status_api = StatusApi(self._api_client)
             self._facility_api = FacilityApi(self._api_client)
             self._account_api = AccountApi(self._api_client)
+            self._filesystem_api = FilesystemApi(self._api_client)
+            self._task_api = TaskApi(self._api_client)
             self._available = True
         else:
             self._available = False
@@ -541,3 +547,168 @@ class EsnetIriServiceClient(ServiceClient):
                 state="UNKNOWN",
                 message=str(e)
             )
+
+    # ── Output file retrieval ─────────────────────────────────────────────
+
+    def _get_storage_resource_id(self, compute_resource_id: str) -> str:
+        """Resolve an available storage resource ID for filesystem operations.
+
+        Strategy:
+          1. Get all available storage resources.
+          2. Prefer one with ``home`` in its name.
+          3. Fall back to any available storage resource.
+
+        A resource is considered available when its ``current_status`` is ``up``.
+        Returns ``None`` if no suitable storage resource is found.
+        """
+        try:
+            storage_resources = self._status_api.get_resources(
+                resource_type=ResourceType.STORAGE
+            ) or []
+
+            def _is_available(res) -> bool:
+                if res.current_status is None:
+                    return True  # assume available if status unknown
+                status_val = (
+                    res.current_status.value
+                    if hasattr(res.current_status, 'value')
+                    else str(res.current_status)
+                )
+                return status_val == 'up'
+
+            available = [res for res in storage_resources if _is_available(res)]
+
+            # Prefer a storage resource with "home" in the name
+            for res in available:
+                name = (res.name or '').lower()
+                if 'home' in name:
+                    self.logger.info(
+                        f"[{self.name}] Using home storage resource "
+                        f"'{res.id}' (name='{res.name}')."
+                    )
+                    return res.id
+
+            # Fall back to any available storage resource
+            if available:
+                res = available[0]
+                self.logger.info(
+                    f"[{self.name}] Using fallback storage resource "
+                    f"'{res.id}' (name='{res.name}')."
+                )
+                return res.id
+
+            self.logger.warning(
+                f"[{self.name}] No available storage resource found."
+            )
+        except Exception as e:
+            self.logger.error(
+                f"[{self.name}] Error resolving storage resource: {e}"
+            )
+        return None
+
+    def _poll_task(self, task_id: str, timeout: float = 60.0, interval: float = 2.0) -> Any:
+        """Poll TaskApi until the filesystem task completes or times out."""
+        start = time.monotonic()
+        while (time.monotonic() - start) < timeout:
+            task = self._task_api.get_task(task_id)
+            if hasattr(task, 'status') and task.status:
+                status_val = task.status.value if hasattr(task.status, 'value') else str(task.status)
+                if status_val in ('completed', 'failed', 'canceled'):
+                    return task
+            time.sleep(interval)
+        self.logger.warning(f"[{self.name}] Task {task_id} timed out after {timeout}s")
+        return None
+
+    def fetch_output_files(self, job: "Job", session_dir: str,
+                           storage_resource_id: str = None) -> Dict[str, str]:
+        """Download remote stdout/stderr files for a Job to a local directory.
+
+        Reads ``stdout_path`` and ``stderr_path`` from ``job.job_spec.attributes``,
+        downloads them via the IRI FilesystemApi, saves them under *session_dir*,
+        and populates ``job.local_files`` with the resulting local paths.
+
+        Args:
+            job:                  The Job whose output files to fetch.
+            session_dir:          Local directory to write files into.
+            storage_resource_id:  Storage resource to use for filesystem ops.
+                                  If ``None``, auto-resolved from the compute
+                                  resource's group.
+
+        Returns:
+            Dict mapping stream name → local file path, e.g.
+            ``{"stdout": "/path/to/stdout.log"}``.
+        """
+        if not self._available:
+            self.logger.warning(f"[{self.name}] Client unavailable — cannot fetch output files.")
+            return {}
+
+        if job.name not in self._submitted_jobs:
+            self.logger.warning(f"[{self.name}] No submission record for job '{job.name}'.")
+            return {}
+
+        compute_resource_id, _ = self._submitted_jobs[job.name]
+
+        # Use explicit storage_resource_id or resolve from compute resource group
+        if not storage_resource_id:
+            storage_resource_id = self._get_storage_resource_id(compute_resource_id)
+        if not storage_resource_id:
+            self.logger.warning(
+                f"[{self.name}] No storage resource ID found for job '{job.name}'. Cannot fetch output files."
+            )
+            return {}
+
+        attrs = job.job_spec.attributes or {}
+        results: Dict[str, str] = {}
+
+        for stream, attr_key in [('stdout', 'stdout_path'), ('stderr', 'stderr_path')]:
+            remote_path = attrs.get(attr_key)
+            if not remote_path:
+                continue
+
+            local_path = os.path.join(session_dir, f"{stream}.log")
+
+            try:
+                self.logger.debug(
+                    f"[{self.name}] Downloading {stream} from '{remote_path}' "
+                    f"for job '{job.name}'..."
+                )
+                task_response = self._filesystem_api.download(
+                    resource_id=storage_resource_id,
+                    path=remote_path,
+                )
+
+                task = self._poll_task(task_response.task_id)
+                if task is None:
+                    self.logger.warning(
+                        f"[{self.name}] Download timed out for {stream} of '{job.name}'."
+                    )
+                    continue
+
+                status_val = (
+                    task.status.value if hasattr(task.status, 'value') else str(task.status)
+                )
+                if status_val != 'completed':
+                    self.logger.warning(
+                        f"[{self.name}] Download {stream} for '{job.name}' "
+                        f"ended with status '{status_val}'."
+                    )
+                    continue
+
+                content = task.result if task.result is not None else ''
+                os.makedirs(session_dir, exist_ok=True)
+                with open(local_path, 'w') as f:
+                    f.write(str(content))
+
+                results[stream] = local_path
+                self.logger.debug(
+                    f"[{self.name}] Saved {stream} for '{job.name}' → {local_path}"
+                )
+
+            except Exception as e:
+                self.logger.error(
+                    f"[{self.name}] Error fetching {stream} for '{job.name}': {e}"
+                )
+
+        # Store results back on the Job object
+        job.local_files.update(results)
+        return results

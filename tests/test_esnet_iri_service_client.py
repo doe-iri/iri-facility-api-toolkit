@@ -1,8 +1,10 @@
 import unittest
 import pytest
 import os
+import shutil
 from pathlib import Path
-from amscrot.client.job import JobSpec, JobState
+from amscrot.client.client import Client
+from amscrot.client.job import Job, JobSpec, JobType, JobServiceType, JobState
 from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
@@ -11,44 +13,42 @@ from amscrot.util.constants import Constants
 CREDENTIALS_FILE = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
 HAS_CREDENTIALS = os.path.exists(CREDENTIALS_FILE)
 
+SESSION_NAME = "test-esnet-iri"
+
 
 class TestEsnetIriServiceClient(unittest.TestCase):
-    """Test ESnet IRI ServiceClient integration."""
+    """Test ESnet IRI ServiceClient integration using Session and Job objects."""
     
     @pytest.mark.integration
     @pytest.mark.skipif(not HAS_CREDENTIALS, reason="Requires ~/.amscrot/credentials.yml")
     def test_esnet_iri_job_lifecycle(self):
-        """Test the full lifecycle of an ESnet IRI job: plan -> create -> status -> destroy.
-        
-        This is an integration test that makes real API calls to ESnet IRI.
-        It first discovers available compute resources from the API, then uses one to test job submission.
+        """Test the full lifecycle of an ESnet IRI job using Session/Job:
+        plan -> create -> wait -> (fetch output files) -> destroy.
         """
         
-        # Create the service client (will load credentials automatically)
+        # --- Setup: Client, ServiceClient, Session ---
+        client = Client()
         iri_client = ServiceClient.create(
             type=Constants.ServiceType.ESNET_IRI,
             name="iri-compute",
             profile="esnet-iri-east"
         )
+        client.add_service_client(iri_client)
         
-        # Verify client was created successfully
         self.assertIsNotNone(iri_client)
         self.assertTrue(iri_client._available, "ESnet IRI client should be available with valid credentials")
         
-        # Discover available compute resources using the client interface
+        session = client.create_session(SESSION_NAME)
+        
+        # --- Discover resources ---
         print("\n--- Discovering Resources ---")
         try:
-            # discover() returns a DiscoveryResult container
             all_resources = iri_client.discover()
-            
-            # Filter for compute resources using typed accessor
             compute_resources = all_resources.compute
-            print(f"Response type: {type(all_resources)}")
-            
+
             if not compute_resources:
                 self.skipTest("No compute resources available.")
-            
-            # Extract ID from the first compute resource
+
             resource_data = compute_resources[0].data
             resource_id = resource_data.get('id')
             
@@ -66,8 +66,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             
             print(f"Exception details: {traceback.format_exc()}")
             self.skipTest(f"Failed to discover resources: {e}")
-        
-        # Create a job spec with resource_id in attributes
+
+        # --- Create Job with stdout/stderr paths ---
         spec = JobSpec(
             executable=["/bin/echo", "Hello AmSC"],
             resources={
@@ -84,52 +84,75 @@ class TestEsnetIriServiceClient(unittest.TestCase):
                 "directory": "/tmp",
                 "duration": 600,
                 "queue_name": "debug",
-                "account": "interactive"
+                "account": "interactive",
+                "stdout_path": "esnet_iri_test_stdout.log",
+                "stderr_path": "esnet_iri_test_stderr.log",
             }
         )
         
-        job_name = "iri-test-job"
+        job = Job(
+            name="iri-test-job",
+            type=JobType.COMPUTE,
+            service_type=JobServiceType.BATCH,
+            service_client=iri_client,
+            job_spec=spec,
+        )
+        session.add_job(job)
         
         try:
-            # 1. Test Plan
+            # 1. Plan
             print("\n--- Test Plan ---")
-            plan_result = iri_client.plan(spec, job_name)
+            plan_result = iri_client.plan(spec, job.name)
             print(f"Plan result: {plan_result}")
             self.assertEqual(plan_result["status"], "PLANNED")
 
-            # 2. Test Create (Real API call)
+            # 2. Create
             print("\n--- Test Create ---")
-            iri_client.create(spec, job_name)
+            iri_client.create(spec, job.name)
             
-            # Verify job was submitted
-            if job_name not in iri_client._submitted_jobs:
-                self.skipTest(f"Job '{job_name}' was not submitted (check logs for API errors). Skipping remaining assertions.")
+            if job.name not in iri_client._submitted_jobs:
+                self.skipTest(f"Job '{job.name}' was not submitted. Skipping remaining assertions.")
             
-            self.assertIn(job_name, iri_client._submitted_jobs)
-            tracked_resource_id, job_id = iri_client._submitted_jobs[job_name]
+            self.assertIn(job.name, iri_client._submitted_jobs)
+            tracked_resource_id, job_id = iri_client._submitted_jobs[job.name]
             self.assertIsNotNone(job_id, "Job ID should be returned from API")
             self.assertEqual(tracked_resource_id, resource_id)
             print(f"Job submitted with ID: {job_id}")
             
-            print("\n--- Test Status (Polling) ---")
-            import time
-            max_retries = 300
-            for i in range(max_retries):
-                status_result = iri_client.status(job_name)
-                print(f"Attempt {i+1}/{max_retries}: Status = {status_result.state}")
-                
-                if status_result.state in [JobState.COMPLETED, JobState.FAILED, JobState.CANCELED]:
-                    break
-                
-                time.sleep(2)
-
-            self.assertEqual(status_result.state, JobState.COMPLETED, f"Job failed or timed out. Details: {status_result.state}")
+            # 3. Wait for completion
+            print("\n--- Test Wait ---")
+            results = session.wait(
+                jobs=[job],
+                target_states=[JobState.COMPLETED, JobState.FAILED, JobState.CANCELED],
+                timeout=600,
+                interval=2,
+                verbose=True,
+            )
+            
+            status_result = results[job.name]
+            self.assertEqual(status_result.state, JobState.COMPLETED,
+                             f"Job failed or timed out. State: {status_result.state}")
             print(f"Job completed successfully. Status: {status_result.state}")
-
-            # Verify exit code if available in the raw response
+            
             if status_result.provider_status:
                 print(f"Raw IRI response: {status_result.provider_status}")
             self.assertEqual(status_result.job_id, job_id)
+            
+            # 4. Fetch output files
+            print("\n--- Test Fetch Output Files ---")
+            fetched = session.fetch_output_files(jobs=[job])
+            print(f"Fetched files: {fetched}")
+            print(f"Job local_files: {job.local_files}")
+            
+            # Verify files were fetched (if stdout/stderr paths existed on remote)
+            if fetched.get(job.name):
+                for stream, local_path in fetched[job.name].items():
+                    self.assertTrue(os.path.exists(local_path),
+                                    f"Expected local file at {local_path}")
+                    print(f"  {stream}: {local_path} (exists={os.path.exists(local_path)})")
+            
+            # Verify local_files was populated on the Job
+            self.assertEqual(job.local_files, fetched.get(job.name, {}))
 
         except PlanError as e:
             if any("not available" in err or "credentials" in err.lower() for err in e.errors):
@@ -137,51 +160,51 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             raise
 
         except Exception as e:
-            # If there's an error, print it but still try to clean up
             print(f"\n!!! Test failed with error: {e}")
             raise
             
         finally:
-            # 4. Test Destroy (Real API call) - Always try to clean up
+            # 5. Destroy
             print("\n--- Test Destroy ---")
             try:
-                if job_name in iri_client._submitted_jobs:
-                    iri_client.destroy(job_name)
-                    
-                    # Verify job was removed from tracking
-                    self.assertNotIn(job_name, iri_client._submitted_jobs)
+                if job.name in iri_client._submitted_jobs:
+                    iri_client.destroy(job.name)
+                    self.assertNotIn(job.name, iri_client._submitted_jobs)
                     print("Job destroyed successfully")
             except Exception as cleanup_error:
                 print(f"Warning: Failed to clean up job: {cleanup_error}")
+            
+            # Clean up session files
+            try:
+                session_dir = session.session_path
+                if os.path.exists(session_dir):
+                    shutil.rmtree(session_dir)
+                    print(f"Cleaned up session dir: {session_dir}")
+            except Exception:
+                pass
 
     
     def test_esnet_iri_client_creation(self):
         """Test ESnet IRI ServiceClient creation."""
         iri_client = ServiceClient.create(
             type=Constants.ServiceType.ESNET_IRI,
-            name="test-iri"
+            name="test-iri",
+            profile="esnet-iri-east"
         )
         
         self.assertIsNotNone(iri_client)
         self.assertEqual(iri_client.type, Constants.ServiceType.ESNET_IRI)
         self.assertEqual(iri_client.name, "test-iri")
-        
-        # Client may or may not be available depending on credentials
-        # Just verify it was created without errors
     
     @pytest.mark.skipif(not HAS_CREDENTIALS, reason="Requires ~/.amscrot/credentials.yml")
     def test_resource_id_extraction(self):
-        """Test that resource_id is correctly extracted from JobSpec attributes.
-        
-        This is a unit test but requires the client to be initialized.
-        """
+        """Test that resource_id is correctly extracted from JobSpec attributes."""
         iri_client = ServiceClient.create(
             type="esnet-iri",
             name="test-iri",
             profile="esnet-iri-east"
         )
         
-        # Test with resource_id in attributes
         spec = JobSpec(
             executable=["echo", "test"],
             attributes={"resource_id": "custom-resource-id"}
@@ -189,6 +212,28 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         
         resource_id = iri_client._get_resource_id(spec)
         self.assertEqual(resource_id, "custom-resource-id")
+
+    def test_job_local_files_attribute(self):
+        """Test that Job.local_files is initialized correctly and mutable."""
+        job = Job(
+            name="test-job",
+            type=JobType.COMPUTE,
+            service_type=JobServiceType.BATCH,
+            job_spec=JobSpec(
+                executable=["echo", "test"],
+                attributes={
+                    "stdout_path": "/remote/stdout.log",
+                    "stderr_path": "/remote/stderr.log",
+                }
+            ),
+        )
+        
+        self.assertEqual(job.local_files, {})
+        self.assertEqual(job.job_spec.attributes["stdout_path"], "/remote/stdout.log")
+        self.assertEqual(job.job_spec.attributes["stderr_path"], "/remote/stderr.log")
+        
+        job.local_files["stdout"] = "/local/stdout.log"
+        self.assertEqual(job.local_files["stdout"], "/local/stdout.log")
 
 
 if __name__ == "__main__":

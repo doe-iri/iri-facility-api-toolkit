@@ -1,4 +1,6 @@
+import os
 import time
+from pathlib import Path
 from typing import Dict, List, Any, TYPE_CHECKING, Union, Optional, Set
 from amscrot.amscrot_manager import AmSCROTManager
 
@@ -92,6 +94,19 @@ class Session:
         self._networks: List[Network] = []
         self._services: List[Service] = []
         self._jobs: List[Job] = []
+
+    @property
+    def session_path(self) -> str:
+        """Base directory for this session (aligned with AmSCROTManager)."""
+        p = os.path.join(str(Path.home()), '.amscrot', 'sessions', self._name)
+        os.makedirs(p, exist_ok=True)
+        return p
+
+    def files_path(self, job_name: str) -> str:
+        """Local directory for a job's fetched output files."""
+        p = os.path.join(self.session_path, 'files', job_name)
+        os.makedirs(p, exist_ok=True)
+        return p
 
     def add_node(self, *, label: str, provider: Provider, **kwargs) -> Node:
         node = Node(label, provider, **kwargs)
@@ -276,3 +291,36 @@ class Session:
     def show(self) -> Any:
         manager = self._get_manager()
         return manager.show(session=self._name)
+
+    def fetch_output_files(
+        self,
+        jobs: Optional[List["Job"]] = None,
+        storage_resource_id: str = None,
+    ) -> Dict[str, Dict[str, str]]:
+        """Fetch remote stdout/stderr for completed jobs into the session directory.
+
+        Args:
+            jobs:                 Jobs to fetch files for. Defaults to all session jobs.
+            storage_resource_id:  Storage resource to use for filesystem ops.
+                                  If ``None``, auto-resolved per service client.
+
+        Returns ``{job_name: {"stdout": "<local_path>", ...}}``.
+        """
+        target_jobs: List["Job"] = jobs if jobs is not None else list(self._jobs)
+        results: Dict[str, Dict[str, str]] = {}
+
+        for job in target_jobs:
+            sc = job.service_client
+            if sc is None or not hasattr(sc, 'fetch_output_files'):
+                continue
+
+            dest = self.files_path(job.name)
+            fetched = sc.fetch_output_files(
+                job=job,
+                session_dir=dest,
+                storage_resource_id=storage_resource_id,
+            )
+            if fetched:
+                results[job.name] = fetched
+
+        return results
