@@ -80,6 +80,9 @@ class SENSENetworkedJobs(unittest.TestCase):
             "memory": 268435456
         }
         common_attributes = {
+            "container": {
+                "image": "busybox"
+            },
             "directory": "/data/home/kissel",
             "duration": 600,
             "queue_name": "debug",

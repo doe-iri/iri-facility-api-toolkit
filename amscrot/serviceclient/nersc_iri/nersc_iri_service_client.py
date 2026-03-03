@@ -342,6 +342,7 @@ class NerscIriServiceClient(ServiceClient):
         """
         from nersc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
         from nersc_iri.models.job_attributes import JobAttributes as IriJobAttributes
+        from nersc_iri.models.container import Container as IriContainer
 
         # --- Executable / arguments ---
         executable = job_spec.executable
@@ -370,22 +371,47 @@ class NerscIriServiceClient(ServiceClient):
             if res_kwargs:
                 kwargs["resources"] = IriResourceSpec(**res_kwargs)
 
-        # --- Attributes and I/O paths ---
+        # --- Attributes and top-level IriJobSpec fields ---
+        # Fields that live directly on JobSpecInput (not in JobAttributes)
+        JOBSPEC_DIRECT_FIELDS = {
+            "directory", "stdout_path", "stderr_path", "stdin_path",
+            "inherit_environment", "environment", "pre_launch", "post_launch", "launcher",
+        }
+        # Fields that belong in JobAttributes
+        JOB_ATTRIBUTES_FIELDS = {
+            "duration", "queue_name", "account", "reservation_id", "custom_attributes",
+        }
+
         if job_spec.attributes:
             attrs = {k: v for k, v in job_spec.attributes.items() if v is not None}
 
             # Remove resource_id -- handled separately via _get_resource_id
             attrs.pop("resource_id", None)
 
-            # I/O path fields live directly on IriJobSpec (min_length=1, only set if present)
-            for field in ("directory", "stdout_path", "stderr_path", "stdin_path"):
+            # Lift container dict -> IriContainer object
+            container_data = attrs.pop("container", None)
+            if container_data and isinstance(container_data, dict):
+                kwargs["container"] = IriContainer.from_dict(container_data)
+            elif container_data:
+                kwargs["container"] = container_data
+
+            # Lift all other direct JobSpecInput fields
+            for field in JOBSPEC_DIRECT_FIELDS:
                 val = attrs.pop(field, None)
-                if val:
+                if val is not None:
                     kwargs[field] = val
 
-            # Remaining attrs -> JobAttributes typed model
-            if attrs:
-                kwargs["attributes"] = IriJobAttributes(**attrs)
+            # Whatever remains goes into JobAttributes
+            attrs_kwargs = {k: v for k, v in attrs.items() if k in JOB_ATTRIBUTES_FIELDS}
+            unknown = {k: v for k, v in attrs.items() if k not in JOB_ATTRIBUTES_FIELDS}
+            if unknown:
+                self.logger.debug(
+                    f"[{self.name}] Unmapped job attributes passed to JobAttributes: {list(unknown.keys())}"
+                )
+                attrs_kwargs.update(unknown)
+
+            if attrs_kwargs:
+                kwargs["attributes"] = IriJobAttributes(**attrs_kwargs)
 
         return IriJobSpec(**kwargs)
     
