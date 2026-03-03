@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amscrot-py"
-dynamic = ["version"]
+dynamic = ["version", "dependencies"]
 description = "AmSC Resource Orchestration Client Toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,21 +19,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-dependencies = [
-    "fabrictestbed-extensions",
-    "python-chi==0.17.11",
-    "sense-o-api==1.42",
-    "ansible==9.5.1",
-    "ansible-runner==2.3.6",
-    "xmltodict",
-    "boto3",
-    "google-cloud-compute",
-    "pydantic",
-    "paramiko==4.0.0",
-    "esnet-iri==1.0.0.post1",
-    "nersc-iri==1.0.0",
-    "kubernetes==35.0.0"
-]
 
 [project.urls]
 Homepage = "https://github.com/esnet/amsc-isro-toolkit"
@@ -44,6 +29,7 @@ fabfed = "tools.cli:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "amscrot.__VERSION__"}
+dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
 where = ["."]

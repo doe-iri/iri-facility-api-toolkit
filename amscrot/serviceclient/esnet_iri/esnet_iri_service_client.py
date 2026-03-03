@@ -1,3 +1,4 @@
+import base64
 import os
 import time
 import yaml
@@ -27,7 +28,7 @@ if TYPE_CHECKING:
 class EsnetIriServiceClient(ServiceClient):
     """ServiceClient implementation for ESnet IRI compute jobs."""
 
-    # Map IRI JobState enum → AmSCROT JobState (direct 1:1 alignment)
+    # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
     _IRI_TO_AMSCROT = {
         IriJobState.NEW:       AmscrotJobState.NEW,
         IriJobState.QUEUED:    AmscrotJobState.QUEUED,
@@ -226,7 +227,7 @@ class EsnetIriServiceClient(ServiceClient):
                 exclusive=d.get("exclusive"),
             ))
 
-        # ── 3. Find the single facility ───────────────────────────────────────
+        # -- 3. Find the single facility ---------------------------------------
         facilities = list(native_result.by_type("facility"))
         if not facilities:
             self.logger.warning(f"[{self.name}] No facilities found, returning empty discovery.")
@@ -373,7 +374,7 @@ class EsnetIriServiceClient(ServiceClient):
         if job_spec.attributes:
             attrs = {k: v for k, v in job_spec.attributes.items() if v is not None}
 
-            # Remove resource_id — handled separately via _get_resource_id
+            # Remove resource_id -- handled separately via _get_resource_id
             attrs.pop("resource_id", None)
 
             # I/O path fields live directly on IriJobSpec (min_length=1, only set if present)
@@ -382,7 +383,7 @@ class EsnetIriServiceClient(ServiceClient):
                 if val:
                     kwargs[field] = val
 
-            # Remaining attrs → JobAttributes typed model
+            # Remaining attrs -> JobAttributes typed model
             if attrs:
                 kwargs["attributes"] = IriJobAttributes(**attrs)
 
@@ -526,7 +527,7 @@ class EsnetIriServiceClient(ServiceClient):
                 include_spec=False
             )
             
-            # Map IRI JobState enum → AmSCROT JobState
+            # Map IRI JobState enum -> AmSCROT JobState
             amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
                 amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
@@ -548,7 +549,7 @@ class EsnetIriServiceClient(ServiceClient):
                 message=str(e)
             )
 
-    # ── Output file retrieval ─────────────────────────────────────────────
+    # -- Output file retrieval ---------------------------------------------
 
     def _get_storage_resource_id(self, compute_resource_id: str) -> str:
         """Resolve an available storage resource ID for filesystem operations.
@@ -629,17 +630,20 @@ class EsnetIriServiceClient(ServiceClient):
 
         Args:
             job:                  The Job whose output files to fetch.
-            session_dir:          Local directory to write files into.
+            session_dir:          Local directory to write files into. Typically
+                                  supplied by ``Session.fetch_output_files()`` --
+                                  either the default session path or the caller's
+                                  ``output_path`` override.
             storage_resource_id:  Storage resource to use for filesystem ops.
-                                  If ``None``, auto-resolved from the compute
-                                  resource's group.
+                                  If ``None``, auto-resolved from available
+                                  storage resources.
 
         Returns:
-            Dict mapping stream name → local file path, e.g.
+            Dict mapping stream name -> local file path, e.g.
             ``{"stdout": "/path/to/stdout.log"}``.
         """
         if not self._available:
-            self.logger.warning(f"[{self.name}] Client unavailable — cannot fetch output files.")
+            self.logger.warning(f"[{self.name}] Client unavailable -- cannot fetch output files.")
             return {}
 
         if job.name not in self._submitted_jobs:
@@ -694,14 +698,22 @@ class EsnetIriServiceClient(ServiceClient):
                     )
                     continue
 
-                content = task.result if task.result is not None else ''
+                raw = task.result if task.result is not None else ''
+                # The ESNet IRI API returns results as {'output': '<base64>'}
+                if isinstance(raw, dict) and 'output' in raw:
+                    try:
+                        content = base64.b64decode(raw['output']).decode('utf-8', errors='replace')
+                    except Exception:
+                        content = str(raw)
+                else:
+                    content = str(raw)
                 os.makedirs(session_dir, exist_ok=True)
                 with open(local_path, 'w') as f:
-                    f.write(str(content))
+                    f.write(content)
 
                 results[stream] = local_path
                 self.logger.debug(
-                    f"[{self.name}] Saved {stream} for '{job.name}' → {local_path}"
+                    f"[{self.name}] Saved {stream} for '{job.name}' -> {local_path}"
                 )
 
             except Exception as e:

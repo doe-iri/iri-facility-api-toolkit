@@ -81,12 +81,12 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             },
             attributes={
                 "resource_id": resource_id,
-                "directory": "/tmp",
+                "directory": "/data/home/kissel",
                 "duration": 600,
                 "queue_name": "debug",
                 "account": "interactive",
-                "stdout_path": "esnet_iri_test_stdout.log",
-                "stderr_path": "esnet_iri_test_stderr.log",
+                "stdout_path": "/data/home/kissel/esnet_iri_test_stdout.log",
+                "stderr_path": "/data/home/kissel/esnet_iri_test_stderr.log",
             }
         )
         
@@ -140,7 +140,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             
             # 4. Fetch output files
             print("\n--- Test Fetch Output Files ---")
-            fetched = session.fetch_output_files(jobs=[job])
+            fetched = session.fetch_output_files(jobs=[job], output_path="/tmp/amscrot_test_output")
             print(f"Fetched files: {fetched}")
             print(f"Job local_files: {job.local_files}")
             

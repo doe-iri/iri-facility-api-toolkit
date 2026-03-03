@@ -260,7 +260,7 @@ class Session:
                 sc = job.service_client
                 if sc is None:
                     raise ValueError(
-                        f"Job '{job_name}' has no bound service_client — cannot poll status."
+                        f"Job '{job_name}' has no bound service_client -- cannot poll status."
                     )
                 by_client.setdefault(sc, []).append(job_name)
 
@@ -278,7 +278,7 @@ class Session:
                     f"{n}={results[n].state}" for n in sorted(results)
                 )
                 elapsed = time.monotonic() - start
-                print(f"[wait] {elapsed:.1f}s — {summary}")
+                print(f"[wait] {elapsed:.1f}s -- {summary}")
 
             for name in settled_this_round:
                 del pending[name]
@@ -296,6 +296,7 @@ class Session:
         self,
         jobs: Optional[List["Job"]] = None,
         storage_resource_id: str = None,
+        output_path: str = None,
     ) -> Dict[str, Dict[str, str]]:
         """Fetch remote stdout/stderr for completed jobs into the session directory.
 
@@ -303,9 +304,13 @@ class Session:
             jobs:                 Jobs to fetch files for. Defaults to all session jobs.
             storage_resource_id:  Storage resource to use for filesystem ops.
                                   If ``None``, auto-resolved per service client.
+            output_path:          Override the base directory to write files into.
+                                  Each job's files are written to ``<output_path>/<job_name>/``.
+                                  Defaults to ``~/.amscrot/sessions/<name>/files/<job>/``.
 
         Returns ``{job_name: {"stdout": "<local_path>", ...}}``.
         """
+        import os
         target_jobs: List["Job"] = jobs if jobs is not None else list(self._jobs)
         results: Dict[str, Dict[str, str]] = {}
 
@@ -314,7 +319,10 @@ class Session:
             if sc is None or not hasattr(sc, 'fetch_output_files'):
                 continue
 
-            dest = self.files_path(job.name)
+            if output_path is not None:
+                dest = os.path.join(output_path, job.name)
+            else:
+                dest = self.files_path(job.name)
             fetched = sc.fetch_output_files(
                 job=job,
                 session_dir=dest,
