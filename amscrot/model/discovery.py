@@ -104,7 +104,7 @@ class DiscoveryResult:
         from amscrot.model.metadata import Facility
 
         def _resource_dict(obj) -> Dict[str, Any]:
-            """Generic typed-object → dict using only the base + declared fields."""
+            """Generic typed-object -> dict using only the base + declared fields."""
             d: Dict[str, Any] = {}
             for field in type(obj).model_fields:
                 val = getattr(obj, field, None)

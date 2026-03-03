@@ -57,7 +57,7 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
                     print(f"  Node: name={c.name} cores={c.cores} "
                           f"memory={c.memory} arch={c.architecture}")
             else:
-                print("  (no nodes reachable — cluster unavailable)")
+                print("  (no nodes reachable -- cluster unavailable)")
 
         except unittest.SkipTest:
             raise
@@ -78,7 +78,7 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
             self.assertIsInstance(result, DiscoveryResult)
 
             if not result:
-                print("Empty result — check credentials.")
+                print("Empty result -- check credentials.")
                 return
 
             print(f"Normalized Discovery Summary:")

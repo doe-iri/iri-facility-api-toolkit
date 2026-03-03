@@ -14,7 +14,7 @@ class IriServiceClient(ServiceClient):
         return self._discover_normalized()
 
     def _discover_native(self) -> DiscoveryResult:
-        """Return raw IRI resources (currently empty — IRI API not yet integrated)."""
+        """Return raw IRI resources (currently empty -- IRI API not yet integrated)."""
         return DiscoveryResult()
 
     def _discover_normalized(self) -> DiscoveryResult:

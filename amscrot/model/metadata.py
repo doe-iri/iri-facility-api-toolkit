@@ -2,7 +2,7 @@ from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
-# ── Common base ─────────────────────────────────────────────────────────────
+# -- Common base -------------------------------------------------------------
 
 class ResourceBase(BaseModel):
     """Common fields shared by all first-class resource metadata objects."""
@@ -11,7 +11,7 @@ class ResourceBase(BaseModel):
     description: Optional[str] = None
 
 
-# ── Resource Models ──────────────────────────────────────────────────────────
+# -- Resource Models ----------------------------------------------------------
 
 class Compute(ResourceBase):
     # Common / Shared
@@ -112,7 +112,7 @@ class Operation(ResourceBase):
 
 
 class Facility(ResourceBase):
-    name: str  # required — overrides the optional base field
+    name: str  # required -- overrides the optional base field
     compute: Optional[List[Compute]] = None
     storage: Optional[List[Storage]] = None
     networks: Optional[List[Network]] = None

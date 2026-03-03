@@ -48,7 +48,7 @@ def generate_client(api_url: str, config_file: str, output_dir: str, package_nam
     
     # Remove existing generated client
     if output_path.exists():
-        print(f"🗑️  Removing existing generated client at {output_path}")
+        print(f"[rm]  Removing existing generated client at {output_path}")
         shutil.rmtree(output_path)
     
     # Build command
@@ -69,7 +69,7 @@ def generate_client(api_url: str, config_file: str, output_dir: str, package_nam
         "--package-name", str(package_name)
     ]
     
-    print(f"⚙️  Generating Python client...")
+    print(f"[gen]  Generating Python client...")
     print(f"   Command: {' '.join(cmd)}")
     print()
     
@@ -82,7 +82,7 @@ def generate_client(api_url: str, config_file: str, output_dir: str, package_nam
         )
         return result.returncode == 0
     except subprocess.CalledProcessError as e:
-        print(f"❌ Generation failed with exit code {e.returncode}")
+        print(f"[ERROR] Generation failed with exit code {e.returncode}")
         return False
 
 
@@ -130,7 +130,7 @@ def main():
     
     # Check if tool is installed
     if not check_tool_installed():
-        print("❌ openapi-generator is not installed")
+        print("[ERROR] openapi-generator is not installed")
         print()
         print("To install (macOS), run:")
         print("  brew install openapi-generator")
@@ -139,12 +139,12 @@ def main():
     
     # Check API accessibility
     if not args.skip_check:
-        print("🔍 Checking API accessibility...")
+        print("[check] Checking API accessibility...")
         if check_api_accessibility(args.api_url):
-            print("✓ API is accessible")
+            print("[OK] API is accessible")
             print()
         else:
-            print(f"❌ Cannot access API at {args.api_url}")
+            print(f"[ERROR] Cannot access API at {args.api_url}")
             print()
             print("Make sure the API server is running:")
             print("  make")
@@ -157,7 +157,7 @@ def main():
     if generate_client(args.api_url, args.config, args.output, args.package_name):
         print()
         print("=" * 60)
-        print("  ✅ Client generated successfully!")
+        print("  [OK] Client generated successfully!")
         print("=" * 60)
         print()
         print(f"Location: {args.output}")
@@ -172,7 +172,7 @@ def main():
         sys.exit(0)
     else:
         print()
-        print("❌ Client generation failed")
+        print("[ERROR] Client generation failed")
         sys.exit(1)
 
 

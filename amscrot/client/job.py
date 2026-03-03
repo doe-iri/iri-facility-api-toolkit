@@ -113,6 +113,7 @@ class Job:
         self.preferences = preferences or {}
         self.inputs = inputs or {}
         self.outputs = outputs or {}
+        self.local_files: Dict[str, str] = {}  # populated by fetch_output_files
 
     def to_config(self) -> Dict:
         config = {

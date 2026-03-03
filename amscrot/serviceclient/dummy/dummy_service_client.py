@@ -9,10 +9,10 @@ class DummyServiceClient(ServiceClient):
     """In-memory ServiceClient for lifecycle testing.
 
     Simulates state transitions without any real backend:
-      plan()   → PLANNED
-      create() → transitions internal state ACTIVE
-      status() → returns current internal state as JobStatus
-      destroy()→ transitions internal state to CANCELED
+      plan()   -> PLANNED
+      create() -> transitions internal state ACTIVE
+      status() -> returns current internal state as JobStatus
+      destroy()-> transitions internal state to CANCELED
     """
 
     def __init__(self, **kwargs):

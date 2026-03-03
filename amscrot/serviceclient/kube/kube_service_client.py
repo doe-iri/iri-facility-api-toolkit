@@ -368,7 +368,7 @@ class KubeServiceClient(ServiceClient):
             )
             k8s_status = api_response.status
 
-            # Map Kubernetes job status → aligned JobState
+            # Map Kubernetes job status -> aligned JobState
             if k8s_status.succeeded:
                 state = JobState.COMPLETED
             elif k8s_status.failed:
@@ -391,7 +391,7 @@ class KubeServiceClient(ServiceClient):
             )
         except ApiException as e:
             if e.status == 404:
-                # Job not found — either destroyed or never created
+                # Job not found -- either destroyed or never created
                 state = JobState.CANCELED if self._status == JobState.CANCELED.value else JobState.UNKNOWN
                 return JobStatus(state=state.value)
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")

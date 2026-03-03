@@ -80,10 +80,12 @@ class SENSENetworkedJobs(unittest.TestCase):
             "memory": 268435456
         }
         common_attributes = {
-            "directory": "/tmp",
-            "duration": 60,
+            "directory": "/data/home/kissel",
+            "duration": 600,
             "queue_name": "debug",
-            "account": "interactive"
+            "account": "interactive",
+            "stdout_path": "/data/home/kissel/amscrot_stdout.log",
+            "stderr_path": "/data/home/kissel/amscrot_stderr.log",
         }
 
         spec1 = JobSpec(
@@ -137,7 +139,7 @@ class SENSENetworkedJobs(unittest.TestCase):
         try:
             results = session.wait(
                 jobs=[job1, job2],
-                timeout=120.0,
+                timeout=600.0,
                 interval=2.0,
                 verbose=True,
             )
@@ -151,7 +153,22 @@ class SENSENetworkedJobs(unittest.TestCase):
         self.assertEqual(s2.state, JobState.COMPLETED, f"Job-2 failed or timed out: {s2}")
         print(f"Jobs completed. Status: job-1={s1.state} job-2={s2.state}")
 
-        # 11. Destroy
+        # 12. Fetch Output Files
+        print("\n--- Fetch Output Files ---")
+        fetched = session.fetch_output_files(jobs=[job1, job2])
+        print(f"Fetched files: {fetched}")
+
+        for job_name, paths in fetched.items():
+            stdout_path = paths.get("stdout")
+            if stdout_path:
+                print(f"\n--- stdout for {job_name} ---")
+                try:
+                    with open(stdout_path) as f:
+                        print(f.read())
+                except Exception as e:
+                    print(f"  (could not read stdout: {e})")
+
+        # 13. Destroy
         print("\n--- Session Destroy ---")
         #session.destroy()
         return
