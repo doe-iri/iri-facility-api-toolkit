@@ -166,4 +166,6 @@ fabfed_home
 
  # uv / project metadata (requested)
 uv.lock
-pyproject.toml
+
+# Airflow local environment
+airflow/airflow_home/

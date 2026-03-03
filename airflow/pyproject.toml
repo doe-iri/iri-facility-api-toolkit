@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "amscrot-airflow"
+version = "0.1.0"
+description = "Apache Airflow operators for the amscrot toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT License"}
+authors = [
+  {name = "Ezra Kissel", email = "kissel@es.net"}
+]
+dependencies = [
+    "amscrot-py"
+]
+
+[project.urls]
+Homepage = "https://github.com/esnet/amsc-isro-toolkit"
