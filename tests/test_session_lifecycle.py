@@ -19,7 +19,8 @@ class TestSessionLifecycle(unittest.TestCase):
         # 3. Provide Job specification
         spec = JobSpec(
             image="busybox",
-            executable=["sleep", "5"],
+            executable="sleep",
+            arguments=["5"],
             resources={"requests": {"cpu": "1", "memory": "1Gi"}},
             attributes={
                 "namespace": "default",

@@ -16,5 +16,8 @@ dependencies = [
     "amscrot-py"
 ]
 
+[tool.setuptools.packages.find]
+include = ["amscrot_airflow*"]
+
 [project.urls]
 Homepage = "https://github.com/esnet/amsc-isro-toolkit"

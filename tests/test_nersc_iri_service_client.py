@@ -80,7 +80,8 @@ class TestNerscIriServiceClient(unittest.TestCase):
 
         # --- Create Job with stdout/stderr paths ---
         spec = JobSpec(
-            executable=["/bin/echo", "Hello AmSC"],
+            executable="/bin/echo",
+            arguments=["Hello AmSC"],
             resources={
                 "node_count": 1,
                 "process_count": 1,
@@ -96,7 +97,6 @@ class TestNerscIriServiceClient(unittest.TestCase):
                 "duration": 600,
                 "queue_name": "debug",
                 "account": "amsc013",
-                "pre_launch": "",
                 "stdout_path": "nersc_iri_test_stdout.log",
                 "stderr_path": "nersc_iri_test_stderr.log",
             }
@@ -217,7 +217,8 @@ class TestNerscIriServiceClient(unittest.TestCase):
         )
         
         spec = JobSpec(
-            executable=["echo", "test"],
+            executable="echo",
+            arguments=["test"],
             attributes={"resource_id": "custom-resource-id"}
         )
         
@@ -231,7 +232,8 @@ class TestNerscIriServiceClient(unittest.TestCase):
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
             job_spec=JobSpec(
-                executable=["echo", "test"],
+                executable="echo",
+                arguments=["test"],
                 attributes={
                     "stdout_path": "/remote/stdout.log",
                     "stderr_path": "/remote/stderr.log",

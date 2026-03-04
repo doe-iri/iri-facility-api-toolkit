@@ -23,7 +23,7 @@ class TestServiceClientMethods(unittest.TestCase):
         
     def test_kube_methods(self):
         client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
-        spec = JobSpec(image="busybox", executable=["echo", "hello"])
+        spec = JobSpec(image="busybox", executable="echo", arguments=["hello"])
 
         try:
             plan_result = client.plan(spec)
@@ -42,8 +42,9 @@ class TestServiceClientMethods(unittest.TestCase):
         # Test with a job that sleeps and prints
         client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="logtest", endpoint_uri="http://kube")
         spec = JobSpec(
-            image="python:3.9-slim", 
-            executable=["python", "-c", "import time; print('Hello K8s Logs'); time.sleep(5); print('Done Sleep')"]
+            image="python:3.9-slim",
+            executable="python",
+            arguments=["-c", "import time; print('Hello K8s Logs'); time.sleep(5); print('Done Sleep')"]
         )
         
         try:

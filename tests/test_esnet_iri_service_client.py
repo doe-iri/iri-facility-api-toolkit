@@ -69,7 +69,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
 
         # --- Create Job with stdout/stderr paths ---
         spec = JobSpec(
-            executable=["/bin/echo", "Hello AmSC"],
+            executable="/bin/echo",
+            arguments=["Hello AmSC"],
             resources={
                 "node_count": 1,
                 "process_count": 1,
@@ -206,7 +207,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         )
         
         spec = JobSpec(
-            executable=["echo", "test"],
+            executable="echo",
+            arguments=["test"],
             attributes={"resource_id": "custom-resource-id"}
         )
         
@@ -220,7 +222,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
             job_spec=JobSpec(
-                executable=["echo", "test"],
+                executable="echo",
+                arguments=["test"],
                 attributes={
                     "stdout_path": "/remote/stdout.log",
                     "stderr_path": "/remote/stderr.log",

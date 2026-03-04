@@ -167,11 +167,15 @@ class KubeServiceClient(ServiceClient):
                 limits=resources.get("limits")
             )
         
+        # Build container command from executable + arguments
+        command = [job_spec.executable] if job_spec.executable else ["echo"]
+        if job_spec.arguments:
+            command.extend(job_spec.arguments)
         container = client.V1Container(
             name=job_name,
             image=job_spec.image or "busybox",
-            command=job_spec.executable or ["echo", "Hello World"],
-            resources=container_resources 
+            command=command,
+            resources=container_resources
         )
         
         # Labels

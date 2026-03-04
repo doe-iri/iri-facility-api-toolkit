@@ -18,7 +18,7 @@ class TestClientJob(unittest.TestCase):
         spec = JobSpec(
             resources={"node_count": 10},
             image="my-image",
-            executable=["run.sh"],
+            executable="run.sh",
             attributes={"duration": 60}
         )
         
@@ -58,7 +58,8 @@ class TestClientJob(unittest.TestCase):
     def test_job_spec_defaults(self):
         spec = JobSpec()
         self.assertEqual(spec.resources, {})
-        self.assertEqual(spec.executable, [])
+        self.assertEqual(spec.executable, "")
+        self.assertEqual(spec.arguments, [])
 
     def test_add_job_to_session(self):
         from amscrot.client import Client

@@ -52,7 +52,7 @@ with DAG(
     dag_id="esnet_iri_example",
     description="Discover resource, submit an echo job on ESnet IRI, and read stdout",
     schedule=None,          # trigger manually
-    start_date=datetime(2024, 1, 1),
+    start_date=datetime(2026, 3, 3),
     catchup=False,
     default_args=default_args,
     tags=["amscrot", "iri", "esnet"],
@@ -81,7 +81,8 @@ with DAG(
         **base_kwargs,
         # IriJobSubmitOperator args
         job_name="airflow-echo-job",
-        executable=["/bin/echo", "Hello from Airflow"],
+        executable="/bin/echo",
+        arguments=["Hello from Airflow"],
         iri_resources={
             "node_count": 1,
             "process_count": 1,

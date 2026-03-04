@@ -41,7 +41,8 @@ class TestSessionMultiResource(unittest.TestCase):
         # Job 1
         spec1 = JobSpec(
             image="busybox",
-            executable=["echo", "Running Job 1"],
+            executable="echo",
+            arguments=["Running Job 1"],
             attributes={"namespace": "default", "restartPolicy": "Never"}
         )
         job1 = Job(
@@ -55,7 +56,8 @@ class TestSessionMultiResource(unittest.TestCase):
         # Job 2
         spec2 = JobSpec(
             image="busybox",
-            executable=["echo", "Running Job 2"],
+            executable="echo",
+            arguments=["Running Job 2"],
             attributes={"namespace": "default", "restartPolicy": "Never"}
         )
         job2 = Job(

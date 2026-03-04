@@ -75,10 +75,12 @@ class JobStatus:
         return f"<JobStatus {' '.join(parts)}>"
 
 class JobSpec:
-    def __init__(self, resources: Dict = None, image: str = None, executable: List[str] = None, attributes: Dict = None):
+    def __init__(self, resources: Dict = None, image: str = None, executable: str = None,
+                 arguments: List[str] = None, attributes: Dict = None):
         self.resources = resources or {}
         self.image = image
-        self.executable = executable or []
+        self.executable = executable or ""
+        self.arguments = arguments or []
         self.attributes = attributes or {}
 
     def to_dict(self) -> Dict:
@@ -86,6 +88,7 @@ class JobSpec:
             'resources': self.resources,
             'image': self.image,
             'executable': self.executable,
+            'arguments': self.arguments,
             'attributes': self.attributes
         }
 

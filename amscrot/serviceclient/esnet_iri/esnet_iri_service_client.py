@@ -345,14 +345,8 @@ class EsnetIriServiceClient(ServiceClient):
         from esnet_iri.models.container import Container as IriContainer
 
         # --- Executable / arguments ---
-        executable = job_spec.executable
-        arguments = None
-        if isinstance(executable, list) and len(executable) > 0:
-            if len(executable) > 1:
-                arguments = executable[1:]
-            executable = executable[0]
-        elif not executable:
-            executable = "echo"
+        executable = job_spec.executable or "echo"
+        arguments = job_spec.arguments if job_spec.arguments else None
 
         # --- Keyword args for IriJobSpec (only set what we have) ---
         kwargs: dict = {"executable": executable}

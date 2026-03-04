@@ -46,7 +46,9 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
     job_name:
         Name for the job (also used as the XCom key).
     executable:
-        Command + args list, e.g. ``["/bin/echo", "Hello from Airflow"]``.
+        Path to the program to run, e.g. ``"/bin/echo"``.
+    arguments:
+        Arguments list for the executable, e.g. ``["Hello from Airflow"]``.
     resources:
         Dict of IRI ResourceSpec fields (node_count, memory, etc.).
     attributes:
@@ -71,7 +73,8 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
         self,
         *,
         job_name: str,
-        executable: List[str],
+        executable: str,
+        arguments: Optional[List[str]] = None,
         iri_resources: Optional[Dict[str, Any]] = None,
         attributes: Optional[Dict[str, Any]] = None,
         resource_id_task_id: Optional[str] = None,
@@ -84,6 +87,7 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
         super().__init__(**kwargs)
         self.job_name = job_name
         self.executable = executable
+        self.arguments = arguments or []
         self.iri_resources = iri_resources or {}
         self.attributes = attributes or {}
         self.resource_id_task_id = resource_id_task_id
@@ -115,6 +119,7 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
 
         spec = JobSpec(
             executable=self.executable,
+            arguments=self.arguments if self.arguments else None,
             resources=self.iri_resources if self.iri_resources else None,
             attributes=attrs if attrs else None,
         )

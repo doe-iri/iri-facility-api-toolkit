@@ -26,7 +26,8 @@ class TestClientJobsLifecycle(unittest.TestCase):
             job_spec=JobSpec(
                 resources={"node_count": 1},
                 image="alpine:latest",
-                executable=["/bin/sh", "-c", "echo hello job1"],
+                executable="/bin/sh",
+                arguments=["-c", "echo hello job1"],
                 attributes={"walltime": "10m"}
             )
         )
@@ -41,7 +42,7 @@ class TestClientJobsLifecycle(unittest.TestCase):
             job_spec=JobSpec(
                 resources={"storage_gb": 100},
                 image="data-mover:latest",
-                executable=["/bin/transfer"],
+                executable="/bin/transfer",
                 attributes={"bandwidth": "10Gbps"}
             )
         )
@@ -55,7 +56,8 @@ class TestClientJobsLifecycle(unittest.TestCase):
             job_spec=JobSpec(
                 resources={"gpu_count": 4},
                 image="tensorflow:latest",
-                executable=["python", "train.py"],
+                executable="python",
+                arguments=["train.py"],
                 attributes={"priority": "high"}
             )
         )
@@ -70,7 +72,7 @@ class TestClientJobsLifecycle(unittest.TestCase):
              job_spec=JobSpec(
                 resources={"sensor_id": "sensor-1"},
                 image="instrument-ctrl:v1",
-                executable=["/bin/capture"],
+                executable="/bin/capture",
                 attributes={"duration": "1h"}
             )
         )

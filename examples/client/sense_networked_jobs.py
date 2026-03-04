@@ -81,7 +81,7 @@ class SENSENetworkedJobs(unittest.TestCase):
         }
         common_attributes = {
             "container": {
-                "image": "busybox"
+                "image": "debian:latest"
             },
             "directory": "/data/home/kissel",
             "duration": 600,
@@ -92,12 +92,14 @@ class SENSENetworkedJobs(unittest.TestCase):
         }
 
         spec1 = JobSpec(
-            executable=["/bin/echo", "Hello AmSC East"],
+            executable="/bin/echo",
+            arguments=["Hello AmSC East"],
             resources=common_resources,
             attributes={"resource_id": east_resource_id, **common_attributes}
         )
         spec2 = JobSpec(
-            executable=["/bin/echo", "Hello AmSC West"],
+            executable="/bin/echo",
+            arguments=["Hello AmSC West"],
             resources=common_resources,
             attributes={"resource_id": west_resource_id, **common_attributes}
         )
