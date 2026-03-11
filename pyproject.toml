@@ -22,7 +22,7 @@ classifiers = [
 dependencies = [
     "fabrictestbed-extensions",
     "python-chi==0.17.11",
-    "sense-o-api==1.42",
+    "sense-o-api==1.44",
     "ansible==9.5.1",
     "ansible-runner==2.3.6",
     "xmltodict",
@@ -31,7 +31,10 @@ dependencies = [
     "pydantic",
     "paramiko==4.0.0",
     "esnet-iri==1.0.0",
-    "kubernetes==35.0.0"
+    "kubernetes==35.0.0",
+    "ipykernel>=7.2.0",
+    "globus-sdk>=4.4.0",
+    "python-dotenv>=1.2.1",
 ]
 
 [project.urls]
