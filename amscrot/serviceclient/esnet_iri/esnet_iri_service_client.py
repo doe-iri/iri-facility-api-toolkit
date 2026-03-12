@@ -1,10 +1,10 @@
-import base64
 import os
 import time
 import yaml
 from pathlib import Path
-from typing import Dict, List, Any, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, TYPE_CHECKING
 from ..serviceclient import ServiceClient, PlanError
+from ..filesystem import IriFilesystem, FilesystemInterface, FilesystemError
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 from ...client.job import JobStatus, JobState as AmscrotJobState
@@ -80,6 +80,8 @@ class EsnetIriServiceClient(ServiceClient):
         
         # Track submitted jobs: {job_name: (resource_id, job_id)}
         self._submitted_jobs = {}
+        # Lazily-created filesystem interface
+        self._filesystem: Optional[IriFilesystem] = None
     
     def discover(self, native: bool = True) -> DiscoveryResult:
         """Discover resources. native=True returns raw DiscoveredResource items;
@@ -569,6 +571,26 @@ class EsnetIriServiceClient(ServiceClient):
                 message=str(e)
             )
 
+    # -- Filesystem interface ---------------------------------------------
+
+    @property
+    def filesystem(self) -> Optional[IriFilesystem]:
+        """Return the IRI filesystem interface for this client.
+
+        Returns ``None`` if the client is not available (e.g. missing credentials).
+        The interface is created lazily on first access and reused thereafter.
+        """
+        if not self._available:
+            return None
+        if self._filesystem is None:
+            self._filesystem = IriFilesystem(
+                filesystem_api=self._filesystem_api,
+                task_api=self._task_api,
+                logger=self.logger,
+                client_name=self.name,
+            )
+        return self._filesystem
+
     # -- Output file retrieval ---------------------------------------------
 
     def _get_storage_resource_id(self, compute_resource_id: str) -> str:
@@ -627,19 +649,6 @@ class EsnetIriServiceClient(ServiceClient):
             )
         return None
 
-    def _poll_task(self, task_id: str, timeout: float = 60.0, interval: float = 2.0) -> Any:
-        """Poll TaskApi until the filesystem task completes or times out."""
-        start = time.monotonic()
-        while (time.monotonic() - start) < timeout:
-            task = self._task_api.get_task(task_id)
-            if hasattr(task, 'status') and task.status:
-                status_val = task.status.value if hasattr(task.status, 'value') else str(task.status)
-                if status_val in ('completed', 'failed', 'canceled'):
-                    return task
-            time.sleep(interval)
-        self.logger.warning(f"[{self.name}] Task {task_id} timed out after {timeout}s")
-        return None
-
     def fetch_output_files(self, job: "Job", session_dir: str,
                            storage_resource_id: str = None) -> Dict[str, str]:
         """Download remote stdout/stderr files for a Job to a local directory.
@@ -650,17 +659,13 @@ class EsnetIriServiceClient(ServiceClient):
 
         Args:
             job:                  The Job whose output files to fetch.
-            session_dir:          Local directory to write files into. Typically
-                                  supplied by ``Session.fetch_output_files()`` --
-                                  either the default session path or the caller's
-                                  ``output_path`` override.
+            session_dir:          Local directory to write files into.
             storage_resource_id:  Storage resource to use for filesystem ops.
                                   If ``None``, auto-resolved from available
                                   storage resources.
 
         Returns:
-            Dict mapping stream name -> local file path, e.g.
-            ``{"stdout": "/path/to/stdout.log"}``.
+            Dict mapping stream name -> local file path.
         """
         if not self._available:
             self.logger.warning(f"[{self.name}] Client unavailable -- cannot fetch output files.")
@@ -676,11 +681,13 @@ class EsnetIriServiceClient(ServiceClient):
         if not storage_resource_id:
             storage_resource_id = self._get_storage_resource_id(compute_resource_id)
         if not storage_resource_id:
-            self.logger.warning(
-                f"[{self.name}] No storage resource ID found for job '{job.name}'. Cannot fetch output files."
+            self.logger.error(
+                f"[{self.name}] Cannot fetch output files -- no storage resource "
+                f"found for compute resource '{compute_resource_id}'."
             )
             return {}
 
+        fs = self.filesystem
         attrs = job.job_spec.attributes or {}
         results: Dict[str, str] = {}
 
@@ -696,46 +703,19 @@ class EsnetIriServiceClient(ServiceClient):
                     f"[{self.name}] Downloading {stream} from '{remote_path}' "
                     f"for job '{job.name}'..."
                 )
-                task_response = self._filesystem_api.download(
-                    resource_id=storage_resource_id,
-                    path=remote_path,
+                fs.download(
+                    storage_resource_id,
+                    remote_path=remote_path,
+                    local_path=local_path,
                 )
-
-                task = self._poll_task(task_response.task_id)
-                if task is None:
-                    self.logger.warning(
-                        f"[{self.name}] Download timed out for {stream} of '{job.name}'."
-                    )
-                    continue
-
-                status_val = (
-                    task.status.value if hasattr(task.status, 'value') else str(task.status)
-                )
-                if status_val != 'completed':
-                    self.logger.warning(
-                        f"[{self.name}] Download {stream} for '{job.name}' "
-                        f"ended with status '{status_val}'."
-                    )
-                    continue
-
-                raw = task.result if task.result is not None else ''
-                # The ESNet IRI API returns results as {'output': '<base64>'}
-                if isinstance(raw, dict) and 'output' in raw:
-                    try:
-                        content = base64.b64decode(raw['output']).decode('utf-8', errors='replace')
-                    except Exception:
-                        content = str(raw)
-                else:
-                    content = str(raw)
-                os.makedirs(session_dir, exist_ok=True)
-                with open(local_path, 'w') as f:
-                    f.write(content)
-
                 results[stream] = local_path
                 self.logger.debug(
                     f"[{self.name}] Saved {stream} for '{job.name}' -> {local_path}"
                 )
-
+            except FilesystemError as e:
+                self.logger.warning(
+                    f"[{self.name}] Could not fetch {stream} for '{job.name}': {e}"
+                )
             except Exception as e:
                 self.logger.error(
                     f"[{self.name}] Error fetching {stream} for '{job.name}': {e}"

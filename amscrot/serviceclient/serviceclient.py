@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Any, Dict, Optional, TYPE_CHECKING
 from amscrot.util import utils
+from .filesystem import FilesystemInterface
 
 if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
@@ -87,6 +88,21 @@ class ServiceClient(ABC):
                 }
             ]
         }
+
+    @property
+    def filesystem(self) -> Optional["FilesystemInterface"]:
+        """Return a filesystem interface for this client, or None if not supported.
+
+        IRI-based clients (NerscIriServiceClient, EsnetIriServiceClient) return
+        an ``IriFilesystem`` instance that exposes all IRI filesystem operations
+        (mkdir, ls, stat, upload, download, rm, mv, cp, chmod, head, tail,
+        checksum, compress, extract, symlink) synchronously.
+
+        Returns:
+            A :class:`FilesystemInterface` implementation, or ``None`` if this
+            service client type does not support filesystem operations.
+        """
+        return None
 
     def __repr__(self):
         return f"<ServiceClient name={self.name} type={self.type} uri={self.endpoint_uri}>"

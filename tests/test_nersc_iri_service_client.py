@@ -61,13 +61,25 @@ class TestNerscIriServiceClient(unittest.TestCase):
 
             resource_data = target_resource.data
             resource_id = resource_data.get('id')
-            
+
             if resource_id:
                 print(f"Found target compute resource: {resource_data}")
                 print(f"Using resource ID: {resource_id}")
             else:
                 self.skipTest("Target compute resource found but ID is missing.")
-                
+
+            # Resolve a storage resource for filesystem operations
+            # (prefer a resource with 'home' in its name, fall back to any available)
+            storage_resources = all_resources.storage or []
+            storage_resource_id = None
+            for res in storage_resources:
+                if 'home' in (res.data.get('name') or '').lower():
+                    storage_resource_id = res.data.get('id')
+                    break
+            if not storage_resource_id and storage_resources:
+                storage_resource_id = storage_resources[0].data.get('id')
+            print(f"Storage resource ID: {storage_resource_id}")
+
         except Exception as e:
             import traceback
             error_msg = str(e)
@@ -152,6 +164,17 @@ class TestNerscIriServiceClient(unittest.TestCase):
             
             # 4. Fetch output files
             print("\n--- Test Fetch Output Files ---")
+
+            # List the remote working directory via the filesystem interface
+            working_dir = spec.attributes.get("directory", "/")
+            if storage_resource_id and iri_client.filesystem:
+                try:
+                    print(f"\n  [ls] {working_dir} on storage resource {storage_resource_id}:")
+                    ls_result = iri_client.filesystem.ls(storage_resource_id, working_dir, format=True)
+                    print(f"  {ls_result}")
+                except Exception as ls_err:
+                    print(f"  [ls] failed: {ls_err}")
+
             fetched = session.fetch_output_files(jobs=[job])
             print(f"Fetched files: {fetched}")
             print(f"Job local_files: {job.local_files}")
@@ -162,6 +185,11 @@ class TestNerscIriServiceClient(unittest.TestCase):
                     self.assertTrue(os.path.exists(local_path),
                                     f"Expected local file at {local_path}")
                     print(f"  {stream}: {local_path} (exists={os.path.exists(local_path)})")
+                    with open(local_path) as f:
+                        contents = f.read()
+                    print(f"  --- {stream} contents ---")
+                    print(contents or "  (empty)")
+                    print(f"  --- end {stream} ---")
             
             # Verify local_files was populated on the Job
             self.assertEqual(job.local_files, fetched.get(job.name, {}))
