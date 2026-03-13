@@ -54,7 +54,11 @@ class TestSessionLifecycle(unittest.TestCase):
         
         # 6. Apply
         print("\n--- Session Apply ---")
-        session.apply()
+        result = session.apply()
+        print(f"Apply result: {result}")
+        self.assertIsInstance(result, dict)
+        self.assertIn("resources", result)
+        self.assertIn("jobs", result)
 
         # 7. Wait for Completion
         print("\n--- Session Wait ---")

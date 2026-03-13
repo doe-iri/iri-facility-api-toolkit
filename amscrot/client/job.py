@@ -109,6 +109,7 @@ class Job:
         self.type = JobType(type) if isinstance(type, str) else type
         self.service_type = JobServiceType(service_type) if isinstance(service_type, str) else service_type
         
+        self.id = None
         self.status = JobState.INIT
         self.service_client = service_client
         self.job_spec = job_spec or JobSpec()
@@ -121,6 +122,7 @@ class Job:
     def to_config(self) -> Dict:
         config = {
             'name': self.name,
+            'id': self.id,
             'type': self.type.value if hasattr(self.type, 'value') else self.type,
             'service_type': self.service_type.value if hasattr(self.service_type, 'value') else self.service_type,
             'status': self.status.value if hasattr(self.status, 'value') else self.status,

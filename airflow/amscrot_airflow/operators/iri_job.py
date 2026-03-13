@@ -144,9 +144,12 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
 
         # -- Submit --
         self.log.info("[amscrot] Submitting job '%s'...", self.job_name)
-        rc = session.apply()
-        if rc:
-            raise AirflowException(f"Session apply failed for job '{self.job_name}'")
+        try:
+            rc = session.apply()
+        except Exception as exc:
+            raise AirflowException(
+                f"Job '{self.job_name}' apply failed: {exc}"
+            ) from exc
         self.log.info("[amscrot] Job submitted.")
 
         # -- Wait --

@@ -146,7 +146,7 @@ class Client:
             service_type = getattr(Constants.ServiceType, client_type_attr, None)
             if service_type is None:
                 self._logger.warning(
-                    f"[Client] Unknown client_type '{client_type_attr}' "
+                    f"Unknown client_type '{client_type_attr}' "
                     f"in credential entry '{entry_name}', skipping."
                 )
                 continue
@@ -160,16 +160,72 @@ class Client:
                 )
                 self._service_clients[entry_name] = sc
                 self._logger.debug(
-                    f"[Client] Created service client '{entry_name}' "
+                    f"Created service client '{entry_name}' "
                     f"(type={service_type})"
                 )
             except Exception as e:
                 self._logger.warning(
-                    f"[Client] Failed to create service client '{entry_name}' "
+                    f"Failed to create service client '{entry_name}' "
                     f"(type={service_type}): {e}"
                 )
 
     def create_session(self, name: str) -> Session:
         session = Session(name=name, providers=list(self._providers), service_clients=list(self._service_clients.values()))
         self._sessions.append(session)
+
+        # Hydrate service clients and jobs from disk if available
+        from amscrot.util import state as sutil
+        from amscrot.client.job import Job, JobType, JobServiceType, JobState
+        from amscrot.serviceclient import ServiceClient
+
+        cached_scs, cached_jobs = sutil.load_jobs(name)
+
+        if cached_scs:
+            self._logger.info(f"Restoring {len(cached_scs)} service client(s) from session '{name}' state file.")
+            for sc_dict in cached_scs:
+                # Top level dictionary keys are names
+                for sc_name, sc_cfg in sc_dict.items():
+                    try:
+                        sc = ServiceClient.create(
+                            type=sc_cfg.get('type'),
+                            name=sc_name,
+                            endpoint_uri=sc_cfg.get('endpoint_uri'),
+                            status=sc_cfg.get('status', 'ACTIVE'),
+                            profile=sc_cfg.get('profile')
+                        )
+                        # Prevents duplicates if the client is already attached
+                        if sc_name not in session._service_clients:
+                            session.add_service_client(sc)
+                    except Exception as e:
+                        self._logger.warning(f"Skipping hydration of cached ServiceClient '{sc_name}': {e}")
+
+        if cached_jobs:
+            self._logger.info(f"Restoring {len(cached_jobs)} job(s) from session '{name}' state file.")
+            for j_dict in cached_jobs:
+                try:
+                    sc_name = j_dict.get('service_client')
+                    sc = session.get_service_client(sc_name) if sc_name else None
+                    if sc is None and sc_name:
+                        sc = self.get_service_client(sc_name)
+                    job = Job(
+                        name=j_dict.get('name'),
+                        type=JobType(j_dict.get('type', 'COMPUTE')),
+                        service_type=JobServiceType(j_dict.get('service_type', 'BATCH')),
+                        service_client=sc
+                    )
+                    job.id = j_dict.get('id')
+                    try:
+                        job.status = JobState(j_dict.get('status', 'INIT'))
+                    except ValueError:
+                        job.status = JobState.INIT
+                    session.add_job(job)
+
+                    # Register job in service_client's _submitted_jobs for status tracking
+                    if sc and job.id and hasattr(sc, '_submitted_jobs'):
+                        resource_id = j_dict.get('resource_id')
+                        if resource_id:
+                            sc._submitted_jobs[job.name] = (resource_id, job.id)
+                except Exception as e:
+                    self._logger.warning(f"Skipping hydration of cached job '{j_dict.get('name')}': {e}")
+
         return session

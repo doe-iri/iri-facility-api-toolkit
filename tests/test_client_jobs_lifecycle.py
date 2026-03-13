@@ -91,7 +91,11 @@ class TestClientJobsLifecycle(unittest.TestCase):
             self.skipTest(f"Skipping test - an error occurred during plan: {e}")
         
         print("\n--- APPLY ---")
-        session.apply()
+        result = session.apply()
+        print(f"Apply result: {result}")
+        self.assertIsInstance(result, dict)
+        self.assertIn("resources", result)
+        self.assertIn("jobs", result)
         
         print("\n--- SHOW ---")
         session.show()

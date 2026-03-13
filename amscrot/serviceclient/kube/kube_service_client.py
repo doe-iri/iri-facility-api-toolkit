@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from amscrot.client.job import JobSpec
 
 from amscrot.client.job import JobStatus, JobState
-from amscrot.serviceclient.serviceclient import PlanError
+from amscrot.serviceclient.serviceclient import PlanError, CreateError, DestroyError
 
 class KubeServiceClient(ServiceClient):
     def __init__(self, **kwargs):
@@ -294,8 +294,7 @@ class KubeServiceClient(ServiceClient):
         name = job_name or self.name
         self.logger.info(f"[{self.name}] Creating Kube service for '{name}'...")
         if not self._available:
-             self.logger.warning(f"[{self.name}] Kubernetes client unavailable. Skipping submission.")
-             return
+            raise CreateError(errors=["Kubernetes client not available - check config"])
 
         job = self._create_job_object(job_spec, name)
         try: 
@@ -307,15 +306,16 @@ class KubeServiceClient(ServiceClient):
             )
             self._status = JobState.ACTIVE.value
             self.logger.info(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
+        except CreateError:
+            raise
         except Exception as e:
-            self.logger.error(f"[{self.name}] Error submitting job '{name}': {e}")
-            self._status = JobState.FAILED.value
+            raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
 
     def destroy(self, job_name: str = None):
         name = job_name or self.name
         self.logger.info(f"[{self.name}] Destroying Kube service for '{name}'...")
         if not self._available:
-            return
+            raise DestroyError(errors=["Kubernetes client not available - check config"])
 
         try:
             api_response = self.batch_v1.delete_namespaced_job(
@@ -328,8 +328,10 @@ class KubeServiceClient(ServiceClient):
             )
             self.logger.info(f"[{self.name}] Job '{name}' deleted. Status='{api_response.status}'")
             self._status = JobState.CANCELED.value
+        except DestroyError:
+            raise
         except Exception as e:
-             self.logger.error(f"[{self.name}] Error deleting job '{name}': {e}")
+            raise DestroyError(errors=[f"Error deleting job '{name}': {e}"]) from e
 
     def _get_job_logs(self, job_name: str) -> str:
         if not self.core_v1:

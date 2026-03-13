@@ -3,7 +3,7 @@ import time
 import yaml
 from pathlib import Path
 from typing import Dict, List, Any, Optional, TYPE_CHECKING
-from ..serviceclient import ServiceClient, PlanError
+from ..serviceclient import ServiceClient, PlanError, CreateError, DestroyError
 from ..filesystem import IriFilesystem, FilesystemInterface, FilesystemError
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
@@ -469,9 +469,7 @@ class NerscIriServiceClient(ServiceClient):
         self.logger.debug(f"[{self.name}] Creating NERSC IRI job for '{name}'...")
         
         if not self._available:
-            self.logger.warning(f"[{self.name}] NERSC IRI client unavailable. Skipping submission.")
-            self._status = "ERROR"
-            return
+            raise CreateError(errors=["NERSC IRI client not available - check credentials"])
         
         try:
             # Get resource_id and convert job spec
@@ -487,10 +485,12 @@ class NerscIriServiceClient(ServiceClient):
             self._submitted_jobs[name] = (resource_id, iri_job.id)
             self._status = AmscrotJobState.PENDING.value
             self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
+            return iri_job.id
                 
+        except CreateError:
+            raise
         except Exception as e:
-            self.logger.error(f"[{self.name}] Error submitting job '{name}': {e}")
-            self._status = "ERROR"
+            raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
     
     def destroy(self, job_name: str = None):
         """Cancel a job on NERSC IRI."""
@@ -498,13 +498,11 @@ class NerscIriServiceClient(ServiceClient):
         self.logger.debug(f"[{self.name}] Destroying NERSC IRI job for '{name}'...")
         
         if not self._available:
-            self.logger.warning(f"[{self.name}] NERSC IRI client unavailable.")
-            return
+            raise DestroyError(errors=["NERSC IRI client not available - check credentials"])
         
         # Check if we have a job ID for this job
         if name not in self._submitted_jobs:
-            self.logger.warning(f"[{self.name}] No job ID found for '{name}'. Cannot cancel.")
-            return
+            raise DestroyError(errors=[f"No job ID found for '{name}'. Cannot cancel."])
         
         try:
             resource_id, job_id = self._submitted_jobs[name]
@@ -521,8 +519,10 @@ class NerscIriServiceClient(ServiceClient):
             # Remove from tracking
             del self._submitted_jobs[name]
             
+        except DestroyError:
+            raise
         except Exception as e:
-            self.logger.error(f"[{self.name}] Error cancelling job '{name}': {e}")
+            raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
     
     def status(self, job_name: str = None) -> JobStatus:
         """Get the status of a job on NERSC IRI."""

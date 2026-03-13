@@ -82,7 +82,11 @@ class TestSessionMultiResource(unittest.TestCase):
         
         # 8. Apply
         print("\n--- Session Apply ---")
-        session.apply()
+        result = session.apply()
+        print(f"Apply result: {result}")
+        self.assertIsInstance(result, dict)
+        self.assertIn("resources", result)
+        self.assertIn("jobs", result)
         
         # 9. Wait for Jobs (ACTIVE means submitted, COMPLETED means done)
         print("\n--- Session Status (Wait) ---")

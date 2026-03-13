@@ -33,14 +33,18 @@ class TestClientModule(unittest.TestCase):
 
         # 1. Plan
         print("\n--- Running Plan ---")
-        created, deleted = session.plan()
-        self.assertEqual(created, 1)
-        self.assertEqual(deleted, 0)
+        plan_result = session.plan()
+        self.assertEqual(plan_result["resources"]["to_be_created"], 1)
+        self.assertEqual(plan_result["resources"]["to_be_deleted"], 0)
 
         # 2. Apply
         print("\n--- Running Apply ---")
-        status = session.apply()
-        self.assertEqual(status, 0) # 0 means success in amscrot apply
+        result = session.apply()
+        self.assertIsInstance(result, dict)
+        self.assertIn("resources", result)
+        self.assertIn("jobs", result)
+        self.assertEqual(result["resources"]["pending"], 0)
+        self.assertEqual(result["resources"]["failed"], 0)
 
         # 3. Show
         print("\n--- Running Show ---")

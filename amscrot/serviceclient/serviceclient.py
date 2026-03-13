@@ -23,6 +23,36 @@ class PlanError(Exception):
         super().__init__(f"Plan failed with {len(errors)} error(s): {error_summary}")
 
 
+class CreateError(Exception):
+    """Raised by ServiceClient.create() when job submission fails.
+
+    Attributes:
+        errors:   List of error messages that caused the failure.
+        warnings: List of non-fatal warning messages (may be empty).
+    """
+
+    def __init__(self, errors: List[str], warnings: List[str] = None):
+        self.errors = errors
+        self.warnings = warnings or []
+        error_summary = "; ".join(errors)
+        super().__init__(f"Create failed with {len(errors)} error(s): {error_summary}")
+
+
+class DestroyError(Exception):
+    """Raised by ServiceClient.destroy() when job cancellation fails.
+
+    Attributes:
+        errors:   List of error messages that caused the failure.
+        warnings: List of non-fatal warning messages (may be empty).
+    """
+
+    def __init__(self, errors: List[str], warnings: List[str] = None):
+        self.errors = errors
+        self.warnings = warnings or []
+        error_summary = "; ".join(errors)
+        super().__init__(f"Destroy failed with {len(errors)} error(s): {error_summary}")
+
+
 class ServiceClient(ABC):
     def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
                  status: str = "ACTIVE", capabilities: List[Any] = None, 
@@ -83,7 +113,8 @@ class ServiceClient(ABC):
                     self.name: {
                         'type': self.type,
                         'endpoint_uri': self.endpoint_uri,
-                        'status': self._status
+                        'status': self._status,
+                        'profile': self.profile
                     }
                 }
             ]

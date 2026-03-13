@@ -6,36 +6,10 @@ from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
 class SENSENetworkedJobs(unittest.TestCase):
-    def main(self, use_network=False):
-        # 1. Initialize Client
-        client = Client()
-        
-        # 2. Create Session
-        session = client.create_session("sense-networked-jobs")
+    def _setup_and_submit(self, client, session):
+        """Fresh session: create service clients, discover resources, define jobs, plan, and apply."""
 
-        # 3. Optionally add SENSE provider and network
-        if use_network:
-            print("\n--- Adding SENSE Network ---")
-            sense_provider = client.add_provider(
-                label="sense",
-                type="sense",
-                name="sense-provider",
-                profile="sense",
-                credential_file="~/.amscrot/credentials.yml"
-            )
-            net1 = session.add_network(
-                label="net1",
-                provider=sense_provider,
-                name_prefix="test-net",
-                site="ESnet",
-                profile='AmSC-WFC-L2VPN',
-                count=1
-            )
-            print("SENSE network added to session.")
-        else:
-            print("\n--- Skipping SENSE network (use --network to enable) ---")
-        
-        # 5. Setup ESnet IRI Service Clients for Jobs
+        # Setup ESnet IRI Service Clients
         east_client = ServiceClient.create(
             type=Constants.ServiceType.ESNET_IRI, 
             name="iri-east",
@@ -49,18 +23,16 @@ class SENSENetworkedJobs(unittest.TestCase):
             profile="esnet-iri-west"
         )
         session.add_service_client(west_client)
-        
-        # 6. Discover compute resources from each site
+
+        # Discover compute resources from each site
         print("\n--- Discovering Compute Resources ---")
         east_discovery = east_client.discover()
         west_discovery = west_client.discover()
 
         if not east_discovery.compute:
-            print("ERROR: No compute resources found on east site.")
-            return
+            self.fail("No compute resources found on east site.")
         if not west_discovery.compute:
-            print("ERROR: No compute resources found on west site.")
-            return
+            self.fail("No compute resources found on west site.")
 
         east_resource_id = east_discovery.compute[0].data.get("id")
         west_resource_id = west_discovery.compute[0].data.get("id")
@@ -69,7 +41,7 @@ class SENSENetworkedJobs(unittest.TestCase):
         print(f"  East discovery: {east_discovery.summary()}")
         print(f"  West discovery: {west_discovery.summary()}")
 
-        # 7. Create Job specs with discovered resource IDs
+        # Create Job specs with discovered resource IDs
         common_resources = {
             "node_count": 1,
             "process_count": 1,
@@ -91,59 +63,93 @@ class SENSENetworkedJobs(unittest.TestCase):
             "stderr_path": "/data/home/kissel/amscrot_stderr.log",
         }
 
-        spec1 = JobSpec(
-            executable="/bin/echo",
-            arguments=["Hello AmSC East"],
-            resources=common_resources,
-            attributes={"resource_id": east_resource_id, **common_attributes}
-        )
-        spec2 = JobSpec(
-            executable="/bin/echo",
-            arguments=["Hello AmSC West"],
-            resources=common_resources,
-            attributes={"resource_id": west_resource_id, **common_attributes}
-        )
-
-        # 8. Define Jobs
-        job1 = Job(
+        session.add_job(Job(
             name="job-1",
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
             service_client=east_client,
-            job_spec=spec1
-        )
-        
-        job2 = Job(
+            job_spec=JobSpec(
+                executable="/bin/echo",
+                arguments=["Hello AmSC East"],
+                resources=common_resources,
+                attributes={"resource_id": east_resource_id, **common_attributes}
+            )
+        ))
+
+        session.add_job(Job(
             name="job-2",
             type=JobType.COMPUTE,
             service_type=JobServiceType.BATCH,
             service_client=west_client,
-            job_spec=spec2
-        )
+            job_spec=JobSpec(
+                executable="/bin/echo",
+                arguments=["Hello AmSC West"],
+                resources=common_resources,
+                attributes={"resource_id": west_resource_id, **common_attributes}
+            )
+        ))
 
-        # Add Jobs to Session
-        session.add_job(job1)
-        session.add_job(job2)
-        
-        # 8. Plan
+        # Plan
         print("\n--- Session Plan ---")
         try:
             session.plan()
         except PlanError as e:
             self.fail(f"Plan failed:\n" + "\n".join(f"  - {err}" for err in e.errors))
-        
-        # 9. Apply
+        except Exception as e:
+            self.fail(f"Plan failed with unknown error: {e}")
+
+        # Show the session config
+        print("\n--- Session Config ---")
+        session.show()
+
+        # Apply
         print("\n--- Session Apply ---")
         rc = session.apply()
         if rc:
-            self.fail("Session apply failed")
-            sys.exit(-1)
+            self.fail(f"Session apply failed with code {rc}")
 
-        # 10. Wait for Jobs to Complete
+        print("Jobs Created Successfully:")
+        for job in session.jobs:
+            print(f"  {job.name} API ID: {job.id}")
+        print()
+
+    def main(self, use_network=False):
+        client = Client()
+        session = client.create_session("sense-networked-jobs")
+
+        # Infrastructure resources are always added to the session
+        if use_network:
+            print("\n--- Adding SENSE Network ---")
+            sense_provider = client.add_provider(
+                label="sense",
+                type="sense",
+                name="sense-provider",
+                profile="sense",
+                credential_file="~/.amscrot/credentials.yml"
+            )
+            session.add_network(
+                label="net1",
+                provider=sense_provider,
+                name_prefix="test-net",
+                site="ESnet",
+                profile='AmSC-WFC-L2VPN',
+                count=1
+            )
+            print("SENSE network added to session.")
+        else:
+            print("\n--- Skipping SENSE network (use --network to enable) ---")
+
+        if session.jobs:
+            print(f"\n--- Restored {len(session.jobs)} job(s) from session state ---")
+            for job in session.jobs:
+                print(f"  {job.name}: id={job.id} status={job.status}")
+        else:
+            self._setup_and_submit(client, session)
+
+        # Wait for Jobs to Complete
         print("\n--- Session Wait ---")
         try:
             results = session.wait(
-                jobs=[job1, job2],
                 timeout=600.0,
                 interval=2.0,
                 verbose=True,
@@ -151,16 +157,13 @@ class SENSENetworkedJobs(unittest.TestCase):
         except Exception as e:
             self.fail(f"Jobs did not complete within timeout: {e}")
 
-        s1 = results["job-1"]
-        s2 = results["job-2"]
+        for job_name, status in results.items():
+            self.assertEqual(status.state, JobState.COMPLETED, f"{job_name} failed or timed out: {status}")
+        print(f"All jobs completed: {', '.join(f'{n}={s.state}' for n, s in results.items())}")
 
-        self.assertEqual(s1.state, JobState.COMPLETED, f"Job-1 failed or timed out: {s1}")
-        self.assertEqual(s2.state, JobState.COMPLETED, f"Job-2 failed or timed out: {s2}")
-        print(f"Jobs completed. Status: job-1={s1.state} job-2={s2.state}")
-
-        # 12. Fetch Output Files
+        # Fetch Output Files
         print("\n--- Fetch Output Files ---")
-        fetched = session.fetch_output_files(jobs=[job1, job2])
+        fetched = session.fetch_output_files()
         print(f"Fetched files: {fetched}")
 
         for job_name, paths in fetched.items():
@@ -173,24 +176,9 @@ class SENSENetworkedJobs(unittest.TestCase):
                 except Exception as e:
                     print(f"  (could not read stdout: {e})")
 
-        # 13. Destroy
+        # Destroy
         print("\n--- Session Destroy ---")
-        #session.destroy()
-        return
-
-        # Verify cleanup with polling
-        cleanup = session.wait(
-            jobs=[job1, job2],
-            target_states=[JobState.CANCELED, JobState.UNKNOWN],
-            timeout=60.0,
-            interval=1.0,
-            verbose=True,
-        )
-
-        s1 = cleanup["job-1"]
-        s2 = cleanup["job-2"]
-        self.assertIn(s1.state, [JobState.CANCELED, JobState.UNKNOWN])
-        self.assertIn(s2.state, [JobState.CANCELED, JobState.UNKNOWN])
+        session.destroy()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ESnet IRI networked jobs example")

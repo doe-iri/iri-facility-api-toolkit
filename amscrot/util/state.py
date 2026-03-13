@@ -1,6 +1,6 @@
 from amscrot.model.state import ProviderState
 from amscrot.util.utils import get_base_dir, get_stats_base_dir, get_inventory_dir, get_ssh_dir
-from typing import List, Dict
+from typing import List, Dict, Any
 
 import json
 
@@ -507,3 +507,67 @@ def destroy_session(friendly_name: str):
 
     dir_path = get_base_dir(friendly_name)
     shutil.rmtree(dir_path)
+
+
+def save_jobs(service_clients: List[Any], jobs: List[Dict], friendly_name: str):
+    import yaml
+    import os
+    from amscrot.model.state import get_dumper
+
+    file_path = os.path.join(get_base_dir(friendly_name), friendly_name + '-jobs.yml')
+    temp_file_path = file_path + ".temp"
+
+    # Serialize service clients
+    service_client_dicts = []
+    for sc in service_clients:
+        if hasattr(sc, 'to_config'):
+            service_client_dicts.extend(sc.to_config().get('service_client', []))
+
+    payload = {
+        "service_clients": service_client_dicts,
+        "jobs": jobs
+    }
+
+    with open(temp_file_path, "w") as stream:
+        try:
+            stream.write(yaml.dump(payload, Dumper=get_dumper(), default_flow_style=False, sort_keys=False))
+        except Exception as e:
+            from amscrot.exceptions import StateException
+            raise StateException(f'Exception while saving jobs at temp file {temp_file_path}:{e}')
+
+    import shutil
+    shutil.move(temp_file_path, file_path)
+
+
+def load_jobs(friendly_name: str) -> tuple[List[Dict], List[Dict]]:
+    import yaml
+    import os
+    from amscrot.model.state import get_loader
+
+    file_path = os.path.join(get_base_dir(friendly_name), friendly_name + '-jobs.yml')
+
+    if os.path.exists(file_path):
+        with open(file_path, 'r') as stream:
+            try:
+                ret = yaml.load(stream, Loader=get_loader())
+                if ret is not None:
+                    # check if the new compound topology is present
+                    if isinstance(ret, dict) and "jobs" in ret:
+                        return ret.get("service_clients", []), ret.get("jobs", [])
+                    # backwards compability for tests if just a raw list of jobs returns
+                    elif isinstance(ret, list):
+                        return [], ret
+            except Exception as e:
+                from amscrot.exceptions import StateException
+                raise StateException(f'Exception while loading jobs at {file_path}:{e}')
+
+    return [], []
+
+
+def delete_jobs(friendly_name: str):
+    """Remove the persisted jobs state file for a session."""
+    import os
+
+    file_path = os.path.join(get_base_dir(friendly_name), friendly_name + '-jobs.yml')
+    if os.path.exists(file_path):
+        os.remove(file_path)
