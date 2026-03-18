@@ -270,6 +270,7 @@ class Session:
         timeout: Optional[float] = 300.0,
         interval: float = 2.0,
         verbose: bool = False,
+        raw: bool = False,
     ) -> Dict[str, Any]:
         """Poll jobs until all reach one of the target states.
 
@@ -283,6 +284,7 @@ class Session:
             timeout:       Max seconds to wait total. None = wait forever.
             interval:      Seconds between poll rounds.
             verbose:       Print poll status to stdout each round.
+            raw:           If True and verbose is True, also print raw status/messages from the provider.
 
         Returns:
             Dict of {job_name: JobStatus} for all jobs once settled.
@@ -341,9 +343,21 @@ class Session:
                         settled_this_round.append(job_name)
 
             if verbose:
-                summary = ", ".join(
-                    f"{n}={results[n].state}" for n in sorted(results)
-                )
+                summary_parts = []
+                for n in sorted(results):
+                    st = results[n]
+                    part = f"{n}={st.state}"
+                    if raw:
+                        raw_parts = []
+                        if getattr(st, 'message', None):
+                            raw_parts.append(f"message='{st.message}'")
+                        if getattr(st, 'provider_status', None):
+                            raw_parts.append(f"provider_status={st.provider_status}")
+                        if raw_parts:
+                            part += f" ({', '.join(raw_parts)})"
+                    summary_parts.append(part)
+
+                summary = ", ".join(summary_parts)
                 elapsed = time.monotonic() - start
                 print(f"[wait] {elapsed:.1f}s -- {summary}")
 
