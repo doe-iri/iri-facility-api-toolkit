@@ -41,8 +41,11 @@ class MetadataConfig:
         try:
             if not base_dir.exists() or not base_dir.is_dir():
                 return None
-            if self.metadata_id is not None: # if the exact cached metadata is requested
+            if self.metadata_id is not None:  # if the exact cached metadata is requested
                 record = self.local_base_dir / f"{self.metadata_id}.{self.local_file_ext}"
+                # Check if file exists BEFORE trying to stat it
+                if not record.exists():
+                    return None
                 return record, record.stat().st_mtime
 
             else: # bring all the cached files with their modification time and return the most recent one
@@ -238,10 +241,8 @@ class MetadataManager:
 
         except ValueError as e:
             # If the records don't exist, treat it as "no remote metadata" so
-            if self._is_remote_not_found(e):
-                logger.info("Remote metadata not found (404): ")
-                return None
-            raise
+            logger.info("Remote metadata not found (404): ")
+            return None
 
         # Normalize return types for the rest of amscrot.
         if isinstance(latest_record, str):
@@ -265,32 +266,48 @@ class MetadataManager:
         """
         fetch_mode = (self.metadata_fetch_mode or "").strip().lower()
 
-        if fetch_mode not in {"local", "remote", "local|remote", "remote|local"}:
-            raise ValueError("Invalid metadata fetch_mode. Expected: 'local', 'remote', 'local|remote', 'remote|local'")
+        if fetch_mode not in {"local", "remote", "local|remote"}:
+            raise ValueError("Invalid metadata fetch_mode. Expected: 'local', 'remote', 'local|remote'")
 
         metadata: Optional[Dict[str, Any]] = None
 
         if fetch_mode == "local":
-            metadata,mod_ts = self._get_local_metadata()
+            result = self._get_local_metadata()
+            if result is not None:
+                metadata, mod_ts = result
+            return metadata
         elif fetch_mode == "remote":
-            metadata,mod_ts = self._get_remote_metadata()
+            result = self._get_remote_metadata()
+            if result is not None:
+                metadata, mod_ts = result
+            return metadata
+
         elif fetch_mode == "local|remote":
             try:
-                metadata_l,mod_ts_l = self._get_local_metadata()
-                metadata_r, mod_ts_r = self._get_remote_metadata()
-                if metadata_l and metadata_r is not None:
-                    metadata=metadata_l if mod_ts_l > mod_ts_r else metadata_r
-                    logger.info(f'#######################{"metadata local:",metadata_l if mod_ts_l > mod_ts_r else "metadata remote:",metadata_r}###################################')
+                result_l = self._get_local_metadata()
+                result_r = self._get_remote_metadata()
+
+                metadata_l, mod_ts_l = result_l if result_l is not None else (None, None)
+                metadata_r, mod_ts_r = result_r if result_r is not None else (None, None)
+
+                if metadata_l is not None and metadata_r is not None:
+                    metadata = metadata_l if mod_ts_l > mod_ts_r else metadata_r
+                    logger.info(f'Using {"local" if mod_ts_l > mod_ts_r else "remote"} metadata')
+                elif metadata_l is not None:
+                    metadata = metadata_l
+                elif metadata_r is not None:
+                    metadata = metadata_r
             except Exception as e:
                 logger.warning(f"metadata fetch failed (local|remote), leaving metadata as None: {e}")
                 metadata = None
 
-        if metadata is None:
-            print("Metadata: null")
-        #else:
-            #print(json.dumps(metadata, indent=2, default=str))
+            if metadata is None:
+                print("Metadata: null")
 
-        return metadata
+            return metadata
+
+        return metadata  # ← Safety fallback (shouldn't reach here due to validation)
+
 
     # how to run
     # from amscrot.controller.metadata_manager import MetadataManager
