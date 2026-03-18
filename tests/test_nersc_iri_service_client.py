@@ -110,7 +110,7 @@ class TestNerscIriServiceClient(unittest.TestCase):
                 "queue_name": "debug",
                 "account": "amsc013",
                 "stdout_path": "nersc_iri_test_stdout.log",
-                "stderr_path": "nersc_iri_test_stderr.log",
+                "stderr_path": "nersc_iri_test_stderr.log"
             }
         )
         

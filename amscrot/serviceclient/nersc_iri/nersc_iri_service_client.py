@@ -21,6 +21,7 @@ from nersc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 from nersc_iri.models.resource_type import ResourceType
 from nersc_iri.models.job_state import JobState as IriJobState
 from nersc_iri.models.job import Job as IriJob
+from nersc_iri.models.status import Status
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
@@ -450,7 +451,21 @@ class NerscIriServiceClient(ServiceClient):
             iri_spec = self._convert_to_iri_job_spec(job_spec)
         except Exception as e:
             errors.append(f"Failed to convert job spec: {e}")
-        
+
+        if resource_id and not errors:
+            try:
+                iri_resource = self._status_api.get_resource(resource_id=resource_id)
+                if iri_resource and iri_resource.current_status:
+                    if iri_resource.current_status != Status.UP:
+                        # Fallback check if it was serialized as a bare string
+                        if not (isinstance(iri_resource.current_status, str) and iri_resource.current_status == Status.UP.value):
+                            status_val = iri_resource.current_status.value if hasattr(iri_resource.current_status, 'value') else str(iri_resource.current_status)
+                            errors.append(f"Resource '{resource_id}' is not UP (current status: {status_val})")
+                elif iri_resource is None:
+                    warnings.append(f"Resource '{resource_id}' not found.")
+            except Exception as e:
+                warnings.append(f"Could not verify status for resource '{resource_id}': {e}")
+
         if errors:
             raise PlanError(errors=errors, warnings=warnings)
 
