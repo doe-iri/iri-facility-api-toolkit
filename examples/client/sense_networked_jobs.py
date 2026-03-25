@@ -104,14 +104,14 @@ class SENSENetworkedJobs(unittest.TestCase):
 
         # Apply
         print("\n--- Session Apply ---")
-        rc = session.apply()
-        if rc:
-            self.fail(f"Session apply failed with code {rc}")
+        try:
+            session.apply()
+        except Exception as e:
+            self.fail(f"Session apply failed: {e}")
 
         print("Jobs Created Successfully:")
         for job in session.jobs:
             print(f"  {job.name} API ID: {job.id}")
-        print()
 
     def main(self, use_network=False):
         client = Client()

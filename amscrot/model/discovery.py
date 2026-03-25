@@ -4,6 +4,7 @@ from amscrot.util.constants import Constants
 
 if TYPE_CHECKING:
     from amscrot.model.metadata import Facility
+    from amscrot.model.intent import Intent
 
 
 class DiscoveredResource(BaseModel):
@@ -74,6 +75,19 @@ class DiscoveryResult:
     @property
     def capability(self) -> List[DiscoveredResource]:
         return self.by_type(Constants.RES_CAPABILITY)
+
+    @property
+    def intent(self) -> List[DiscoveredResource]:
+        return self.by_type(Constants.RES_INTENT)
+
+    @property
+    def intents(self) -> List["Intent"]:
+        """Return typed Intent objects from discovery."""
+        return [
+            item.metadata
+            for item in self.by_type(Constants.RES_INTENT)
+            if item.metadata is not None
+        ]
 
     @property
     def all(self) -> List[DiscoveredResource]:

@@ -129,11 +129,40 @@ class AmSCROTManager:
         jobs = self._get_jobs()
         if jobs:
             logger.info("Phase 2: Planning jobs...")
+            intent_groups = {}
+            standalone_jobs = []
+
             for job in jobs:
-                # Check for Job object via duck typing (imported Job is not avail here due to circular dep risk)
+                if hasattr(job, 'intent') and job.intent:
+                    sc = getattr(job, 'service_client', None)
+                    if not sc:
+                        raise ValueError(f"Job {job.name} has intent but no service_client bound")
+                    intent_groups.setdefault((job.intent, sc), []).append(job)
+                else:
+                    standalone_jobs.append(job)
+
+            # Process intent groups
+            for (intent_uuid, sc), group_jobs in intent_groups.items():
+                plan_intent_func = getattr(sc, "plan_intent", None)
+                if plan_intent_func:
+                    result = plan_intent_func(group_jobs, intent_uuid)
+                    for job in group_jobs:
+                        job_summaries.append({
+                            "name": job.name,
+                            "type": str(job.type),
+                            "service_client": getattr(sc, "name", "Unknown"),
+                            "plan_status": result.get("status"),
+                            "errors": result.get("errors"),
+                            "warnings": result.get("warnings")
+                        })
+                else:
+                    name = getattr(sc, "name", "Unknown")
+                    raise AttributeError(f"Service client {name} does not support plan_intent but jobs specify an intent.")
+
+            # Process standalone jobs
+            for job in standalone_jobs:
                 if hasattr(job, 'service_client') and job.service_client:
-                    # Execute real plan
-                    result = job.service_client.plan(job.job_spec, job_name=job.name)
+                    result = job.service_client.plan(job)
                     job_summaries.append({
                         "name": job.name,
                         "type": str(job.type),
@@ -143,13 +172,12 @@ class AmSCROTManager:
                         "warnings": result.get("warnings")
                     })
                 else:
-                    # Config dict fallback
                     job_summaries.append({
-                        "name": job.get("name"),
-                        "type": job.get("type"),
-                        "service_type": job.get("service_type"),
-                        "service_client": job.get("service_client"),
-                        "action": "CREATE" # Mock action
+                        "name": job.get("name") if isinstance(job, dict) else job.name,
+                        "type": job.get("type") if isinstance(job, dict) else str(job.type),
+                        "service_type": job.get("service_type") if isinstance(job, dict) else str(job.service_type),
+                        "service_client": job.get("service_client") if isinstance(job, dict) else (job.service_client.name if job.service_client else None),
+                        "action": "CREATE"
                     })
             logger.info(f"Jobs planned: {len(job_summaries)} job(s)")
 
@@ -194,38 +222,63 @@ class AmSCROTManager:
         jobs = self._get_jobs()
         if jobs:
             logger.info("Phase 2: Creating jobs...")
+            
+            intent_groups = {}
+            standalone_jobs = []
+
             for job in jobs:
+                if hasattr(job, 'intent') and job.intent:
+                    sc = getattr(job, 'service_client', None)
+                    if not sc:
+                        raise ValueError(f"Job {job.name} has intent but no service_client bound")
+                    intent_groups.setdefault((job.intent, sc), []).append(job)
+                else:
+                    standalone_jobs.append(job)
+            
+            # Process intent groups
+            for (intent_uuid, sc), group_jobs in intent_groups.items():
+                create_intent_func = getattr(sc, "create_intent", None)
+                if create_intent_func:
+                    create_intent_func(group_jobs, intent_uuid)
+                else:
+                    name = getattr(sc, "name", "Unknown")
+                    raise AttributeError(f"Service client {name} does not support create_intent but jobs specify an intent.")
+                
+                for job in group_jobs:
+                    config_dict = list(job.to_config().values())[0]
+                    config_dict["status"] = "SUBMITTED"
+                    if not config_dict.get("resource_id"):
+                        config_dict["resource_id"] = (job.job_spec.attributes or {}).get("resource_id")
+                    job_summaries.append(config_dict)
+
+            # Process standalone jobs
+            for job in standalone_jobs:
                 if hasattr(job, 'service_client') and job.service_client:
-                    # Execute real create
-                    job_id = job.service_client.create(job.job_spec, job_name=job.name)
-                    job.id = job_id
-                    job_summaries.append({
-                        "name": job.name,
-                        "service_client": job.service_client.name,
-                        "id": job_id,
-                        "status": "SUBMITTED",
-                        "type": job.type.value if hasattr(job.type, 'value') else str(job.type),
-                        "service_type": job.service_type.value if hasattr(job.service_type, 'value') else str(job.service_type),
-                        "resource_id": (job.job_spec.attributes or {}).get('resource_id')
-                    })
+                    # Execute real create (client populates job.id implicitly)
+                    job.service_client.create(job)
+                    config_dict = list(job.to_config().values())[0]
+                    config_dict["status"] = "SUBMITTED"
+                    if not config_dict.get("resource_id"):
+                        config_dict["resource_id"] = (job.job_spec.attributes or {}).get("resource_id")
+                    job_summaries.append(config_dict)
                 else:
                     # Fallback
                     job_summaries.append({
-                        "name": job.get("name"),
-                        "service_client": job.get("service_client"),
+                        "name": job.get("name") if isinstance(job, dict) else job.name,
+                        "service_client": job.get("service_client") if isinstance(job, dict) else (job.service_client.name if job.service_client else None),
                         "status": "SUBMITTED",
-                        "id": f"mock-id-{job.get('name')}"
+                        "id": f"mock-id-{job.get('name') if isinstance(job, dict) else job.name}"
                     })
 
-                # Collect unique ServiceClients from the Job objects
-                seen_sc_names = set()
-                sc_list = []
-                for job in jobs:
-                    sc = getattr(job, 'service_client', None)
-                    if sc and sc.name not in seen_sc_names:
-                        sc_list.append(sc)
-                        seen_sc_names.add(sc.name)
-                sutil.save_jobs(sc_list, job_summaries, session)  # Persist job state
+            # Collect unique ServiceClients from the Job objects
+            seen_sc_names = set()
+            sc_list = []
+            for job in jobs:
+                sc = getattr(job, 'service_client', None)
+                if sc and sc.name not in seen_sc_names:
+                    sc_list.append(sc)
+                    seen_sc_names.add(sc.name)
+            sutil.save_jobs(sc_list, job_summaries, session)  # Persist job state
 
             logger.info(f"Jobs created: {len(job_summaries)} job(s) submitted")
 
@@ -250,7 +303,7 @@ class AmSCROTManager:
              job_summaries = []
              for job in jobs:
                  if hasattr(job, 'service_client') and job.service_client:
-                     status = job.service_client.status(job_name=job.name)
+                     status = job.service_client.status(job)
                      logs_raw = (status.provider_status or {}).get("logs", "") if status.provider_status else ""
                      job_summaries.append({
                         "name": job.name,
@@ -350,7 +403,7 @@ class AmSCROTManager:
             job_summaries = []
             for job in jobs:
                 if hasattr(job, 'service_client') and job.service_client:
-                    job.service_client.destroy(job_name=job.name)
+                    job.service_client.destroy(job)
                     job_summaries.append({
                         "name": job.name,
                         "service_client": job.service_client.name,

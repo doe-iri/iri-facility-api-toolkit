@@ -24,7 +24,7 @@ from nersc_iri.models.job import Job as IriJob
 from nersc_iri.models.status import Status
 
 if TYPE_CHECKING:
-    from amscrot.client.job import Job, JobSpec
+    from amscrot.client.job import Job
 
 class NerscIriServiceClient(ServiceClient):
     """ServiceClient implementation for NERSC IRI compute jobs."""
@@ -79,8 +79,6 @@ class NerscIriServiceClient(ServiceClient):
             self._available = False
             self.logger.warning(f"[{self.name}] Warning: Could not load NERSC IRI credentials.")
         
-        # Track submitted jobs: {job_name: (resource_id, job_id)}
-        self._submitted_jobs = {}
         # Lazily-created filesystem interface
         self._filesystem: Optional[IriFilesystem] = None
     
@@ -412,7 +410,7 @@ class NerscIriServiceClient(ServiceClient):
 
         return IriJobSpec(**kwargs)
     
-    def _get_resource_id(self, job_spec: "JobSpec") -> str:
+    def _get_resource_id(self, job_spec) -> str:
         """Extract resource_id from JobSpec attributes."""
         if job_spec.attributes and 'resource_id' in job_spec.attributes:
             return job_spec.attributes['resource_id']
@@ -423,9 +421,9 @@ class NerscIriServiceClient(ServiceClient):
             
         return None
     
-    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
+    def plan(self, job: "Job") -> Dict:
         """Validate the job specification."""
-        name = job_name or self.name
+        name = job.name or self.name
         self.logger.debug(f"[{self.name}] Planning NERSC IRI job for '{name}'...")
         
         errors = []
@@ -438,17 +436,17 @@ class NerscIriServiceClient(ServiceClient):
         # Validate resource_id is present
         resource_id = None
         try:
-            resource_id = self._get_resource_id(job_spec)
+            resource_id = self._get_resource_id(job.job_spec)
         except Exception as e:
             errors.append(f"Failed to get resource_id: {e}")
         
         # Validate executable is present
-        if not job_spec.executable:
+        if not job.job_spec.executable:
             errors.append("Job spec must have an executable")
         
         # Try to convert to IRI format
         try:
-            iri_spec = self._convert_to_iri_job_spec(job_spec)
+            iri_spec = self._convert_to_iri_job_spec(job.job_spec)
         except Exception as e:
             errors.append(f"Failed to convert job spec: {e}")
 
@@ -478,9 +476,9 @@ class NerscIriServiceClient(ServiceClient):
             "warnings": warnings,
         }
     
-    def create(self, job_spec: "JobSpec", job_name: str = None):
+    def create(self, job: "Job"):
         """Submit a job to NERSC IRI."""
-        name = job_name or self.name
+        name = job.name or self.name
         self.logger.debug(f"[{self.name}] Creating NERSC IRI job for '{name}'...")
         
         if not self._available:
@@ -488,8 +486,11 @@ class NerscIriServiceClient(ServiceClient):
         
         try:
             # Get resource_id and convert job spec
-            resource_id = self._get_resource_id(job_spec)
-            iri_spec = self._convert_to_iri_job_spec(job_spec, name=name)
+            resource_id = job.resource_id or self._get_resource_id(job.job_spec)
+            if not job.resource_id:
+                job.resource_id = resource_id
+                
+            iri_spec = self._convert_to_iri_job_spec(job.job_spec, name=name)
             
             # Submit the job via the typed API (returns an IriJob model)
             iri_job: IriJob = self._compute_api.launch_job(
@@ -497,69 +498,62 @@ class NerscIriServiceClient(ServiceClient):
                 job_spec_input=iri_spec
             )
             
-            self._submitted_jobs[name] = (resource_id, iri_job.id)
+            # Set job ID
+            job.id = iri_job.id
             self._status = AmscrotJobState.PENDING.value
             self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
-            return iri_job.id
                 
         except CreateError:
             raise
         except Exception as e:
             raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
     
-    def destroy(self, job_name: str = None):
+    def destroy(self, job: "Job"):
         """Cancel a job on NERSC IRI."""
-        name = job_name or self.name
+        name = job.name or self.name
         self.logger.debug(f"[{self.name}] Destroying NERSC IRI job for '{name}'...")
         
         if not self._available:
             raise DestroyError(errors=["NERSC IRI client not available - check credentials"])
         
         # Check if we have a job ID for this job
-        if name not in self._submitted_jobs:
-            raise DestroyError(errors=[f"No job ID found for '{name}'. Cannot cancel."])
+        if not job.id or not job.resource_id:
+            raise DestroyError(errors=[f"Job ID or Resource ID missing for '{name}'. Cannot cancel."])
         
         try:
-            resource_id, job_id = self._submitted_jobs[name]
-            
             # Cancel the job
             self._compute_api.cancel_job(
-                resource_id=resource_id,
-                job_id=job_id
+                resource_id=job.resource_id,
+                job_id=job.id
             )
             
-            self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job_id}) cancelled.")
+            self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job.id}) cancelled.")
             self._status = AmscrotJobState.CANCELED.value
-            
-            # Remove from tracking
-            del self._submitted_jobs[name]
             
         except DestroyError:
             raise
         except Exception as e:
             raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
     
-    def status(self, job_name: str = None) -> JobStatus:
+    def status(self, job: "Job") -> JobStatus:
         """Get the status of a job on NERSC IRI."""
-        name = job_name or self.name
+        name = job.name or self.name
         
         if not self._available:
             return JobStatus(state=self._status)
         
         # Check if we have a job ID for this job
-        if name not in self._submitted_jobs:
+        if not job.id or not job.resource_id:
             return JobStatus(
                 state="UNKNOWN",
-                message="Job not found or not yet submitted"
+                message="Job ID or Resource ID missing, job likely not submitted"
             )
         
         try:
-            resource_id, job_id = self._submitted_jobs[name]
-            
             # Get job via the typed API (returns an IriJob model)
             iri_job: IriJob = self._compute_api.get_job(
-                resource_id=resource_id,
-                job_id=job_id,
+                resource_id=job.resource_id,
+                job_id=job.id,
                 historical=False,
                 include_spec=False
             )
@@ -574,8 +568,8 @@ class NerscIriServiceClient(ServiceClient):
                 state=state_str,
                 message=iri_job.status.message if iri_job.status else None,
                 exit_code=iri_job.status.exit_code if iri_job.status else None,
-                job_id=job_id,
-                resource_id=resource_id,
+                job_id=job.id,
+                resource_id=job.resource_id,
                 provider_status=iri_job.status.to_dict() if iri_job.status else None,
             )
                 
@@ -690,11 +684,10 @@ class NerscIriServiceClient(ServiceClient):
             self.logger.warning(f"[{self.name}] Client unavailable -- cannot fetch output files.")
             return {}
 
-        if job.name not in self._submitted_jobs:
-            self.logger.warning(f"[{self.name}] No submission record for job '{job.name}'.")
+        compute_resource_id = job.resource_id
+        if not compute_resource_id:
+            self.logger.warning(f"[{self.name}] Job '{job.name}' has no resource_id. Cannot fetch output.")
             return {}
-
-        compute_resource_id, _ = self._submitted_jobs[job.name]
 
         # Use explicit storage_resource_id or resolve from compute resource group
         if not storage_resource_id:

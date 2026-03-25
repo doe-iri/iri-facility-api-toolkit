@@ -318,7 +318,7 @@ class Session:
                     sc = job.service_client
                     if sc:
                         try:
-                            results[job_name] = sc.status(job_name=job_name)
+                            results[job_name] = sc.status(job)
                         except Exception:
                             pass
                 raise WaitTimeoutError(results, target_states)
@@ -331,13 +331,13 @@ class Session:
                     raise ValueError(
                         f"Job '{job_name}' has no bound service_client -- cannot poll status."
                     )
-                by_client.setdefault(sc, []).append(job_name)
+                by_client.setdefault(sc, []).append((job_name, job))
 
             # Poll each client for its jobs
             settled_this_round: List[str] = []
-            for sc, job_names in by_client.items():
-                for job_name in job_names:
-                    status = sc.status(job_name=job_name)
+            for sc, jobs_list in by_client.items():
+                for job_name, job in jobs_list:
+                    status = sc.status(job)
                     results[job_name] = status
                     if status.state in target_set:
                         settled_this_round.append(job_name)
@@ -346,20 +346,21 @@ class Session:
                 summary_parts = []
                 for n in sorted(results):
                     st = results[n]
-                    part = f"{n}={st.state}"
+                    state_str = st.state.value if hasattr(st.state, "value") else str(st.state)
+                    part = f"{n}={state_str}"
+                    if getattr(st, 'message', None):
+                        part += f" ({st.message})"
                     if raw:
                         raw_parts = []
-                        if getattr(st, 'message', None):
-                            raw_parts.append(f"message='{st.message}'")
                         if getattr(st, 'provider_status', None):
                             raw_parts.append(f"provider_status={st.provider_status}")
                         if raw_parts:
                             part += f" ({', '.join(raw_parts)})"
                     summary_parts.append(part)
 
-                summary = ", ".join(summary_parts)
+                summary = "\n        ".join(summary_parts)
                 elapsed = time.monotonic() - start
-                print(f"[wait] {elapsed:.1f}s -- {summary}")
+                print(f"[wait] {elapsed:.1f}s --\n        {summary}")
 
             for name in settled_this_round:
                 del pending[name]

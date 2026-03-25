@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 from amscrot.client.client import Client
 from amscrot.client.job import Job, JobSpec, JobType, JobServiceType, JobState
-from amscrot.serviceclient import ServiceClient, PlanError
+from amscrot.serviceclient import ServiceClient, PlanError, CreateError
 from amscrot.util.constants import Constants
 
 
@@ -115,22 +115,20 @@ class TestEsnetIriServiceClient(unittest.TestCase):
         try:
             # 1. Plan
             print("\n--- Test Plan ---")
-            plan_result = iri_client.plan(spec, job.name)
+            plan_result = iri_client.plan(job)
             print(f"Plan result: {plan_result}")
             self.assertEqual(plan_result["status"], "PLANNED")
 
             # 2. Create
             print("\n--- Test Create ---")
-            iri_client.create(spec, job.name)
+            iri_client.create(job)
             
-            if job.name not in iri_client._submitted_jobs:
+            if not job.id:
                 self.skipTest(f"Job '{job.name}' was not submitted. Skipping remaining assertions.")
             
-            self.assertIn(job.name, iri_client._submitted_jobs)
-            tracked_resource_id, job_id = iri_client._submitted_jobs[job.name]
-            self.assertIsNotNone(job_id, "Job ID should be returned from API")
-            self.assertEqual(tracked_resource_id, resource_id)
-            print(f"Job submitted with ID: {job_id}")
+            self.assertIsNotNone(job.id, "Job ID should be populated on the Job object")
+            self.assertEqual(job.resource_id, resource_id, "Job resource_id should match the targeted resource")
+            print(f"Job submitted with ID: {job.id}")
             
             # 3. Wait for completion
             print("\n--- Test Wait ---")
@@ -149,7 +147,7 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             
             if status_result.provider_status:
                 print(f"Raw IRI response: {status_result.provider_status}")
-            self.assertEqual(status_result.job_id, job_id)
+            self.assertEqual(status_result.job_id, job.id)
             
             # 4. Fetch output files
             print("\n--- Test Fetch Output Files ---")
@@ -183,9 +181,9 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             # Verify local_files was populated on the Job
             self.assertEqual(job.local_files, fetched.get(job.name, {}))
 
-        except PlanError as e:
-            if any("not available" in err or "credentials" in err.lower() for err in e.errors):
-                self.skipTest(f"Skipping test - ESnet IRI client not available: {e}")
+        except (PlanError, CreateError) as e:
+            if any("not available" in err or "credentials" in err.lower() or "401" in err for err in e.errors):
+                self.skipTest(f"Skipping test - ESnet IRI client not available or unauthorized: {e}")
             raise
 
         except Exception as e:
@@ -196,9 +194,8 @@ class TestEsnetIriServiceClient(unittest.TestCase):
             # 5. Destroy
             print("\n--- Test Destroy ---")
             try:
-                if job.name in iri_client._submitted_jobs:
-                    iri_client.destroy(job.name)
-                    self.assertNotIn(job.name, iri_client._submitted_jobs)
+                if job.id:
+                    session.destroy(jobs=[job])
                     print("Job destroyed successfully")
             except Exception as cleanup_error:
                 print(f"Warning: Failed to clean up job: {cleanup_error}")

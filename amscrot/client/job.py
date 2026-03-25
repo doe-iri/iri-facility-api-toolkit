@@ -75,10 +75,9 @@ class JobStatus:
         return f"<JobStatus {' '.join(parts)}>"
 
 class JobSpec:
-    def __init__(self, resources: Dict = None, image: str = None, executable: str = None,
+    def __init__(self, resources: Dict = None, executable: str = None,
                  arguments: List[str] = None, attributes: Dict = None):
         self.resources = resources or {}
-        self.image = image
         self.executable = executable or ""
         self.arguments = arguments or []
         self.attributes = attributes or {}
@@ -86,7 +85,6 @@ class JobSpec:
     def to_dict(self) -> Dict:
         return {
             'resources': self.resources,
-            'image': self.image,
             'executable': self.executable,
             'arguments': self.arguments,
             'attributes': self.attributes
@@ -101,6 +99,8 @@ class Job:
         service_client: Optional[ServiceClient] = None,
         job_spec: Optional[JobSpec] = None,
         dependency: Optional['Job'] = None,
+        intent: Optional[str] = None,
+        network: Optional[Any] = None,
         preferences: Dict = None,
         inputs: Dict = None,
         outputs: Dict = None
@@ -110,10 +110,13 @@ class Job:
         self.service_type = JobServiceType(service_type) if isinstance(service_type, str) else service_type
         
         self.id = None
+        self.resource_id = None
         self.status = JobState.INIT
         self.service_client = service_client
         self.job_spec = job_spec or JobSpec()
         self.dependency = dependency
+        self.intent = intent
+        self.network = network
         self.preferences = preferences or {}
         self.inputs = inputs or {}
         self.outputs = outputs or {}
@@ -123,9 +126,12 @@ class Job:
         config = {
             'name': self.name,
             'id': self.id,
+            'resource_id': self.resource_id,
             'type': self.type.value if hasattr(self.type, 'value') else self.type,
             'service_type': self.service_type.value if hasattr(self.service_type, 'value') else self.service_type,
             'status': self.status.value if hasattr(self.status, 'value') else self.status,
+            'intent': self.intent,
+            'network': self.network.model_dump(exclude_none=True) if hasattr(self.network, 'model_dump') else self.network,
             'spec': self.job_spec.to_dict(),
             'preferences': self.preferences,
             'inputs': self.inputs,

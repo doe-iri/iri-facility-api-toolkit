@@ -17,9 +17,8 @@ class TestClientJob(unittest.TestCase):
         
         spec = JobSpec(
             resources={"node_count": 10},
-            image="my-image",
             executable="run.sh",
-            attributes={"duration": 60}
+            attributes={"duration": 60, "container": {"image": "my-image"}}
         )
         
         job = Job(

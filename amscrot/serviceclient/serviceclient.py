@@ -4,7 +4,7 @@ from amscrot.util import utils
 from .filesystem import FilesystemInterface
 
 if TYPE_CHECKING:
-    from amscrot.client.job import JobSpec
+    from amscrot.client.job import Job
     from amscrot.model.discovery import DiscoveryResult
 
 
@@ -53,6 +53,8 @@ class DestroyError(Exception):
         super().__init__(f"Destroy failed with {len(errors)} error(s): {error_summary}")
 
 
+
+
 class ServiceClient(ABC):
     def __init__(self, name: str, type: str, endpoint_uri: Optional[str] = None, 
                  status: str = "ACTIVE", capabilities: List[Any] = None, 
@@ -74,19 +76,47 @@ class ServiceClient(ABC):
         pass
 
     @abstractmethod
-    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
+    def plan(self, job: "Job") -> Dict:
+        """Validate a job against this service client.
+        
+        Args:
+            job: The Job object to validate
+            
+        Returns:
+            Dict containing 'status', 'errors', and 'warnings' keys
+        """
         pass
 
     @abstractmethod
-    def create(self, job_spec: "JobSpec", job_name: str = None):
+    def create(self, job: "Job"):
+        """Implement job execution / submission.
+        
+        Should update job.id and job.status as appropriate.
+        
+        Args:
+            job: The Job object to submit
+        """
         pass
 
     @abstractmethod
-    def destroy(self, job_name: str = None):
+    def destroy(self, job: "Job"):
+        """Cancel or destroy a specific job.
+        
+        Args:
+            job: The Job object to destroy
+        """
         pass
 
     @abstractmethod
-    def status(self, job_name: str = None) -> "JobStatus":
+    def status(self, job: "Job") -> "JobStatus":
+        """Check the status of a specific job.
+        
+        Args:
+            job: The Job object to query
+            
+        Returns:
+            JobStatus object
+        """
         pass
 
     @classmethod
@@ -137,3 +167,6 @@ class ServiceClient(ABC):
 
     def __repr__(self):
         return f"<ServiceClient name={self.name} type={self.type} uri={self.endpoint_uri}>"
+
+    def __str__(self):
+        return f"{self.name} - {self.endpoint_uri}"
