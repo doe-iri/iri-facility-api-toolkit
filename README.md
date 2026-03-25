@@ -3,7 +3,8 @@
  - [Description](#descr)
  - [Installation](#install)
  - [Operation Instructions](#operate)
- - [Using Fabfed Welcome Jupyter Notebook](#jupyter)
+ - [Jupyter Notebook Examples](#jupyter)
+ - [Apache Airflow Support](#airflow)
 
 # <a name="descr"></a>Description
 The American Science Cloud Infrastructure Services Resource Orchestration Toolkit (AmSC-ISRO-Toolkit [AmSCROT]) provides _infrastructure_ orchestrtion for AmSC use.
@@ -15,13 +16,185 @@ pip install amscrot-py
 ```
 
 # <a name="operate"></a>Operation Instructions
-TBD
 
-# <a name="jupyter"></a>AmSc-ISRO-Toolkit Welcome Jupyter Notebook
-The Welcome Jupyter Notebook helps with the toolkit installation, credential configuration, and with running several sample infrastructure jobs in a _pass-though_ manner.
+## Credentials
 
-The **[amsc_hello_world](examples/notebooks/client/amsc_hello_world.ipynb)** notebook is the recommended starting point. It walks through:
-- Installing the toolkit and configuring credentials (SENSE, ESnet IRI)
-- Creating a `Client`, `Session`, and `ServiceClient`
-- Submitting jobs and monitoring their status with `session.wait()`
-- Cleaning up resources with `session.destroy()`
+AmSCROT reads provider credentials from `~/.amscrot/credentials.yml`. Each section key corresponds to a service type or profile name:
+
+```yaml
+esnet-iri:
+  api_key: <token>
+  api_endpoint: https://iri.es.net/api/v1
+
+nersc-iri:
+  api_key: <token>
+  api_endpoint: https://api.iri.nersc.gov/api/v1
+
+amsc-iro:
+  api_key: <token>
+  api_endpoint: https://...
+```
+
+## Core Concepts
+
+| Class | Role |
+|---|---|
+| `Client` | Top-level entry point; owns sessions and service clients |
+| `ServiceClient` | Provider-specific driver (Kube/Kueue, ESnet IRI, NERSC IRI, AMSC-IRO) |
+| `Session` | Named unit of work; groups jobs and persists state to disk |
+| `Job` | A single compute task bound to a `ServiceClient` |
+| `JobSpec` | Declares executable, arguments, resources, and provider attributes |
+| `DiscoveryResult` | Typed result from `service_client.discover()` |
+
+## Basic Usage
+
+### 1. Set up a Client and ServiceClient
+
+```python
+from amscrot.client.client import Client
+from amscrot.serviceclient import ServiceClient
+from amscrot.util.constants import Constants
+
+client = Client()
+
+# Choose a provider: KUBE, ESNET_IRI, NERSC_IRI, AMSC_IRO
+svc = ServiceClient.create(
+    type=Constants.ServiceType.NERSC_IRI,
+    name="nersc-compute",
+    profile="nersc-iri"           # matches credentials.yml section
+)
+client.add_service_client(svc)
+```
+
+### 2. Discover Available Resources
+
+```python
+result = svc.discover()      # returns DiscoveryResult
+
+# Iterate typed resources
+for item in result.by_type("compute"):
+    print(item.data["id"], item.data["name"])
+
+# Normalized Facility objects (provider-agnostic)
+for facility in result.facilities:
+    print(facility.name, [c.cores for c in (facility.compute or [])])
+```
+
+### 3. Define a Job
+
+```python
+from amscrot.client.job import Job, JobSpec, JobType, JobServiceType
+
+spec = JobSpec(
+    executable="python",
+    arguments=["-c", "print('hello')"],
+    resources={"requests": {"cpu": "1", "memory": "4Gi"}},
+    attributes={
+        "container": {"image": "python:3.12-slim"},  # provider image
+        "resource_id": "<compute-resource-id>"       # from discovery
+    }
+)
+
+job = Job(
+    name="my-job",
+    type=JobType.COMPUTE,
+    service_type=JobServiceType.BATCH,
+    service_client=svc,
+    job_spec=spec
+)
+```
+
+### 4. Create a Session and Submit
+
+```python
+session = client.create_session("my-session")
+session.add_job(job)
+
+# Validate (raises PlanError on failure)
+session.plan(verbose=True)
+
+# Submit all jobs
+session.apply()
+```
+
+### 5. Wait for Completion
+
+```python
+from amscrot.client.job import JobState
+
+results = session.wait(
+    timeout=300,
+    interval=5,
+    verbose=True,
+)
+
+for job_name, status in results.items():
+    print(f"{job_name}: {status.state}  message={status.message}")
+```
+
+`session.wait()` polls until all jobs reach a terminal state (`COMPLETED`, `FAILED`, or `CANCELED`). Pass `jobs=[job1, job2]` to wait on a subset.
+
+### 6. Clean Up
+
+```python
+session.destroy()   # cancels running jobs and removes session state
+```
+
+Sessions are persisted to `~/.amscrot/sessions/<session-name>/` so they survive process restarts. An existing session is restored automatically on `client.create_session(name)`.
+
+## Kubernetes / Kueue Jobs
+
+```python
+spec = JobSpec(
+    executable="sleep",
+    arguments=["30"],
+    resources={"requests": {"cpu": "1", "memory": "1Gi"}},
+    attributes={
+        "container": {"image": "busybox"},
+        "namespace": "default",
+        "labels": {"kueue.x-k8s.io/queue-name": "compute-queue"},
+        "completions": 1,
+        "restartPolicy": "Never"
+    }
+)
+```
+
+See [`scripts/kube/setup-keueu.sh`](scripts/kube/setup-keueu.sh) to install Kueue and create the required `ResourceFlavor`, `ClusterQueue`, `LocalQueue`, and `PriorityClass` resources on your cluster.
+
+
+# <a name="jupyter"></a>Jupyter Notebook Examples
+
+Interactive notebooks are provided under [`examples/notebooks/client/`](examples/notebooks/client/).
+
+| Notebook | Description |
+|---|---|
+| [amsc_hello_world](examples/notebooks/client/amsc_hello_world.ipynb) | **Start here.** Walks through installation, credential setup, creating a `Client`/`Session`, submitting a job, monitoring with `session.wait()`, and cleanup with `session.destroy()`. |
+| [amsc_gpt2_training_job](examples/notebooks/client/amsc_gpt2_training_job.ipynb) | Submits a GPT-2 training job to a remote IRI compute resource, polls for completion, and fetches log output. |
+| [amsc_iri_multisite](examples/notebooks/client/amsc_iri_multisite.ipynb) | Demonstrates multi-site job submission across ESnet IRI East and West endpoints using a single session. |
+| [amsc_iro_net_xfer](examples/notebooks/client/amsc_iro_net_xfer.ipynb) | Uses the AMSC-IRO backend to orchestrate networked data-transfer jobs with L2 network metadata. |
+
+# <a name="airflow"></a>Apache Airflow Support
+
+The [`airflow/`](airflow/) subdirectory provides custom Airflow operators for submitting and monitoring IRI compute jobs as part of larger data pipelines.
+
+## Operators
+
+- **`IriJobSubmitOperator`** — Plans, submits, and waits for an IRI job. Accepts `service_type`, `profile`, `executable`, `resources`, and `attributes`. Pushes `job_id` to XCom on completion.
+- **`IriFetchOutputOperator`** — Downloads stdout/stderr from a completed job to a local directory.
+
+## Quick Start
+
+```bash
+cd airflow/
+bash setup_airflow.sh --start   # installs deps, initialises DB, launches standalone Airflow
+```
+
+Open [http://localhost:8080](http://localhost:8080), configure credentials in `~/.amscrot/credentials.yml`, then trigger the demo DAG (`esnet_iri_example` or `gpt2_training_job`) from the UI or via the REST API:
+
+```bash
+curl -X POST http://localhost:8080/api/v2/dags/esnet_iri_example/dagRuns \
+     -H "Content-Type: application/json" \
+     -u "admin:<password>" -d '{}'
+```
+
+See [`airflow/README.md`](airflow/README.md) for the full operator reference and configuration options.
