@@ -2,12 +2,12 @@
 
  - [Description](#descr)
  - [Installation](#install)
- - [Operation Instructions](#operate)
+ - [Operating Instructions](#operate)
  - [Jupyter Notebook Examples](#jupyter)
  - [Apache Airflow Support](#airflow)
 
 # <a name="descr"></a>Description
-The American Science Cloud Infrastructure Services Resource Orchestration Toolkit (AmSC-ISRO-Toolkit [AmSCROT]) provides _infrastructure_ orchestrtion for AmSC use.
+The American Science Cloud Infrastructure Services Resource Orchestration Toolkit (AmSC-ISRO-Toolkit [AmSCROT]) provides _infrastructure_ orchestration for AmSC use.
 
 # <a name="install"></a>Installation
 
@@ -209,7 +209,7 @@ spec = JobSpec(
 )
 ```
 
-See [`scripts/kube/setup-keueu.sh`](scripts/kube/setup-keueu.sh) to install Kueue and create the required `ResourceFlavor`, `ClusterQueue`, `LocalQueue`, and `PriorityClass` resources on your cluster.
+See [`scripts/kube/setup-kueue.sh`](scripts/kube/setup-kueue.sh) to install Kueue and create the required `ResourceFlavor`, `ClusterQueue`, `LocalQueue`, and `PriorityClass` resources on your cluster.
 
 
 # <a name="jupyter"></a>Jupyter Notebook Examples
