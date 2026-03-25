@@ -142,6 +142,56 @@ session.destroy()   # cancels running jobs and removes session state
 
 Sessions are persisted to `~/.amscrot/sessions/<session-name>/` so they survive process restarts. An existing session is restored automatically on `client.create_session(name)`.
 
+### 7. Fetch Output Files (IRI providers)
+
+After a job completes, stdout/stderr can be downloaded from the remote filesystem:
+
+```python
+# Include stdout/stderr paths in the job spec attributes
+spec = JobSpec(
+    executable="python",
+    arguments=["-c", "print('done')"],
+    attributes={
+        "resource_id": "<compute-resource-id>",
+        "directory": "/path/to/workdir",        # remote working directory
+        "stdout_path": "/path/to/workdir/out.log",
+        "stderr_path": "/path/to/workdir/err.log",
+    }
+)
+
+# After session.wait() returns COMPLETED:
+fetched = session.fetch_output_files(jobs=[job])
+# fetched == {"my-job": {"stdout": "/local/.amscrot/sessions/my-session/files/my-job/stdout.log",
+#                        "stderr": "/local/.amscrot/sessions/my-session/files/my-job/stderr.log"}}
+```
+
+Files are written to `~/.amscrot/sessions/<session-name>/files/<job-name>/` by default. Pass `output_path=` to override.
+
+### 8. Direct Filesystem Access (IRI providers)
+
+ESnet IRI and NERSC IRI service clients expose an `IriFilesystem` interface for direct file operations independent of job submission:
+
+```python
+fs = svc.filesystem          # IriFilesystem instance (None if client unavailable)
+
+# Upload a local file to remote storage
+fs.upload(storage_resource_id, local_path="/tmp/input.txt", remote_path="/scratch/input.txt")
+
+# Download a remote file
+fs.download(storage_resource_id, remote_path="/scratch/out.log", local_path="/tmp/out.log")
+
+# List a remote directory
+entries = fs.list(storage_resource_id, remote_path="/scratch/")
+
+# Compute checksum of a remote file
+checksum = fs.checksum(storage_resource_id, remote_path="/scratch/data.tar")
+
+# Create a tar archive of a remote directory
+fs.compress(storage_resource_id, remote_path="/scratch/results/", archive_path="/scratch/results.tar.gz")
+```
+
+`storage_resource_id` is the UUID of a storage resource from `svc.discover()`. For most IRI deployments, the home storage resource is auto-resolved when calling `session.fetch_output_files()`.
+
 ## Kubernetes / Kueue Jobs
 
 ```python
