@@ -1,8 +1,10 @@
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple, TYPE_CHECKING
 from ..serviceclient import ServiceClient, PlanError, CreateError, DestroyError
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 from ...client.job import JobStatus, JobState
+if TYPE_CHECKING:
+    from amscrot.client.job import Job
 from sense.client.requestwrapper import RequestWrapper
 from sense.client.discover_api import DiscoverApi
 from sense.client.profile_api import ProfileApi
@@ -33,11 +35,11 @@ class AmscIroServiceClient(ServiceClient):
             
         sense_config = {
             'API_ENDPOINT': self.endpoint_uri,
-            'ACCESS_TOKEN': self.api_key,
-            # Dummy params required by ApiClient validation
-            'AUTH_ENDPOINT': 'dummy',
-            'CLIENT_ID': 'dummy',
-            'SECRET': 'dummy'
+            'AUTH_ENDPOINT': self.auth_endpoint,
+            'FOREIGN_TOKEN': self.api_key,
+            'FOREIGN_TOKEN_ISSUER': self.token_issuer,
+            'CLIENT_ID': self.client_id,
+            'SECRET': self.secret
         }
         
         # Sense-O-Py ApiClient will throw an exception if config fails validation
@@ -51,19 +53,28 @@ class AmscIroServiceClient(ServiceClient):
 
     def _load_credentials(self):
         """Load AMSC IRO credentials from self.credential or file."""
+        self.auth_endpoint = None
+        self.client_id = 'dummy'
+        self.secret = 'dummy'
+        self.token_issuer = 'https://auth.globus.org'
+
         if self.credential:
             try:
                 creds = self.credential if isinstance(self.credential, dict) else self.credential.to_dict()
                 if creds.get('api_key'): self.api_key = creds.get('api_key')
                 if creds.get('api_endpoint'): self.endpoint_uri = creds.get('api_endpoint')
+                if creds.get('auth_endpoint'): self.auth_endpoint = creds.get('auth_endpoint')
+                if creds.get('client_id'): self.client_id = creds.get('client_id')
+                if creds.get('secret'): self.secret = creds.get('secret')
+                if creds.get('token_issuer'): self.token_issuer = creds.get('token_issuer')
                 return
             except Exception as e:
                 self.logger.error(f"[{self.name}] Error loading from credential object: {e}")
 
         # Load from file if profile exists
-        if self.profile:
+        if getattr(self, 'profile', None):
             default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
-            cred_file = self.credential_file or default_file
+            cred_file = getattr(self, 'credential_file', None) or default_file
             cred_file = os.path.expanduser(cred_file)
             
             if os.path.exists(cred_file):
@@ -74,11 +85,15 @@ class AmscIroServiceClient(ServiceClient):
                             creds = config[self.profile]
                             if creds.get('api_key'): self.api_key = creds.get('api_key')
                             if creds.get('api_endpoint'): self.endpoint_uri = creds.get('api_endpoint')
+                            if creds.get('auth_endpoint'): self.auth_endpoint = creds.get('auth_endpoint')
+                            if creds.get('client_id'): self.client_id = creds.get('client_id')
+                            if creds.get('secret'): self.secret = creds.get('secret')
+                            if creds.get('token_issuer'): self.token_issuer = creds.get('token_issuer')
                 except Exception as e:
                     self.logger.error(f"[{self.name}] Failed to parse credentials file: {e}")
 
     def discover(self, native: bool = True) -> DiscoveryResult:
-        self.logger.info(f"[{self.name}] [AMSC_IRO] Discovering resources")
+        self.logger.info(f"[{self.name}] Discovering resources")
         if not self._api_client:
             self.logger.warning(f"[{self.name}] Client not initialized, returning empty discovery.")
             return DiscoveryResult(items=[])
@@ -103,32 +118,171 @@ class AmscIroServiceClient(ServiceClient):
                 ))
         except Exception as e:
             self.logger.error(f"[{self.name}] Failed to discover iri_facilities: {e}")
-            
+
+        # Discover intent profiles
+        try:
+            from amscrot.model.intent import Intent
+            profile_api = ProfileApi(req_wrapper=self._api_client)
+            profiles = profile_api.profile_list()
+            if profiles:
+                profile_list = profiles if isinstance(profiles, list) else [profiles]
+                for p in profile_list:
+                    intent = Intent(data=p)
+                    items.append(DiscoveredResource(
+                        type="intent",
+                        name=intent.name,
+                        data=p,
+                        metadata=intent,
+                    ))
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Failed to discover intent profiles: {e}")
+
         return DiscoveryResult(items=items)
 
-    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
-        name = job_name or self.name
-        self.logger.info(f"[{self.name}] [AMSC_IRO] Planning '{name}'")
-        
-        intent = job_spec.attributes.get("intent")
-        if not intent:
-            raise PlanError(["Missing 'intent' attribute in JobSpec for AMSC_IRO planning"])
+    def _escape_multiline(self, text: str) -> str:
+        # Order matters: escape backslashes first, then quotes, then newlines
+        text = text.replace("\\", "\\\\")
+        text = text.replace('"', '\\"')
+        text = text.replace("\n", "\\n")
+        return text
 
+    def _unescape_multiline(self, text: str) -> str:
+        # Order matters: unescape newlines, then quotes, then backslashes
+        text = text.replace("\\n", "\n")
+        text = text.replace('\\"', '"')
+        text = text.replace("\\\\", "\\")
+        return text
+
+    def _prepare_intent(self, jobs: List["Job"], intent: str) -> Tuple[Dict, Dict, str]:
         if not self._api_client:
-            raise PlanError(["AMSC_IRO client not properly initialized"])
+            raise Exception("AMSC_IRO client not properly initialized")
 
         profile_api = ProfileApi(req_wrapper=self._api_client)
         try:
-            # profile_describe implicitly uses profile_search_get which searches by name or UUID
             profile = profile_api.profile_describe(desc=intent)
         except Exception as e:
-            raise PlanError([f"Failed to lookup intent profile '{intent}': {e}"])
+            raise Exception(f"Failed to lookup intent profile '{intent}': {e}")
             
         if not profile:
-            raise PlanError([f"No intent profile found for '{intent}'"])
+            raise Exception(f"No intent profile found for '{intent}'")
             
         if not profile.get("editable"):
-            raise PlanError([f"Profile '{intent}' is not marked as editable"])
+            raise Exception(f"Profile '{intent}' is not marked as editable")
+
+        intent_uuid = profile.get("uuid")
+        profile_intent = profile.get("intent", {})
+        profile_jobs = profile_intent.get("data", {}).get("jobs", [])
+
+        edit_paths = None
+        if "edit" in profile:
+            edit_paths = set()
+            for e in profile["edit"]:
+                if isinstance(e, dict):
+                    edit_paths.add(e.get("path"))
+                elif hasattr(e, "path"):
+                    edit_paths.add(e.path)
+
+        def is_editable(path):
+            if edit_paths is None:
+                return True
+            return path in edit_paths
+
+        name_map = {}
+        options = {}
+
+        for i, job in enumerate(jobs):
+            spec = job.job_spec
+            
+            if i < len(profile_jobs):
+                pjob = profile_jobs[i]
+                orig_name = pjob.get("name")
+                if orig_name and job.name:
+                    name_map[orig_name] = job.name
+                
+                # Apply defaults
+                if "image" in pjob:
+                    container = spec.attributes.setdefault("container", {})
+                    if not container.get("image"):
+                        container["image"] = pjob["image"]
+
+                if not spec.executable and "executable" in pjob:
+                    if isinstance(pjob["executable"], list) and len(pjob["executable"]) > 2:
+                        spec.executable = self._unescape_multiline(pjob["executable"][2])
+                    elif isinstance(pjob["executable"], str):
+                        spec.executable = self._unescape_multiline(pjob["executable"])
+
+                rspec = pjob.get("resource_spec", {})
+                for k, v in rspec.items():
+                    if k not in spec.resources:
+                        spec.resources[k] = v
+
+                attr = pjob.get("attributes", {})
+                for k, v in attr.items():
+                    if k not in spec.attributes:
+                        spec.attributes[k] = v
+
+            # Build options based on the possibly updated spec
+            name = job.name
+            if name:
+                path = f"data.jobs[{i}].name"
+                if is_editable(path):
+                    options[path] = name
+                
+            if spec.executable:
+                path = f"data.jobs[{i}].executable[2]"
+                if is_editable(path):
+                    options[path] = self._escape_multiline(spec.executable)
+
+            container = spec.attributes.get("container", {})
+            image_override = container.get("image")
+            if image_override:
+                path = f"data.jobs[{i}].image"
+                if is_editable(path):
+                    options[path] = image_override
+
+            res = spec.resources
+            if res.get("cpu_cores_per_process"):
+                path = f"data.jobs[{i}].resource_spec.cpu_cores_per_process"
+                if is_editable(path):
+                    options[path] = str(res.get("cpu_cores_per_process"))
+            if res.get("node_count"):
+                path = f"data.jobs[{i}].resource_spec.node_count"
+                if is_editable(path):
+                    options[path] = str(res.get("node_count"))
+            if res.get("processes_per_node"):
+                path = f"data.jobs[{i}].resource_spec.processes_per_node"
+                if is_editable(path):
+                    options[path] = str(res.get("processes_per_node"))
+
+            if spec.attributes.get("duration"):
+                path = f"data.jobs[{i}].attributes.duration"
+                if is_editable(path):
+                    options[path] = str(spec.attributes.get("duration"))
+            
+        profile_networks = profile_intent.get("data", {}).get("networks", [])
+        for net_idx, network in enumerate(profile_networks):
+            connects = network.get("connects", [])
+            for conn_idx, connector in enumerate(connects):
+                orig_conn_name = connector.get("name")
+                if orig_conn_name in name_map:
+                    path = f"data.networks[{net_idx}].connects[{conn_idx}].name"
+                    if is_editable(path):
+                        options[path] = name_map[orig_conn_name]
+
+        return profile, options, intent_uuid
+
+    def plan(self, job: "Job") -> Dict:
+        name = job.name or self.name
+        self.logger.info(f"[{self.name}] Planning '{name}'")
+        
+        intent = getattr(job, 'intent', None) or job.job_spec.attributes.get("intent")
+        if not intent:
+            raise PlanError(["Missing 'intent' attribute for AMSC_IRO planning"])
+
+        try:
+            profile, _, _ = self._prepare_intent([job], intent)
+        except Exception as e:
+            raise PlanError([str(e)])
 
         return {
             "resource": {
@@ -143,42 +297,32 @@ class AmscIroServiceClient(ServiceClient):
             }
         }
 
-    def create(self, job_spec: "JobSpec", job_name: str = None):
-        name = job_name or self.name
-        self.logger.info(f"[{self.name}] [AMSC_IRO] Creating '{name}'")
+    def plan_intent(self, jobs: List["Job"], intent: str) -> Dict:
+        self.logger.info(f"[{self.name}] Planning intent '{intent}' for {len(jobs)} job(s)")
         
-        intent = job_spec.attributes.get("intent")
-        if not intent:
-            raise CreateError(["Missing 'intent' attribute in JobSpec for AMSC_IRO creation"])
-
-        profile_api = ProfileApi(req_wrapper=self._api_client)
         try:
-            profile = profile_api.profile_describe(desc=intent)
-            intent_uuid = profile.get("uuid")
+            profile, _, _ = self._prepare_intent(jobs, intent)
         except Exception as e:
-             raise CreateError([f"Failed to lookup intent profile '{intent}': {e}"])
-            
-        options = {}
-        if name:
-            options["data.jobs[0].name"] = name
-            
-        if job_spec.executable:
-            # The executable array in the profile uses index 2 for the script
-            # In JobSpec, executable is a string representing the script 
-            options["data.jobs[0].executable[2]"] = job_spec.executable
+            raise PlanError([str(e)])
 
-        # Resources mapping
-        if job_spec.resources.get("cpu_cores_per_process"):
-            options["data.jobs[0].resource_spec.cpu_cores_per_process"] = str(job_spec.resources.get("cpu_cores_per_process"))
-        if job_spec.resources.get("node_count"):
-            options["data.jobs[0].resource_spec.node_count"] = str(job_spec.resources.get("node_count"))
-        if job_spec.resources.get("processes_per_node"):
-            options["data.jobs[0].resource_spec.processes_per_node"] = str(job_spec.resources.get("processes_per_node"))
+        return {
+            "resource": {
+                "profile_name": profile.get("name"),
+                "profile_uuid": profile.get("uuid"),
+                "editable": True,
+                "status": "Ready for intent edits"
+            },
+            "status": "planned"
+        }
 
-        # Custom attribute duration mapping
-        if job_spec.attributes.get("duration"):
-            options["data.jobs[0].attributes.duration"] = str(job_spec.attributes.get("duration"))
-            
+    def create_intent(self, jobs: List["Job"], intent: str):
+        self.logger.info(f"[{self.name}] Creating intent '{intent}' for {len(jobs)} job(s)")
+        
+        try:
+            _, options, intent_uuid = self._prepare_intent(jobs, intent)
+        except Exception as e:
+             raise CreateError([str(e)])
+             
         req_intent = {
             "service_profile_uuid": intent_uuid,
             "queries": [
@@ -198,22 +342,32 @@ class AmscIroServiceClient(ServiceClient):
             # Actually commits and provisions the workflow
             workflow_api.instance_operate('provision', sync='true')
             
-            # Save mapping locally
-            if name:
-                self._job_states[name] = si_uuid
+            # Provide job ID back to the job object
+            for job in jobs:
+                if job.name:
+                    job.id = si_uuid
                 
         except Exception as e:
             # Try to clean up state if provisioning failed midway
-            if workflow_api.si_uuid:
+            if getattr(workflow_api, 'si_uuid', None):
                 workflow_api.instance_delete()
-            raise CreateError([f"Failed to create and provision intent for {name}: {e}"])
+            job_names = ", ".join([j.name for j in jobs if j.name])
+            raise CreateError([f"Failed to create and provision intent for jobs {job_names}: {e}"])
 
-        self.logger.info(f"[{self.name}] Successfully created job intent {name} with SI UUID {si_uuid}")
+        self.logger.info(f"[{self.name}] Successfully created job intent with SI UUID {si_uuid}")
 
-    def destroy(self, job_name: str = None):
-        name = job_name or self.name
-        self.logger.info(f"[{self.name}] [AMSC_IRO] Destroying '{name}'")
-        si_uuid = self._job_states.get(name)
+    def create(self, job: "Job"):
+        name = job.name or self.name
+        
+        intent = getattr(job, 'intent', None) or job.job_spec.attributes.get("intent")
+        if not intent:
+            raise CreateError(["Missing 'intent' attribute for AMSC_IRO creation"])
+
+        self.create_intent([job], intent)
+
+    def destroy(self, job: "Job"):
+        name = job.name or self.name
+        si_uuid = job.id
         if not si_uuid:
             self.logger.warning(f"No tracked SI UUID for job '{name}', cannot destroy/cancel.")
             return
@@ -224,17 +378,16 @@ class AmscIroServiceClient(ServiceClient):
             status = workflow_api.instance_get_status()
             if 'FAILED' in status:
                 workflow_api.instance_operate('cancel', force='true', sync='true')
-            elif 'READY' in status and 'CANCEL' not in status:
+            if 'READY' in status and 'CANCEL' not in status:
                 workflow_api.instance_operate('cancel', sync='true')
             
-            self._job_states.pop(name, None)
             self.logger.info(f"[{self.name}] Successfully canceled instance {si_uuid}")
         except Exception as e:
             raise DestroyError([f"Failed to cancel instance {si_uuid}: {e}"])
 
-    def status(self, job_name: str = None) -> JobStatus:
-        name = job_name or self.name
-        si_uuid = self._job_states.get(name)
+    def status(self, job: "Job") -> JobStatus:
+        name = job.name or self.name
+        si_uuid = job.id
         if not si_uuid:
             return JobStatus(state=JobState.UNKNOWN, message="No known SI UUID in memory for AMSC_IRO")
             
@@ -243,7 +396,8 @@ class AmscIroServiceClient(ServiceClient):
         try:
             orch_status = workflow_api.instance_get_status()
             conf_status = workflow_api.instance_get_status(status='configstate')
-            
+            message = f"IRO Orch Status: {orch_status}, Conf Status: {conf_status}"
+
             # Basic mapping
             state = JobState.PENDING
             if 'READY' in orch_status:
@@ -252,13 +406,44 @@ class AmscIroServiceClient(ServiceClient):
                 state = JobState.CANCELED
             if 'FAILED' in orch_status:
                 state = JobState.FAILED
-            if 'FINISHED' in orch_status:
+            if 'FINISHED' in orch_status or 'UNSTABLE' in conf_status:
                 state = JobState.COMPLETED
                 
+            provider_status = None
+            try:
+                from sense.client.facility_space_api import FacilitySpaceApi
+                fs_api = FacilitySpaceApi(req_wrapper=self._api_client)
+                fs_jobs = fs_api.facility_space_jobs_get(si_uuid)
+                if isinstance(fs_jobs, list):
+                    for fs_j in fs_jobs:
+                        if fs_j.get("name") == job.name:
+                            provider_status = fs_j
+                            # Sync state if possible
+                            fs_job_status = fs_j.get("jobStatus", {})
+                            fs_state = fs_job_status.get("state")
+                            if fs_state == "RUNNING":
+                                state = JobState.ACTIVE
+                            elif fs_state == "COMPLETED":
+                                state = JobState.COMPLETED
+                            elif fs_state == "FAILED":
+                                state = JobState.FAILED
+                            elif fs_state == "QUEUED":
+                                state = JobState.QUEUED
+                                
+                            exit_code = fs_job_status.get("exit_code")
+                            if exit_code is not None:
+                                message = f"{message}, Exit Code: {exit_code}"
+                                if fs_job_status.get("message"):
+                                    message = f"{message}, Detail: {fs_job_status.get('message')}"
+                            break
+            except Exception as e:
+                self.logger.debug(f"Could not fetch detailed FS job status: {e}")
+
             return JobStatus(
                 state=state,
                 job_id=si_uuid,
-                message=f"Orchestration: {orch_status}, Configuration: {conf_status}"
+                message=message,
+                provider_status=provider_status
             )
         except Exception as e:
             return JobStatus(state=JobState.UNKNOWN, message=str(e))

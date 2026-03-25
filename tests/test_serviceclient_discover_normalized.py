@@ -24,6 +24,9 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
         print("\n--- Testing KubeServiceClient.discover(native=False) ---")
         client = KubeServiceClient(name="test-kube")
 
+        if not client._available:
+            self.skipTest("Skipping test - no kubeconfig found")
+
         try:
             result = client.discover(native=False)
 
@@ -63,7 +66,7 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
             raise
         except Exception as e:
             error_msg = str(e)
-            if "Max retries exceeded" in error_msg or "Connection refused" in error_msg:
+            if "Max retries exceeded" in error_msg or "Connection refused" in error_msg or "unreachable" in error_msg.lower():
                 self.skipTest(f"Kubernetes cluster unreachable: {e}")
             self.fail(f"KubeServiceClient normalized discovery failed: {e}")
 

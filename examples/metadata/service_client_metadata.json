@@ -89,19 +89,21 @@
                             "fabric": "infiniband-hdr100",
                             "rdma_enabled": true,
                             "external_connectivity": "public-login-node",
-                            "layer3": {
-                                "ipv4_subnets": [
-                                    "10.100.0.0/16"
-                                ],
-                                "gateway": "10.100.0.1",
-                                "bgp_peers": [
-                                    {
-                                        "asn": 65001,
-                                        "peer_ip": "192.168.255.1",
-                                        "local_ip": "192.168.255.2"
-                                    }
-                                ]
-                            }
+                            "layer3": [
+                                {
+                                    "ipv4_subnets": [
+                                        "10.100.0.0/16"
+                                    ],
+                                    "gateway": "10.100.0.1",
+                                    "bgp_peers": [
+                                        {
+                                            "asn": 65001,
+                                            "peer_ip": "192.168.255.1",
+                                            "local_ip": "192.168.255.2"
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
                 },
@@ -177,10 +179,12 @@
                                     "cert-manager.io/cluster-issuer": "letsencrypt-prod"
                                 }
                             },
-                            "layer2": {
-                                "vlan_id": 105,
-                                "mtu": 9000
-                            }
+                            "layer2": [
+                                {
+                                    "vlan_id": 105,
+                                    "mtu": 9000
+                                }
+                            ]
                         }
                     ],
                     "operations": [
@@ -213,11 +217,13 @@
                             "bandwidth_limit": "5Mbps",
                             "latency_tolerance": "high",
                             "offline_support": true,
-                            "layer3": {
-                                "ipv6_subnets": [
-                                    "2001:db8:abc:123::/64"
-                                ]
-                            }
+                            "layer3": [
+                                {
+                                    "ipv6_subnets": [
+                                        "2001:db8:abc:123::/64"
+                                    ]
+                                }
+                            ]
                         }
                     ],
                     "data": [

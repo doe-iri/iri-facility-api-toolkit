@@ -389,7 +389,7 @@ class IriFilesystem(FilesystemInterface):
         """
         entries = IriFilesystem._parse_ls_entries(result)
         if not entries:
-            return '(empty or unrecognised ls response)'
+            return 'total 0'
 
         lines = []
         for entry in entries:
@@ -523,15 +523,8 @@ class IriFilesystem(FilesystemInterface):
     # ------------------------------------------------------------------
 
     def mkdir(self, resource_id: str, path: str, p: bool = True) -> Dict[str, Any]:
-        # Dynamically import the request model so this module works with
-        # either nersc_iri or esnet_iri (both expose identically named models).
-        try:
-            from nersc_iri.models.post_make_dir_request import PostMakeDirRequest
-        except ImportError:
-            from esnet_iri.models.post_make_dir_request import PostMakeDirRequest  # type: ignore
-
         self._logger.debug(f"{self._tag()} mkdir path={path!r}")
-        req = PostMakeDirRequest(path=path, p=p)
+        req = {"path": path, "parent": p}
         resp = self._fs.mkdir(resource_id, req)
         task = self._run_task(resp, op="mkdir")
         return self._result_dict(task)
@@ -616,37 +609,22 @@ class IriFilesystem(FilesystemInterface):
         return self._result_dict(task)
 
     def mv(self, resource_id: str, src: str, dst: str) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.post_move_request import PostMoveRequest
-        except ImportError:
-            from esnet_iri.models.post_move_request import PostMoveRequest  # type: ignore
-
         self._logger.debug(f"{self._tag()} mv {src!r} -> {dst!r}")
-        req = PostMoveRequest(source_path=src, target_path=dst)
+        req = {"source_path": src, "target_path": dst}
         resp = self._fs.mv(resource_id, req)
         task = self._run_task(resp, op="mv")
         return self._result_dict(task)
 
     def cp(self, resource_id: str, src: str, dst: str) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.post_copy_request import PostCopyRequest
-        except ImportError:
-            from esnet_iri.models.post_copy_request import PostCopyRequest  # type: ignore
-
         self._logger.debug(f"{self._tag()} cp {src!r} -> {dst!r}")
-        req = PostCopyRequest(source_path=src, target_path=dst)
+        req = {"source_path": src, "target_path": dst}
         resp = self._fs.cp(resource_id, req)
         task = self._run_task(resp, op="cp")
         return self._result_dict(task)
 
     def chmod(self, resource_id: str, path: str, mode: str) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.put_file_chmod_request import PutFileChmodRequest
-        except ImportError:
-            from esnet_iri.models.put_file_chmod_request import PutFileChmodRequest  # type: ignore
-
         self._logger.debug(f"{self._tag()} chmod path={path!r} mode={mode!r}")
-        req = PutFileChmodRequest(path=path, mode=mode)
+        req = {"path": path, "mode": mode}
         resp = self._fs.chmod(resource_id, req)
         task = self._run_task(resp, op="chmod")
         return self._result_dict(task)
@@ -693,19 +671,14 @@ class IriFilesystem(FilesystemInterface):
         *,
         dereference: bool = False,
     ) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.post_compress_request import PostCompressRequest
-        except ImportError:
-            from esnet_iri.models.post_compress_request import PostCompressRequest  # type: ignore
-
         self._logger.debug(
             f"{self._tag()} compress path={path!r} -> {target_path!r}"
         )
-        req = PostCompressRequest(
-            source_path=path,
-            target_path=target_path,
-            dereference=dereference or None,
-        )
+        req = {
+            "source_path": path,
+            "target_path": target_path,
+            "dereference": dereference or None,
+        }
         resp = self._fs.compress(resource_id, req)
         task = self._run_task(resp, op="compress")
         return self._result_dict(task)
@@ -716,15 +689,10 @@ class IriFilesystem(FilesystemInterface):
         path: str,
         target_path: str,
     ) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.post_extract_request import PostExtractRequest
-        except ImportError:
-            from esnet_iri.models.post_extract_request import PostExtractRequest  # type: ignore
-
         self._logger.debug(
             f"{self._tag()} extract path={path!r} -> {target_path!r}"
         )
-        req = PostExtractRequest(source_path=path, target_path=target_path)
+        req = {"source_path": path, "target_path": target_path}
         resp = self._fs.extract(resource_id, req)
         task = self._run_task(resp, op="extract")
         return self._result_dict(task)
@@ -735,15 +703,10 @@ class IriFilesystem(FilesystemInterface):
         link_path: str,
         target_path: str,
     ) -> Dict[str, Any]:
-        try:
-            from nersc_iri.models.post_file_symlink_request import PostFileSymlinkRequest
-        except ImportError:
-            from esnet_iri.models.post_file_symlink_request import PostFileSymlinkRequest  # type: ignore
-
         self._logger.debug(
             f"{self._tag()} symlink {link_path!r} -> {target_path!r}"
         )
-        req = PostFileSymlinkRequest(link_path=link_path, target_path=target_path)
+        req = {"link_path": link_path, "target_path": target_path}
         resp = self._fs.symlink(resource_id, req)
         task = self._run_task(resp, op="symlink")
         return self._result_dict(task)

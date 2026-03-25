@@ -37,8 +37,8 @@ def test_load_metadata_schema():
     assert facility.compute[0].nodes == 4
     
     # Verify L3 Network
-    assert facility.networks[0].layer3.ipv4_subnets[0] == '10.100.0.0/16'
-    assert facility.networks[0].layer3.bgp_peers[0].asn == 65001
+    assert facility.networks[0].layer3[0].ipv4_subnets[0] == '10.100.0.0/16'
+    assert facility.networks[0].layer3[0].bgp_peers[0].asn == 65001
     
     assert len(facility.storage) == 1
     assert facility.storage[0].type == 'lustre'
@@ -47,7 +47,7 @@ def test_load_metadata_schema():
     k8s = next(c for c in metadata.service_clients if c.name == 'web-api-backend')
     assert k8s.facilities[0].compute[0].resources['requests']['cpu'] == '2000m'
     # Verify L2 Network
-    assert k8s.facilities[0].networks[0].layer2.vlan_id == 105
+    assert k8s.facilities[0].networks[0].layer2[0].vlan_id == 105
 
     # Verify Service Reference Integrity (manual check in test)
     service_names = {s.name for s in metadata.services}

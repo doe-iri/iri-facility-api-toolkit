@@ -140,6 +140,9 @@ class Client:
         for entry_name, cred in self._credentials.items():
             client_type_attr = getattr(cred, 'client_type', None)
             if not client_type_attr:
+                self._logger.warning(
+                    f"Missing 'client_type' in credential entry '{entry_name}', skipping."
+                )
                 continue
 
             # Resolve e.g. "ESNET_IRI" -> Constants.ServiceType.ESNET_IRI -> "esnet-iri"
@@ -175,7 +178,7 @@ class Client:
 
         # Hydrate service clients and jobs from disk if available
         from amscrot.util import state as sutil
-        from amscrot.client.job import Job, JobType, JobServiceType, JobState
+        from amscrot.client.job import Job, JobType, JobServiceType, JobState, JobSpec
         from amscrot.serviceclient import ServiceClient
 
         cached_scs, cached_jobs = sutil.load_jobs(name)
@@ -207,24 +210,32 @@ class Client:
                     sc = session.get_service_client(sc_name) if sc_name else None
                     if sc is None and sc_name:
                         sc = self.get_service_client(sc_name)
+                    
+                    job_spec_dict = j_dict.get('spec', {})
+                    spec = None
+                    if job_spec_dict:
+                        spec = JobSpec(
+                            resources=job_spec_dict.get('resources'),
+                            image=job_spec_dict.get('image'),
+                            executable=job_spec_dict.get('executable'),
+                            arguments=job_spec_dict.get('arguments'),
+                            attributes=job_spec_dict.get('attributes')
+                        )
+                    
                     job = Job(
                         name=j_dict.get('name'),
                         type=JobType(j_dict.get('type', 'COMPUTE')),
                         service_type=JobServiceType(j_dict.get('service_type', 'BATCH')),
-                        service_client=sc
+                        service_client=sc,
+                        job_spec=spec
                     )
                     job.id = j_dict.get('id')
+                    job.resource_id = j_dict.get('resource_id')
                     try:
                         job.status = JobState(j_dict.get('status', 'INIT'))
                     except ValueError:
                         job.status = JobState.INIT
                     session.add_job(job)
-
-                    # Register job in service_client's _submitted_jobs for status tracking
-                    if sc and job.id and hasattr(sc, '_submitted_jobs'):
-                        resource_id = j_dict.get('resource_id')
-                        if resource_id:
-                            sc._submitted_jobs[job.name] = (resource_id, job.id)
                 except Exception as e:
                     self._logger.warning(f"Skipping hydration of cached job '{j_dict.get('name')}': {e}")
 

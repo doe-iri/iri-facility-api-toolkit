@@ -1,0 +1,40 @@
+stages:
+  - test
+  - build
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+default:
+  image: python:3.12
+  before_script:
+    - pip install --quiet build
+    - pip install --quiet -r requirements.txt
+    - pip install --quiet -e .
+
+test:
+  stage: test
+  script:
+    - pytest -v --tb=short -m "not integration"
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+    expire_in: 7 days
+
+build:
+  stage: build
+  needs: [test]
+  script:
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 30 days
+  only:
+    - main
+    - tags

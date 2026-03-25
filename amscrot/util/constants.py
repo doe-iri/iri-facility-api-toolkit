@@ -24,6 +24,7 @@ class Constants:
     RES_PROJECT = "project"
     RES_FACILITY = "facility"
     RES_CAPABILITY = "capability"
+    RES_INTENT = "intent"
 
     RES_TYPE_NODE = "node"
     RES_TYPE_NETWORK = "network"

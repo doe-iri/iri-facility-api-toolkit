@@ -1,10 +1,12 @@
 import unittest
+import pytest
 from amscrot.client.client import Client
 from amscrot.client.job import Job, JobType, JobServiceType, JobSpec, JobState
 from amscrot.serviceclient import ServiceClient, PlanError
 from amscrot.util.constants import Constants
 
 class TestSessionMultiResource(unittest.TestCase):
+    @pytest.mark.integration
     def test_multiresource_session_lifecycle(self):
         # 1. Initialize Client
         client = Client()
@@ -40,10 +42,9 @@ class TestSessionMultiResource(unittest.TestCase):
         # 6. Create Jobs
         # Job 1
         spec1 = JobSpec(
-            image="busybox",
             executable="echo",
             arguments=["Running Job 1"],
-            attributes={"namespace": "default", "restartPolicy": "Never"}
+            attributes={"container": {"image": "busybox"}, "namespace": "default", "restartPolicy": "Never"}
         )
         job1 = Job(
             name="job-1",
@@ -55,10 +56,9 @@ class TestSessionMultiResource(unittest.TestCase):
         
         # Job 2
         spec2 = JobSpec(
-            image="busybox",
             executable="echo",
             arguments=["Running Job 2"],
-            attributes={"namespace": "default", "restartPolicy": "Never"}
+            attributes={"container": {"image": "busybox"}, "namespace": "default", "restartPolicy": "Never"}
         )
         job2 = Job(
             name="job-2",

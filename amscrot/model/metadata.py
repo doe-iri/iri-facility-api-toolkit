@@ -62,6 +62,7 @@ class Layer2(BaseModel):
     vlan_ranges: Optional[List[str]] = None
     vlan_id: Optional[int] = None
     mtu: Optional[int] = None
+    port_name: Optional[str] = None
 
 
 class Layer3(BaseModel):
@@ -88,8 +89,8 @@ class Network(ResourceBase):
     offline_support: Optional[bool] = None
 
     # Advanced L2/L3
-    layer2: Optional[Layer2] = None
-    layer3: Optional[Layer3] = None
+    layer2: Optional[List[Layer2]] = None
+    layer3: Optional[List[Layer3]] = None
 
 
 class Allocation(ResourceBase):

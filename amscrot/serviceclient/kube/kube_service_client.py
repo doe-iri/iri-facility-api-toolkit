@@ -6,7 +6,7 @@ from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 
 if TYPE_CHECKING:
-    from amscrot.client.job import JobSpec
+    from amscrot.client.job import Job
 
 from amscrot.client.job import JobStatus, JobState
 from amscrot.serviceclient.serviceclient import PlanError, CreateError, DestroyError
@@ -171,9 +171,12 @@ class KubeServiceClient(ServiceClient):
         command = [job_spec.executable] if job_spec.executable else ["echo"]
         if job_spec.arguments:
             command.extend(job_spec.arguments)
+        # Get container attributes, defaulting to empty dict if not present
+        container_attrs = job_spec.attributes.get("container", {}) if job_spec.attributes else {}
+        
         container = client.V1Container(
             name=job_name,
-            image=job_spec.image or "busybox",
+            image=container_attrs.get("image", "busybox") if isinstance(container_attrs, dict) else "busybox",
             command=command,
             resources=container_resources
         )
@@ -266,8 +269,8 @@ class KubeServiceClient(ServiceClient):
         
         return errors, warnings
 
-    def plan(self, job_spec: "JobSpec", job_name: str = None) -> Dict:
-        name = job_name or self.name 
+    def plan(self, job: "Job") -> Dict:
+        name = job.name or self.name 
         
         # Check connectivity if client is available
         if self._available:
@@ -277,9 +280,9 @@ class KubeServiceClient(ServiceClient):
                 raise PlanError(errors=[f"Kubernetes cluster unreachable: {e}"])
 
         self.logger.info(f"[{self.name}] Planning Kube service for '{name}'...")
-        job = self._create_job_object(job_spec, name)
+        kube_job = self._create_job_object(job.job_spec, name)
         
-        errors, warnings = self._validate_resources(job, name)
+        errors, warnings = self._validate_resources(kube_job, name)
         
         if errors:
             raise PlanError(errors=errors, warnings=warnings)
@@ -287,23 +290,24 @@ class KubeServiceClient(ServiceClient):
         return {
             "status": JobState.PLANNED.value,
             "warnings": warnings,
-            "job_object": job
+            "job_object": kube_job
         }
 
-    def create(self, job_spec: "JobSpec", job_name: str = None):
-        name = job_name or self.name
+    def create(self, job: "Job"):
+        name = job.name or self.name
         self.logger.info(f"[{self.name}] Creating Kube service for '{name}'...")
         if not self._available:
             raise CreateError(errors=["Kubernetes client not available - check config"])
 
-        job = self._create_job_object(job_spec, name)
+        kube_job = self._create_job_object(job.job_spec, name)
         try: 
             # Use namespace from job object if set, otherwise default
-            namespace = job.metadata.namespace or self.namespace
+            namespace = kube_job.metadata.namespace or self.namespace
             api_response = self.batch_v1.create_namespaced_job(
-                body=job,
+                body=kube_job,
                 namespace=namespace
             )
+            job.id = name
             self._status = JobState.ACTIVE.value
             self.logger.info(f"[{self.name}] Job '{name}' submitted. Status='{api_response.status}'")
         except CreateError:
@@ -311,8 +315,8 @@ class KubeServiceClient(ServiceClient):
         except Exception as e:
             raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
 
-    def destroy(self, job_name: str = None):
-        name = job_name or self.name
+    def destroy(self, job: "Job"):
+        name = job.name or self.name
         self.logger.info(f"[{self.name}] Destroying Kube service for '{name}'...")
         if not self._available:
             raise DestroyError(errors=["Kubernetes client not available - check config"])
@@ -361,8 +365,8 @@ class KubeServiceClient(ServiceClient):
         except Exception as e:
             return f"Error fetching logs: {str(e)}"
 
-    def status(self, job_name: str = None) -> JobStatus:
-        name = job_name or self.name
+    def status(self, job: "Job") -> JobStatus:
+        name = job.name or self.name
 
         if not self._available:
             return JobStatus(state=self._status)
