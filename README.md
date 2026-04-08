@@ -30,7 +30,7 @@ nersc-iri:
   api_key: <token>
   api_endpoint: https://api.iri.nersc.gov/api/v1
 
-amsc-iro:
+amsc-iri:
   api_key: <token>
   api_endpoint: https://...
 ```
