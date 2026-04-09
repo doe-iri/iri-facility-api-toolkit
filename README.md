@@ -35,6 +35,9 @@ amsc-iro:
   api_endpoint: https://...
 ```
 
+An example credentials file is provided in [credentials-template.yml](examples/client/credentials-template.yml).
+
+
 ## Core Concepts
 
 | Class | Role |
@@ -57,9 +60,9 @@ from amscrot.util.constants import Constants
 
 client = Client()
 
-# Choose a provider: KUBE, ESNET_IRI, NERSC_IRI, AMSC_IRO
+# Choose a provider: KUBE, AMSC_IRI, AMSC_IRO
 svc = ServiceClient.create(
-    type=Constants.ServiceType.NERSC_IRI,
+    type=Constants.ServiceType.AMSC_IRI,
     name="nersc-compute",
     profile="nersc-iri"           # matches credentials.yml section
 )
@@ -88,7 +91,14 @@ from amscrot.client.job import Job, JobSpec, JobType, JobServiceType
 spec = JobSpec(
     executable="python",
     arguments=["-c", "print('hello')"],
-    resources={"requests": {"cpu": "1", "memory": "4Gi"}},
+    resources={
+            "node_count": 1,
+            "process_count": 1,
+            "processes_per_node": 1,
+            "cpu_cores_per_process": 1,
+            "exclusive_node_use": False,
+            "memory": 268435456
+    },
     attributes={
         "container": {"image": "python:3.12-slim"},  # provider image
         "resource_id": "<compute-resource-id>"       # from discovery

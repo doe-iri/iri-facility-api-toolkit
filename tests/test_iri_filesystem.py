@@ -373,11 +373,11 @@ class TestArchive:
 class TestServiceClientFilesystemProperty:
     """Verify the filesystem property wires up correctly through the service client."""
 
-    def test_nersc_iri_filesystem_returns_iri_filesystem(self):
-        from amscrot.serviceclient.nersc_iri.nersc_iri_service_client import (
-            NerscIriServiceClient,
+    def test_iri_filesystem_returns_iri_filesystem(self):
+        from amscrot.serviceclient.amsc_iri.iri_service_client import (
+            IriServiceClient,
         )
-        client = NerscIriServiceClient.__new__(NerscIriServiceClient)
+        client = IriServiceClient.__new__(IriServiceClient)
         client._available = True
         client._filesystem = None
         client._filesystem_api = MagicMock()
@@ -388,11 +388,11 @@ class TestServiceClientFilesystemProperty:
         fs = client.filesystem
         assert isinstance(fs, FilesystemInterface)
 
-    def test_nersc_iri_filesystem_returns_none_when_unavailable(self):
-        from amscrot.serviceclient.nersc_iri.nersc_iri_service_client import (
-            NerscIriServiceClient,
+    def test_iri_filesystem_returns_none_when_unavailable(self):
+        from amscrot.serviceclient.amsc_iri.iri_service_client import (
+            IriServiceClient,
         )
-        client = NerscIriServiceClient.__new__(NerscIriServiceClient)
+        client = IriServiceClient.__new__(IriServiceClient)
         client._available = False
         client._filesystem = None
         client.name = "test"
@@ -400,26 +400,11 @@ class TestServiceClientFilesystemProperty:
 
         assert client.filesystem is None
 
-    def test_esnet_iri_filesystem_returns_iri_filesystem(self):
-        from amscrot.serviceclient.esnet_iri.esnet_iri_service_client import (
-            EsnetIriServiceClient,
-        )
-        client = EsnetIriServiceClient.__new__(EsnetIriServiceClient)
-        client._available = True
-        client._filesystem = None
-        client._filesystem_api = MagicMock()
-        client._task_api = MagicMock()
-        client.name = "test"
-        client.logger = MagicMock()
-
-        fs = client.filesystem
-        assert isinstance(fs, FilesystemInterface)
-
     def test_filesystem_is_lazily_cached(self):
-        from amscrot.serviceclient.nersc_iri.nersc_iri_service_client import (
-            NerscIriServiceClient,
+        from amscrot.serviceclient.amsc_iri.iri_service_client import (
+            IriServiceClient,
         )
-        client = NerscIriServiceClient.__new__(NerscIriServiceClient)
+        client = IriServiceClient.__new__(IriServiceClient)
         client._available = True
         client._filesystem = None
         client._filesystem_api = MagicMock()
@@ -446,3 +431,4 @@ class TestServiceClientFilesystemProperty:
         except Exception:
             # If kube client can't be instantiated barebones, skip
             pytest.skip("KubeServiceClient not available for bare instantiation")
+

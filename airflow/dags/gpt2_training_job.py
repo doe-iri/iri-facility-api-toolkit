@@ -103,7 +103,7 @@ with DAG(
     # Shared kwargs for all amscrot operators
     base_kwargs = dict(
         session_name="airflow-gpt2-training",
-        service_type="esnet-iri",
+        service_type="amsc-iri",
         service_name="iri-east",
         profile=PROFILE,
     )

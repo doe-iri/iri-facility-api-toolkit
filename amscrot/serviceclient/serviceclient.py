@@ -154,10 +154,10 @@ class ServiceClient(ABC):
     def filesystem(self) -> Optional["FilesystemInterface"]:
         """Return a filesystem interface for this client, or None if not supported.
 
-        IRI-based clients (NerscIriServiceClient, EsnetIriServiceClient) return
-        an ``IriFilesystem`` instance that exposes all IRI filesystem operations
-        (mkdir, ls, stat, upload, download, rm, mv, cp, chmod, head, tail,
-        checksum, compress, extract, symlink) synchronously.
+        The ``IriServiceClient`` returns an ``IriFilesystem`` instance that
+        exposes all IRI filesystem operations (mkdir, ls, stat, upload,
+        download, rm, mv, cp, chmod, head, tail, checksum, compress, extract,
+        symlink) synchronously.
 
         Returns:
             A :class:`FilesystemInterface` implementation, or ``None`` if this

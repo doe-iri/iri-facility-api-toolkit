@@ -11,14 +11,14 @@ class SENSENetworkedJobs(unittest.TestCase):
 
         # Setup ESnet IRI Service Clients
         east_client = ServiceClient.create(
-            type=Constants.ServiceType.ESNET_IRI, 
+            type=Constants.ServiceType.AMSC_IRI, 
             name="iri-east",
             profile="esnet-iri-east"
         )
         session.add_service_client(east_client)
 
         west_client = ServiceClient.create(
-            type=Constants.ServiceType.ESNET_IRI, 
+            type=Constants.ServiceType.AMSC_IRI, 
             name="iri-west",
             profile="esnet-iri-west"
         )

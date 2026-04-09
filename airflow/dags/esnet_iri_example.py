@@ -61,7 +61,7 @@ with DAG(
     # Common operator kwargs for all three tasks
     base_kwargs = dict(
         session_name="airflow-esnet-iri",
-        service_type="esnet-iri",
+        service_type="amsc-iri",
         service_name="iri-east",
         profile=PROFILE,
     )

@@ -2,8 +2,7 @@ import unittest
 import json
 import logging
 from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
-from amscrot.serviceclient.esnet_iri.esnet_iri_service_client import EsnetIriServiceClient
-from amscrot.serviceclient.iri.iri_service_client import IriServiceClient
+from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClient
 from amscrot.model.discovery import DiscoveryResult
 from amscrot.model.metadata import Facility, ResourceBase
 
@@ -70,10 +69,10 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
                 self.skipTest(f"Kubernetes cluster unreachable: {e}")
             self.fail(f"KubeServiceClient normalized discovery failed: {e}")
 
-    def test_esnet_iri_discover_normalized(self):
-        """EsnetIriServiceClient.discover(native=False) returns typed Facility objects."""
-        print("\n--- Testing EsnetIriServiceClient.discover(native=False) ---")
-        client = EsnetIriServiceClient(name="esnet-iri-east", profile="esnet-iri-east")
+    def test_iri_discover_normalized(self):
+        """IriServiceClient.discover(native=False) returns typed Facility objects."""
+        print("\n--- Testing IriServiceClient.discover(native=False) ---")
+        client = IriServiceClient(name="iri-east", profile="esnet-iri-east")
 
         try:
             result = client.discover(native=False)
@@ -108,7 +107,6 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
                 # Compute entries
                 for c in fac.compute or []:
                     self.assertIsInstance(c, ResourceBase)
-                    # id should be carried from native API response
                     print(f"    Compute: id={c.id!r} name={c.name!r} "
                           f"cores={c.cores} memory={c.memory}")
 
@@ -125,16 +123,7 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
         except unittest.SkipTest:
             raise
         except Exception as e:
-            self.fail(f"EsnetIriServiceClient normalized discovery failed: {e}")
-
-    def test_iri_discover_normalized(self):
-        """IriServiceClient.discover(native=False) returns an empty DiscoveryResult (stub)."""
-        print("\n--- Testing IriServiceClient.discover(native=False) ---")
-        client = IriServiceClient(name="test-iri")
-        result = client.discover(native=False)
-        self.assertIsInstance(result, DiscoveryResult)
-        self.assertEqual(len(result), 0,
-            "IriServiceClient normalized discover should return empty result until API is integrated")
+            self.fail(f"IriServiceClient normalized discovery failed: {e}")
 
 
 if __name__ == '__main__':

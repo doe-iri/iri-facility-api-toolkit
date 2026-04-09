@@ -112,9 +112,8 @@ class Constants:
     
     class ServiceType:
         IRI = "iri"
+        AMSC_IRI = "amsc-iri"
         KUBE = "kube"
-        ESNET_IRI = "esnet-iri"
-        NERSC_IRI = "nersc-iri"
         AMSC_IRO = "amsc-iro"
         DUMMY = "dummy-sc"
 
@@ -131,10 +130,9 @@ class Constants:
     }
 
     SERVICE_CLIENT_CLASSES = {
-        ServiceType.IRI: "amscrot.serviceclient.iri.iri_service_client.IriServiceClient",
+        ServiceType.IRI: "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient",
+        ServiceType.AMSC_IRI: "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient",
         ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
-        ServiceType.ESNET_IRI: "amscrot.serviceclient.esnet_iri.esnet_iri_service_client.EsnetIriServiceClient",
-        ServiceType.NERSC_IRI: "amscrot.serviceclient.nersc_iri.nersc_iri_service_client.NerscIriServiceClient",
         ServiceType.AMSC_IRO: "amscrot.serviceclient.amsc_iro.amsc_iro_service_client.AmscIroServiceClient",
         ServiceType.DUMMY: "amscrot.serviceclient.dummy.dummy_service_client.DummyServiceClient",
     }

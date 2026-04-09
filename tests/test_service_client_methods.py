@@ -5,10 +5,10 @@ from amscrot.util.constants import Constants
 from amscrot.client.job import Job, JobSpec, JobState, JobType, JobServiceType
 
 class TestServiceClientMethods(unittest.TestCase):
-    def test_iri_methods(self):
-        client = ServiceClient.create(type=Constants.ServiceType.IRI, name="iri1", endpoint_uri="http://iri")
+    def test_dummy_methods(self):
+        client = ServiceClient.create(type=Constants.ServiceType.DUMMY, name="dummy1", endpoint_uri="http://dummy")
         spec = JobSpec(attributes={"container": {"image": "test-image"}})
-        job = Job(name="test-iri", type=JobType.COMPUTE, service_type=JobServiceType.BATCH, job_spec=spec, service_client=client)
+        job = Job(name="test-dummy", type=JobType.COMPUTE, service_type=JobServiceType.BATCH, job_spec=spec, service_client=client)
         
         # Test Plan
         plan_result = client.plan(job)

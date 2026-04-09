@@ -9,25 +9,30 @@ from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 from ...client.job import JobStatus, JobState as AmscrotJobState
 
-from nersc_iri.configuration import Configuration as IriConfiguration
-from nersc_iri.api_client import ApiClient as IriApiClient
-from nersc_iri.api.compute_api import ComputeApi
-from nersc_iri.api.status_api import StatusApi
-from nersc_iri.api.facility_api import FacilityApi
-from nersc_iri.api.account_api import AccountApi
-from nersc_iri.api.filesystem_api import FilesystemApi
-from nersc_iri.api.task_api import TaskApi
-from nersc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
-from nersc_iri.models.resource_type import ResourceType
-from nersc_iri.models.job_state import JobState as IriJobState
-from nersc_iri.models.job import Job as IriJob
-from nersc_iri.models.status import Status
+from amsc_iri.configuration import Configuration as IriConfiguration
+from amsc_iri.api_client import ApiClient as IriApiClient
+from amsc_iri.api.compute_api import ComputeApi
+from amsc_iri.api.status_api import StatusApi
+from amsc_iri.api.facility_api import FacilityApi
+from amsc_iri.api.account_api import AccountApi
+from amsc_iri.api.filesystem_api import FilesystemApi
+from amsc_iri.api.task_api import TaskApi
+from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
+from amsc_iri.models.resource_type import ResourceType
+from amsc_iri.models.job_state import JobState as IriJobState
+from amsc_iri.models.job import Job as IriJob
+from amsc_iri.models.status import Status
 
 if TYPE_CHECKING:
-    from amscrot.client.job import Job
+    from amscrot.client.job import Job, JobSpec
 
-class NerscIriServiceClient(ServiceClient):
-    """ServiceClient implementation for NERSC IRI compute jobs."""
+class IriServiceClient(ServiceClient):
+    """Unified ServiceClient implementation for IRI compute jobs.
+
+    Works with any IRI-compliant facility (ESnet, NERSC, etc.).  The target
+    facility is determined by the ``profile`` parameter, which selects the
+    appropriate credentials section in ``~/.amscrot/credentials.yml``.
+    """
 
     # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
     _IRI_TO_AMSCROT = {
@@ -40,7 +45,7 @@ class NerscIriServiceClient(ServiceClient):
     }
 
     def __init__(self, **kwargs):
-        super().__init__(type=Constants.ServiceType.NERSC_IRI, **kwargs)
+        super().__init__(type=Constants.ServiceType.IRI, **kwargs)
         
         # Load credentials
         self.api_key = None
@@ -77,8 +82,9 @@ class NerscIriServiceClient(ServiceClient):
             self._available = True
         else:
             self._available = False
-            self.logger.warning(f"[{self.name}] Warning: Could not load NERSC IRI credentials.")
+            self.logger.warning(f"[{self.name}] Warning: Could not load IRI credentials.")
         
+        self._default_resource_id = None
         # Lazily-created filesystem interface
         self._filesystem: Optional[IriFilesystem] = None
     
@@ -267,7 +273,7 @@ class NerscIriServiceClient(ServiceClient):
         return DiscoveryResult(items=result_items)
 
     def _load_credentials(self):
-        """Load NERSC IRI credentials."""
+        """Load IRI credentials."""
         # 1. Use provided ProviderCredential object if available
         # self.credential is populated by ServiceClient.__init__
         if self.credential:
@@ -297,7 +303,6 @@ class NerscIriServiceClient(ServiceClient):
                  self.logger.warning(f"[{self.name}] Warning: Custom credentials file not found at {cred_file}")
             # If default file is missing and no explicit file given, just return silent warning if desired
             if not self.credential_file and cred_file == default_file:
-                 pass # Silent warning as per previous behavior, or just print warning
                  self.logger.warning(f"[{self.name}] Warning: Credentials file not found at {cred_file}")
             return
 
@@ -309,7 +314,7 @@ class NerscIriServiceClient(ServiceClient):
             lookups = []
             if self.profile:
                 lookups.append(self.profile)
-            lookups.append(Constants.ServiceType.NERSC_IRI)
+            lookups.append(Constants.ServiceType.IRI)
 
             section_creds = None
             used_key = None
@@ -328,22 +333,22 @@ class NerscIriServiceClient(ServiceClient):
                     self.logger.warning(f"[{self.name}] Warning: Missing api_key or api_endpoint in credentials (section: {used_key})")
             else:
                  searched = f"'{self.profile}' or " if self.profile else ""
-                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.NERSC_IRI}' not found in credentials")
+                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.IRI}' not found in credentials")
 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error loading credentials: {e}")
     
     def _convert_to_iri_job_spec(self, job_spec: "JobSpec", name: str = None) -> IriJobSpec:
-        """Convert AmSCROT JobSpec to NERSC IRI JobSpecInput format.
+        """Convert AmSCROT JobSpec to IRI JobSpecInput format.
 
         Constructs IriJobSpec using direct keyword arguments rather than from_dict()
         to avoid pydantic setting None for absent fields in model_fields_set, which
         would cause those fields to be serialized as null and rejected by the API's
         min_length=1 constraints.
         """
-        from nersc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
-        from nersc_iri.models.job_attributes import JobAttributes as IriJobAttributes
-        from nersc_iri.models.container import Container as IriContainer
+        from amsc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
+        from amsc_iri.models.job_attributes import JobAttributes as IriJobAttributes
+        from amsc_iri.models.container import Container as IriContainer
 
         # --- Executable / arguments ---
         executable = job_spec.executable or "echo"
@@ -410,7 +415,7 @@ class NerscIriServiceClient(ServiceClient):
 
         return IriJobSpec(**kwargs)
     
-    def _get_resource_id(self, job_spec) -> str:
+    def _get_resource_id(self, job_spec: "JobSpec") -> str:
         """Extract resource_id from JobSpec attributes."""
         if job_spec.attributes and 'resource_id' in job_spec.attributes:
             return job_spec.attributes['resource_id']
@@ -424,14 +429,14 @@ class NerscIriServiceClient(ServiceClient):
     def plan(self, job: "Job") -> Dict:
         """Validate the job specification."""
         name = job.name or self.name
-        self.logger.debug(f"[{self.name}] Planning NERSC IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Planning IRI job for '{name}'...")
         
         errors = []
         warnings = []
         
         # Check if client is available
         if not self._available:
-            raise PlanError(errors=["NERSC IRI client not available - check credentials"])
+            raise PlanError(errors=["IRI client not available - check credentials"])
         
         # Validate resource_id is present
         resource_id = None
@@ -439,7 +444,6 @@ class NerscIriServiceClient(ServiceClient):
             resource_id = self._get_resource_id(job.job_spec)
         except Exception as e:
             errors.append(f"Failed to get resource_id: {e}")
-        
         # Validate executable is present
         if not job.job_spec.executable:
             errors.append("Job spec must have an executable")
@@ -467,7 +471,7 @@ class NerscIriServiceClient(ServiceClient):
         if errors:
             raise PlanError(errors=errors, warnings=warnings)
 
-        self.logger.debug(f"[{self.name}] NERSC IRI Job Validated: {name}")
+        self.logger.debug(f"[{self.name}] IRI Job Validated: {name}")
         if resource_id:
             self.logger.debug(f"[{self.name}]   Resource ID: {resource_id}")
 
@@ -477,19 +481,19 @@ class NerscIriServiceClient(ServiceClient):
         }
     
     def create(self, job: "Job"):
-        """Submit a job to NERSC IRI."""
+        """Submit a job to the IRI facility."""
         name = job.name or self.name
-        self.logger.debug(f"[{self.name}] Creating NERSC IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Creating IRI job for '{name}'...")
         
         if not self._available:
-            raise CreateError(errors=["NERSC IRI client not available - check credentials"])
+            raise CreateError(errors=["IRI client not available - check credentials"])
         
         try:
             # Get resource_id and convert job spec
             resource_id = job.resource_id or self._get_resource_id(job.job_spec)
             if not job.resource_id:
                 job.resource_id = resource_id
-                
+            
             iri_spec = self._convert_to_iri_job_spec(job.job_spec, name=name)
             
             # Submit the job via the typed API (returns an IriJob model)
@@ -509,12 +513,12 @@ class NerscIriServiceClient(ServiceClient):
             raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
     
     def destroy(self, job: "Job"):
-        """Cancel a job on NERSC IRI."""
+        """Cancel a job on the IRI facility."""
         name = job.name or self.name
-        self.logger.debug(f"[{self.name}] Destroying NERSC IRI job for '{name}'...")
+        self.logger.debug(f"[{self.name}] Destroying IRI job for '{name}'...")
         
         if not self._available:
-            raise DestroyError(errors=["NERSC IRI client not available - check credentials"])
+            raise DestroyError(errors=["IRI client not available - check credentials"])
         
         # Check if we have a job ID for this job
         if not job.id or not job.resource_id:
@@ -536,7 +540,7 @@ class NerscIriServiceClient(ServiceClient):
             raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
     
     def status(self, job: "Job") -> JobStatus:
-        """Get the status of a job on NERSC IRI."""
+        """Get the status of a job on the IRI facility."""
         name = job.name or self.name
         
         if not self._available:
@@ -580,7 +584,7 @@ class NerscIriServiceClient(ServiceClient):
                 message=str(e)
             )
 
-    # -- Filesystem interface ---------------------------------------------
+    # -- Filesystem interface -------------------------------------------------
 
     @property
     def filesystem(self) -> Optional[IriFilesystem]:
@@ -600,7 +604,7 @@ class NerscIriServiceClient(ServiceClient):
             )
         return self._filesystem
 
-    # -- Output file retrieval ---------------------------------------------
+    # -- Output file retrieval -------------------------------------------------
 
     def _get_storage_resource_id(self, compute_resource_id: str) -> str:
         """Resolve an available storage resource ID for filesystem operations.
@@ -668,17 +672,13 @@ class NerscIriServiceClient(ServiceClient):
 
         Args:
             job:                  The Job whose output files to fetch.
-            session_dir:          Local directory to write files into. Typically
-                                  supplied by ``Session.fetch_output_files()`` --
-                                  either the default session path or the caller's
-                                  ``output_path`` override.
+            session_dir:          Local directory to write files into.
             storage_resource_id:  Storage resource to use for filesystem ops.
                                   If ``None``, auto-resolved from available
                                   storage resources.
 
         Returns:
-            Dict mapping stream name -> local file path, e.g.
-            ``{"stdout": "/path/to/stdout.log"}``.
+            Dict mapping stream name -> local file path.
         """
         if not self._available:
             self.logger.warning(f"[{self.name}] Client unavailable -- cannot fetch output files.")
