@@ -426,8 +426,14 @@ class IriServiceClient(ServiceClient):
             
         return None
     
-    def plan(self, job: "Job") -> Dict:
-        """Validate the job specification."""
+    def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
+        """Validate the job specification.
+
+        Args:
+            job: The Job object to validate.
+            skip_checks: If True, resource availability checks are
+                downgraded from errors to warnings.
+        """
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Planning IRI job for '{name}'...")
         
@@ -462,7 +468,11 @@ class IriServiceClient(ServiceClient):
                         # Fallback check if it was serialized as a bare string
                         if not (isinstance(iri_resource.current_status, str) and iri_resource.current_status == Status.UP.value):
                             status_val = iri_resource.current_status.value if hasattr(iri_resource.current_status, 'value') else str(iri_resource.current_status)
-                            errors.append(f"Resource '{resource_id}' is not UP (current status: {status_val})")
+                            msg = f"Resource '{resource_id}' is not UP (current status: {status_val})"
+                            if skip_checks:
+                                warnings.append(msg)
+                            else:
+                                errors.append(msg)
                 elif iri_resource is None:
                     warnings.append(f"Resource '{resource_id}' not found.")
             except Exception as e:

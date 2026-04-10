@@ -109,7 +109,7 @@ class AmSCROTManager:
 
         return jobs
 
-    def plan(self, *, session: str, to_json: bool = False, summary: bool = True):
+    def plan(self, *, session: str, to_json: bool = False, summary: bool = True, skip_checks: bool = False):
         # Phase 1: Plan resources (nodes, networks, services)
         logger.info("Phase 1: Planning resources (nodes, networks, services)...")
         self._init_controller(session=session)
@@ -162,7 +162,7 @@ class AmSCROTManager:
             # Process standalone jobs
             for job in standalone_jobs:
                 if hasattr(job, 'service_client') and job.service_client:
-                    result = job.service_client.plan(job)
+                    result = job.service_client.plan(job, skip_checks=skip_checks)
                     job_summaries.append({
                         "name": job.name,
                         "type": str(job.type),

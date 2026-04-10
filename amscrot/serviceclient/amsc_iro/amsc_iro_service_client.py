@@ -41,6 +41,11 @@ class AmscIroServiceClient(ServiceClient):
             'CLIENT_ID': self.client_id,
             'SECRET': self.secret
         }
+
+        # If an IRI API token is available, pass it so sense-o-py sets
+        # X-Original-Authorization for IRI facility API calls.
+        if getattr(self, 'iri_api_token', None):
+            sense_config['IRI_API_TOKEN'] = self.iri_api_token
         
         # Sense-O-Py ApiClient will throw an exception if config fails validation
         try:
@@ -57,6 +62,7 @@ class AmscIroServiceClient(ServiceClient):
         self.client_id = 'dummy'
         self.secret = 'dummy'
         self.token_issuer = 'https://auth.globus.org'
+        self.iri_api_token = None
 
         if self.credential:
             try:
@@ -67,6 +73,7 @@ class AmscIroServiceClient(ServiceClient):
                 if creds.get('client_id'): self.client_id = creds.get('client_id')
                 if creds.get('secret'): self.secret = creds.get('secret')
                 if creds.get('token_issuer'): self.token_issuer = creds.get('token_issuer')
+                if creds.get('iri_api_token'): self.iri_api_token = creds.get('iri_api_token')
                 return
             except Exception as e:
                 self.logger.error(f"[{self.name}] Error loading from credential object: {e}")
@@ -89,6 +96,7 @@ class AmscIroServiceClient(ServiceClient):
                             if creds.get('client_id'): self.client_id = creds.get('client_id')
                             if creds.get('secret'): self.secret = creds.get('secret')
                             if creds.get('token_issuer'): self.token_issuer = creds.get('token_issuer')
+                            if creds.get('iri_api_token'): self.iri_api_token = creds.get('iri_api_token')
                 except Exception as e:
                     self.logger.error(f"[{self.name}] Failed to parse credentials file: {e}")
 
@@ -271,7 +279,7 @@ class AmscIroServiceClient(ServiceClient):
 
         return profile, options, intent_uuid
 
-    def plan(self, job: "Job") -> Dict:
+    def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         name = job.name or self.name
         self.logger.info(f"[{self.name}] Planning '{name}'")
         

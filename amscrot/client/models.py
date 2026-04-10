@@ -234,9 +234,9 @@ class Session:
         config_content = yaml.dump(config_list)
         return AmSCROTManager(config_content=config_content, jobs=list(self._jobs.values()))
 
-    def plan(self, verbose: bool = False) -> Any:
+    def plan(self, verbose: bool = False, skip_checks: bool = False) -> Any:
         manager = self._get_manager()
-        result = manager.plan(session=self._name)
+        result = manager.plan(session=self._name, skip_checks=skip_checks)
 
         if verbose:
             cr = result["resources"]["to_be_created"]

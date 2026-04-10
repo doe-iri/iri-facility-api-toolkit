@@ -106,6 +106,11 @@ def parse_args() -> argparse.Namespace:
             f"(default: {DEFAULT_IRI_VALIDATE_URL})"
         ),
     )
+    parser.add_argument(
+        "--userinfo",
+        action="store_true",
+        help="Print Globus Auth userinfo (name, email, identity) after login.",
+    )
     return parser.parse_args()
 
 
@@ -418,6 +423,21 @@ def main() -> None:
                     print(f"IRI session_id: {session_id}")
         elif isinstance(validation_data, list):
             print(f"IRI validation response items: {len(validation_data)}")
+
+    if args.userinfo:
+        auth_access_token = auth_data.get("access_token")
+        if auth_access_token:
+            authorizer = globus_sdk.AccessTokenAuthorizer(auth_access_token)
+            ac = globus_sdk.AuthClient(authorizer=authorizer)
+            try:
+                info = ac.userinfo()
+                print("\n--- Globus Userinfo ---")
+                print(json.dumps(info.data, indent=2, default=str))
+                print("--- End Userinfo ---\n")
+            except GlobusAPIError as exc:
+                print(f"\nWarning: Failed to fetch userinfo: {exc}\n")
+        else:
+            print("\nWarning: No auth access token available for userinfo.\n")
 
     print(f"Saved token data to {args.token_file}")
     print(f"Selected facilities: {', '.join(facilities)}")

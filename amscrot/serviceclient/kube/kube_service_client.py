@@ -269,7 +269,7 @@ class KubeServiceClient(ServiceClient):
         
         return errors, warnings
 
-    def plan(self, job: "Job") -> Dict:
+    def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         name = job.name or self.name 
         
         # Check connectivity if client is available

@@ -76,11 +76,13 @@ class ServiceClient(ABC):
         pass
 
     @abstractmethod
-    def plan(self, job: "Job") -> Dict:
+    def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         """Validate a job against this service client.
         
         Args:
             job: The Job object to validate
+            skip_checks: If True, availability checks that would normally
+                cause errors are downgraded to warnings instead.
             
         Returns:
             Dict containing 'status', 'errors', and 'warnings' keys

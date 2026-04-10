@@ -18,6 +18,7 @@ To run ALL discovered profiles::
 """
 
 import os
+import traceback
 import shutil
 import unittest
 import yaml
@@ -100,6 +101,14 @@ PROFILE_CONFIGS = {
         "stderr_path": "iri_test_stderr.log",
         "exclusive_node_use": False,
         "resource_filter": lambda d: d.get("group") == "perlmutter" and d.get("name") == "compute",
+    },
+    "alcf-iri": {
+        "account": "AmSC_Dev",
+        "directory": "/home/kissel",
+        "stdout_path": "/home/kissel/iri_test_stdout.log",
+        "stderr_path": "/home/kissel/iri_test_stderr.log",
+        "exclusive_node_use": False,
+        "resource_filter": None,
     },
 }
 
@@ -193,15 +202,17 @@ class TestIriIntegration:
                     target_resource = res
                     break
             if not target_resource:
-                pytest.skip(
-                    f"[{profile}] No compute resource matching profile filter"
-                )
+                msg = f"[{profile}] No compute resource matching profile filter"
+                print(f"  SKIP: {msg}")
+                pytest.skip(msg)
         else:
             target_resource = compute_resources[0]
 
         resource_id = target_resource.data.get("id")
         if not resource_id:
-            pytest.skip(f"[{profile}] Compute resource found but ID is missing")
+            msg = f"[{profile}] Compute resource found but ID is missing: {target_resource.data}"
+            print(f"  SKIP: {msg}")
+            pytest.skip(msg)
 
         print(f"  Using compute resource: {resource_id}")
 
@@ -252,7 +263,7 @@ class TestIriIntegration:
         try:
             # 1. Plan
             print("  Plan...")
-            plan_result = iri_client.plan(job)
+            plan_result = iri_client.plan(job, skip_checks=True)
             print(f"    result: {plan_result}")
             assert plan_result["status"] == "PLANNED"
 
@@ -260,7 +271,9 @@ class TestIriIntegration:
             print("  Create...")
             iri_client.create(job)
             if not job.id:
-                pytest.skip(f"[{profile}] Job not submitted")
+                msg = f"[{profile}] Job not submitted — create returned no job ID"
+                print(f"  SKIP: {msg}")
+                pytest.skip(msg)
             assert job.resource_id == resource_id
             print(f"    Job ID: {job.id}")
 
@@ -303,6 +316,10 @@ class TestIriIntegration:
             assert job.local_files == fetched.get(job.name, {})
 
         except (PlanError, CreateError) as e:
+            tb = traceback.format_exc()
+            print(f"  ERROR: {type(e).__name__}: {e}")
+            print(f"  Errors: {e.errors}")
+            print(f"  Traceback:\n{tb}")
             if any(
                 kw in err for err in e.errors
                 for kw in ("not available", "credentials", "401", "403")

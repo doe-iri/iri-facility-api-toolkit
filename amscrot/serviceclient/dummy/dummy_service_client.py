@@ -40,7 +40,7 @@ class DummyServiceClient(ServiceClient):
     # Job lifecycle                                                         #
     # ------------------------------------------------------------------ #
 
-    def plan(self, job: "Job") -> Dict:
+    def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         name = job.name or self.name
         self.logger.info(f"[{self.name}] [DUMMY] Planning '{name}'")
         return {"status": JobState.PLANNED.value, "errors": [], "warnings": []}
