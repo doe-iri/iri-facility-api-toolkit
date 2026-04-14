@@ -1,6 +1,6 @@
 fabrictestbed-extensions
 python-chi==0.17.11
-sense-o-api==1.49
+sense-o-api==1.52
 ansible==9.5.1
 ansible-runner==2.3.6
 xmltodict

@@ -2,27 +2,20 @@ import argparse
 import unittest
 from amscrot.client.client import Client
 from amscrot.client.job import Job, JobType, JobServiceType, JobSpec, JobState
-from amscrot.serviceclient import ServiceClient, PlanError
-from amscrot.util.constants import Constants
+from amscrot.serviceclient import PlanError
 
 class SENSENetworkedJobs(unittest.TestCase):
     def _setup_and_submit(self, client, session):
-        """Fresh session: create service clients, discover resources, define jobs, plan, and apply."""
+        """Fresh session: discover resources, define jobs, plan, and apply."""
 
-        # Setup ESnet IRI Service Clients
-        east_client = ServiceClient.create(
-            type=Constants.ServiceType.AMSC_IRI, 
-            name="iri-east",
-            profile="esnet-iri-east"
-        )
-        session.add_service_client(east_client)
+        # Lookup discovered IRI Service Clients
+        east_client = client.get_service_client("esnet-facility-east")
+        west_client = client.get_service_client("esnet-facility-west")
 
-        west_client = ServiceClient.create(
-            type=Constants.ServiceType.AMSC_IRI, 
-            name="iri-west",
-            profile="esnet-iri-west"
-        )
-        session.add_service_client(west_client)
+        if not east_client:
+            self.fail("IRI client 'esnet-facility-east' not found. Check credentials or AMSC_TOKEN.")
+        if not west_client:
+            self.fail("IRI client 'esnet-facility-west' not found. Check credentials or AMSC_TOKEN.")
 
         # Discover compute resources from each site
         print("\n--- Discovering Compute Resources ---")
@@ -114,7 +107,13 @@ class SENSENetworkedJobs(unittest.TestCase):
             print(f"  {job.name} API ID: {job.id}")
 
     def main(self, use_network=False):
-        client = Client()
+        client = Client(discover_endpoints=True)
+
+        # Show discovered service clients
+        print("\n--- Discovered Service Clients ---")
+        for sc in client.get_service_client():
+            print(f"  {sc.name} ({sc.type}) -> {getattr(sc, 'endpoint_uri', 'N/A')}")
+
         session = client.create_session("sense-networked-jobs")
 
         # Infrastructure resources are always added to the session

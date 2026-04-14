@@ -108,6 +108,7 @@ class Constants:
     NETWORK_STITCH_OPTION = "stitch_option"
     NETWORK_STITCH_CONFIG = "policy"
     PROVIDER = 'provider'
+    DEFAULT_IRO_ENDPOINT = "https://sense-o-east.es.net:8443/StackV-web/restapi"
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
     
     class ServiceType:
