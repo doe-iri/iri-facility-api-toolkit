@@ -22,15 +22,15 @@ pip install amscrot-py
 AmSCROT reads provider credentials from `~/.amscrot/credentials.yml`. Each section key corresponds to a service type or profile name:
 
 ```yaml
-esnet-iri:
+esnet-iri-east:
   client_type: AMSC_IRI
   api_key: <token>
-  api_endpoint: https://iri.es.net/api/v1
+  api_endpoint: https://iri-dev.ppg.es.net
 
 nersc-iri:
   client_type: AMSC_IRI
   api_key: <token>
-  api_endpoint: https://api.iri.nersc.gov/api/v1
+  api_endpoint: https://api.iri.nersc.gov
 
 amsc-iro:
   client_type: AMSC_IRO
