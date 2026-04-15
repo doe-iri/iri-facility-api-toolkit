@@ -23,14 +23,17 @@ AmSCROT reads provider credentials from `~/.amscrot/credentials.yml`. Each secti
 
 ```yaml
 esnet-iri:
+  client_type: AMSC_IRI
   api_key: <token>
   api_endpoint: https://iri.es.net/api/v1
 
 nersc-iri:
+  client_type: AMSC_IRI
   api_key: <token>
   api_endpoint: https://api.iri.nersc.gov/api/v1
 
 amsc-iro:
+  client_type: AMSC_IRO
   api_key: <token>
   api_endpoint: https://...
 ```
@@ -51,7 +54,80 @@ An example credentials file is provided in [credentials-template.yml](examples/c
 
 ## Basic Usage
 
-### 1. Set up a Client and ServiceClient
+AmSCROT offers three ways to set up service clients: **automatic discovery**, **automatic generation**, and **manual definition**. Each require credentials in `~/.amscrot/credentials.yml`.
+
+### Option A: Automatic Endpoint Discovery (recommended)
+
+```python
+from amscrot.client.client import Client
+
+client = Client(discover_endpoints=True)
+```
+
+With `discover_endpoints=True`, the `Client` queries the AmSC IRO facility registry and automatically creates an `IriServiceClient` for each discovered facility. Credentials are matched by comparing each facility's `api_endpoint` against your `credentials.yml` profiles that have `client_type: AMSC_IRI`:
+
+```yaml
+# ~/.amscrot/credentials.yml
+nersc-iri:
+  client_type: AMSC_IRI
+  api_key: <token>
+  api_endpoint: https://api.iri.nersc.gov
+
+alcf-iri:
+  client_type: AMSC_IRI
+  api_key: <token>
+  api_endpoint: https://api.alcf.anl.gov
+```
+
+**Token resolution order** per discovered facility:
+1. **Credential profile match** — if a profile with `client_type: AMSC_IRI` has a matching `api_endpoint`, that profile is used.
+2. **`AMSC_TOKEN` env var** — if no profile matches, the `AMSC_TOKEN` environment variable is used as a fallback.
+3. **Skip** — if neither is available, the facility is skipped with a warning.
+
+Service clients are named using a slugified version of the facility name (e.g., `"Argonne Leadership Computing Facility"` → `"argonne-leadership-computing-facility"`):
+
+```python
+# Access auto-discovered clients by name
+nersc = client.get_service_client("national-energy-research-scientific-computing-center")
+alcf  = client.get_service_client("argonne-leadership-computing-facility")
+
+# List all discovered clients
+print("Discovered:", [sc.name for sc in client.service_clients])
+```
+
+### Option B: Auto-Create from Credentials File
+
+```python
+from amscrot.client.client import Client
+
+client = Client(create_service_clients=True)
+```
+
+With `create_service_clients=True`, the `Client` reads `~/.amscrot/credentials.yml` and creates a `ServiceClient` for every entry that has a `client_type` field. Each credential profile becomes a service client named after its YAML key:
+
+```yaml
+# Creates two service clients: "nersc-iri" and "esnet-iri-east"
+nersc-iri:
+  client_type: AMSC_IRI
+  api_key: <token>
+  api_endpoint: https://api.iri.nersc.gov
+
+esnet-iri-east:
+  client_type: AMSC_IRI
+  api_key: <token>
+  api_endpoint: https://iri-dev.ppg.es.net
+```
+
+```python
+nersc = client.get_service_client("nersc-iri")
+east  = client.get_service_client("esnet-iri-east")
+```
+
+This mode does **not** contact any external registry — it works entirely from your local credentials file. Entries without `client_type` are skipped with a warning.
+
+### Option C: Manual ServiceClient Definition
+
+Use a credential profile from `credentials.yml`:
 
 ```python
 from amscrot.client.client import Client
@@ -60,7 +136,6 @@ from amscrot.util.constants import Constants
 
 client = Client()
 
-# Choose a provider: KUBE, AMSC_IRI, AMSC_IRO
 svc = ServiceClient.create(
     type=Constants.ServiceType.AMSC_IRI,
     name="nersc-compute",
@@ -68,6 +143,40 @@ svc = ServiceClient.create(
 )
 client.add_service_client(svc)
 ```
+
+Or define credentials entirely in code — no `credentials.yml` needed:
+
+```python
+client = Client()
+
+# Add credentials programmatically
+client.add_credential(
+    profile="my-nersc",
+    client_type="AMSC_IRI",
+    api_key="<token>",
+    api_endpoint="https://api.iri.nersc.gov"
+)
+
+svc = ServiceClient.create(
+    type=Constants.ServiceType.AMSC_IRI,
+    name="nersc-compute",
+    profile="my-nersc"
+)
+client.add_service_client(svc)
+```
+
+With manual setup, you control exactly which service clients exist, their names, and which credential profiles they use. This is useful for testing, notebooks, or when credentials come from environment variables or a secrets manager.
+
+### When to Use Each
+
+| | `discover_endpoints` | `create_service_clients` | Manual `ServiceClient.create()` |
+|---|---|---|---|
+| **Setup** | One line | One line | Explicit per-client |
+| **Source** | IRO facility registry (remote) | `credentials.yml` (local) | Code |
+| **Naming** | Auto-slugified from registry | YAML key names | You choose |
+| **Credentials** | Matched by `api_endpoint` | Direct from each entry | Explicit `profile=` |
+| **Best for** | Multi-site, dynamic environments | Stable multi-facility setups | Testing, custom configs |
+| **Requires** | IRO registry reachable | `client_type` in credentials | Only the credential profile |
 
 ### 2. Discover Available Resources
 
