@@ -11,7 +11,8 @@ from pathlib import Path
 import globus_sdk
 from globus_sdk.exc import GlobusAPIError
 
-CLIENT_ID = "fae5c579-490a-4d76-b6eb-d78f65caeb63"
+CLIENT_ID = "8b84fc2d-49e9-49ea-b54d-b3a29a70cf31"
+# CLIENT_ID = "fae5c579-490a-4d76-b6eb-d78f65caeb63"
 RESOURCE_SERVER = "auth.globus.org"
 FACILITY_SCOPE_MAP = {
     "nersc": {

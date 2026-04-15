@@ -351,8 +351,8 @@ class IriServiceClient(ServiceClient):
         from amsc_iri.models.container import Container as IriContainer
 
         # --- Executable / arguments ---
-        executable = job_spec.executable or "echo"
-        arguments = job_spec.arguments if job_spec.arguments else None
+        executable = job_spec.executable or None
+        arguments = job_spec.arguments or None
 
         # --- Keyword args for IriJobSpec (only set what we have) ---
         kwargs: dict = {"executable": executable}
@@ -431,8 +431,8 @@ class IriServiceClient(ServiceClient):
 
         Args:
             job: The Job object to validate.
-            skip_checks: If True, resource availability checks are
-                downgraded from errors to warnings.
+            skip_checks: If True, all validation errors are downgraded
+                to warnings and PlanError is never raised.
         """
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Planning IRI job for '{name}'...")
@@ -442,7 +442,11 @@ class IriServiceClient(ServiceClient):
         
         # Check if client is available
         if not self._available:
-            raise PlanError(errors=["IRI client not available - check credentials"])
+            msg = "IRI client not available - check credentials"
+            if skip_checks:
+                warnings.append(msg)
+            else:
+                raise PlanError(errors=[msg])
         
         # Validate resource_id is present
         resource_id = None
@@ -469,17 +473,20 @@ class IriServiceClient(ServiceClient):
                         if not (isinstance(iri_resource.current_status, str) and iri_resource.current_status == Status.UP.value):
                             status_val = iri_resource.current_status.value if hasattr(iri_resource.current_status, 'value') else str(iri_resource.current_status)
                             msg = f"Resource '{resource_id}' is not UP (current status: {status_val})"
-                            if skip_checks:
-                                warnings.append(msg)
-                            else:
-                                errors.append(msg)
+                            errors.append(msg)
                 elif iri_resource is None:
                     warnings.append(f"Resource '{resource_id}' not found.")
             except Exception as e:
                 warnings.append(f"Could not verify status for resource '{resource_id}': {e}")
 
         if errors:
-            raise PlanError(errors=errors, warnings=warnings)
+            if skip_checks:
+                for err in errors:
+                    self.logger.warning(f"[{self.name}] {err}")
+                warnings.extend(errors)
+                errors = []
+            else:
+                raise PlanError(errors=errors, warnings=warnings)
 
         self.logger.debug(f"[{self.name}] IRI Job Validated: {name}")
         if resource_id:

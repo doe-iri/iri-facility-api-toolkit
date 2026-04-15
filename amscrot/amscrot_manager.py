@@ -6,6 +6,7 @@ from amscrot.util import state as sutil
 from amscrot.model.state import ProviderState
 from amscrot.exceptions import ControllerException
 from amscrot.util.constants import Constants
+from amscrot.client.job import JobState
 
 logger = utils.init_logger()
 
@@ -147,6 +148,7 @@ class AmSCROTManager:
                 if plan_intent_func:
                     result = plan_intent_func(group_jobs, intent_uuid)
                     for job in group_jobs:
+                        job.set_status(JobState.PLANNED)
                         job_summaries.append({
                             "name": job.name,
                             "type": str(job.type),
@@ -163,6 +165,7 @@ class AmSCROTManager:
             for job in standalone_jobs:
                 if hasattr(job, 'service_client') and job.service_client:
                     result = job.service_client.plan(job, skip_checks=skip_checks)
+                    job.set_status(JobState.PLANNED)
                     job_summaries.append({
                         "name": job.name,
                         "type": str(job.type),
@@ -256,6 +259,7 @@ class AmSCROTManager:
                 if hasattr(job, 'service_client') and job.service_client:
                     # Execute real create (client populates job.id implicitly)
                     job.service_client.create(job)
+                    job.set_status(JobState.PENDING)
                     config_dict = list(job.to_config().values())[0]
                     config_dict["status"] = "SUBMITTED"
                     if not config_dict.get("resource_id"):
@@ -404,6 +408,7 @@ class AmSCROTManager:
             for job in jobs:
                 if hasattr(job, 'service_client') and job.service_client:
                     job.service_client.destroy(job)
+                    job.set_status(JobState.CANCELED)
                     job_summaries.append({
                         "name": job.name,
                         "service_client": job.service_client.name,

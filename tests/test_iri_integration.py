@@ -107,8 +107,14 @@ PROFILE_CONFIGS = {
         "directory": "/home/kissel",
         "stdout_path": "/home/kissel/iri_test_stdout.log",
         "stderr_path": "/home/kissel/iri_test_stderr.log",
-        "exclusive_node_use": False,
-        "resource_filter": None,
+        "resource_filter": lambda d: d.get("name") == "Aurora",
+        # ALCF does not support many standard resource fields (501)
+        "resources": {
+            "node_count": 1,
+            "memory": 268435456,
+        },
+        # ALCF PBS requires filesystems to be declared
+        "custom_attributes": {"filesystems": "home"},
     },
 }
 
@@ -228,18 +234,22 @@ class TestIriIntegration:
         print(f"  Storage resource: {storage_resource_id}")
 
         # --- Build job with profile-specific attributes ---
+        default_resources = {
+            "node_count": 1,
+            "process_count": 1,
+            "processes_per_node": 1,
+            "cpu_cores_per_process": 1,
+            "gpu_cores_per_process": None,
+            "exclusive_node_use": pcfg.get("exclusive_node_use", False),
+            "memory": 268435456,
+        }
+        # Allow per-profile resource overrides (e.g. ALCF omits unsupported fields)
+        resources = pcfg.get("resources", default_resources)
+
         spec = JobSpec(
             executable="/bin/echo",
             arguments=["Hello AmSC"],
-            resources={
-                "node_count": 1,
-                "process_count": 1,
-                "processes_per_node": 1,
-                "cpu_cores_per_process": 1,
-                "gpu_cores_per_process": None,
-                "exclusive_node_use": pcfg["exclusive_node_use"],
-                "memory": 268435456,
-            },
+            resources=resources,
             attributes={
                 "resource_id": resource_id,
                 "directory": pcfg["directory"],
@@ -248,6 +258,7 @@ class TestIriIntegration:
                 "account": pcfg["account"],
                 "stdout_path": pcfg["stdout_path"],
                 "stderr_path": pcfg["stderr_path"],
+                "custom_attributes": pcfg.get("custom_attributes"),
             },
         )
 
@@ -261,21 +272,30 @@ class TestIriIntegration:
         session.add_job(job)
 
         try:
+            # Verify initial status
+            assert job.status == JobState.INIT, f"Expected INIT, got {job.status}"
+
             # 1. Plan
             print("  Plan...")
-            plan_result = iri_client.plan(job, skip_checks=True)
+            plan_result = session.plan(skip_checks=True)
             print(f"    result: {plan_result}")
-            assert plan_result["status"] == "PLANNED"
+            assert job.status == JobState.PLANNED, f"Expected PLANNED after plan, got {job.status}"
+            session.show()
 
-            # 2. Create
-            print("  Create...")
-            iri_client.create(job)
+            # 2. Apply (creates resources + submits jobs)
+            print("  Apply...")
+            apply_result = session.apply()
+            job_summaries = apply_result.get("jobs", [])
+            print(f"    Jobs submitted: {len(job_summaries)}")
+            for js in job_summaries:
+                print(f"    {js.get('name')}: id={js.get('id', job.id)}")
+
             if not job.id:
-                msg = f"[{profile}] Job not submitted — create returned no job ID"
+                msg = f"[{profile}] Job not submitted — apply returned no job ID"
                 print(f"  SKIP: {msg}")
                 pytest.skip(msg)
-            assert job.resource_id == resource_id
-            print(f"    Job ID: {job.id}")
+            assert job.status == JobState.PENDING, f"Expected PENDING after apply, got {job.status}"
+            print(f"    Job ID: {job.id}, status: {job.status}")
 
             # 3. Wait
             print("  Wait...")
@@ -290,7 +310,8 @@ class TestIriIntegration:
             assert status_result.state == JobState.COMPLETED, (
                 f"[{profile}] Job ended with state {status_result.state}"
             )
-            print(f"    Completed. State: {status_result.state}")
+            assert job.status == JobState.COMPLETED, f"Expected COMPLETED after wait, got {job.status}"
+            print(f"    Completed. job.status: {job.status}")
 
             # 4. Fetch output files
             print("  Fetch output files...")
@@ -331,9 +352,9 @@ class TestIriIntegration:
             # 5. Destroy
             print("  Destroy...")
             try:
-                if job.id:
-                    iri_client.destroy(job)
-                    print("    Done")
+                session.destroy()
+                assert job.status == JobState.CANCELED, f"Expected CANCELED after destroy, got {job.status}"
+                print(f"    Done. job.status: {job.status}")
             except Exception as cleanup_error:
                 print(f"    Warning: {cleanup_error}")
 

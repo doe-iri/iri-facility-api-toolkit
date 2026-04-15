@@ -339,6 +339,11 @@ class Session:
                 for job_name, job in jobs_list:
                     status = sc.status(job)
                     results[job_name] = status
+                    # Update job.status to stay in sync with provider state
+                    try:
+                        job.set_status(status.state)
+                    except (ValueError, KeyError):
+                        pass  # state string may not map to JobState enum
                     if status.state in target_set:
                         settled_this_round.append(job_name)
 
