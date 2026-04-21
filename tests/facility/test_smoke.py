@@ -148,12 +148,17 @@ class TestFullWorkflowSmoke:
         assert session is mock_session
 
     def test_token_refresh_on_auth_error(self):
+        # Scenario: token_provider is given; first discover() raises 401;
+        # _call_api should call provider() once, rebuild the service client,
+        # and retry using the new client's discover() — which succeeds.
+
         token_calls = [0]
 
         def provider():
             token_calls[0] += 1
             return f"token-{token_calls[0]}"
 
+        # 1. Two service-client instances: initial (raises 401) and refreshed (succeeds)
         mock_sc_initial = MagicMock()
         mock_sc_initial.name = "sc"
         mock_discovery = MagicMock()
@@ -161,13 +166,10 @@ class TestFullWorkflowSmoke:
             MagicMock(data={"id": "r1", "name": "Polaris",
                             "resource_type": "compute", "current_status": "up"})
         ]
-        mock_sc_initial.discover.return_value = mock_discovery
 
         mock_sc_refreshed = MagicMock()
         mock_sc_refreshed.name = "sc-refreshed"
         mock_sc_refreshed.discover.return_value = mock_discovery
-        mock_sc_refreshed.plan.return_value = {"status": "PLANNED", "warnings": []}
-        mock_sc_refreshed.create.side_effect = lambda job, **kw: setattr(job, "id", "j1")
 
         sc_instances = [mock_sc_initial, mock_sc_refreshed]
         sc_call_count = [0]
@@ -177,7 +179,7 @@ class TestFullWorkflowSmoke:
             sc_call_count[0] += 1
             return sc_instances[idx]
 
-        # Patch discover on initial sc to raise 401 on first call
+        # 2. First call to discover raises 401; subsequent calls succeed
         discover_call = [0]
 
         def flaky_discover():
@@ -188,6 +190,7 @@ class TestFullWorkflowSmoke:
 
         mock_sc_initial.discover.side_effect = flaky_discover
 
+        # 3. Build FacilityClient with token_provider, then trigger the 401 path
         with patch("amscrot.facility.client.ServiceClient") as MockSC, \
              patch("amscrot.facility.client.Session"):
             MockSC.create.side_effect = make_sc
@@ -195,5 +198,7 @@ class TestFullWorkflowSmoke:
             facility = client.facility(ENDPOINT, token_provider=provider)
 
             resources = facility.resources()
-            assert len(resources) == 1
-            assert token_calls[0] >= 1  # provider was called for refresh
+
+        # 4. Verify: discovery succeeded, provider was called exactly once for refresh
+        assert len(resources) == 1
+        assert token_calls[0] == 1  # provider called exactly once (for the retry)
