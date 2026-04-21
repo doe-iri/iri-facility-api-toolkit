@@ -125,18 +125,18 @@ class TestFilesystemClientDelegation:
         fc.mkdir("/home/user/newdir")
         mock_fs.mkdir.assert_called_once_with("res-123", "/home/user/newdir", p=True)
 
-    def test_compress_passes_all_kwargs(self):
+    def test_compress_passes_dereference_only(self):
         fc, mock_fs = _make_client()
         fc.compress("/src", "/dst.tar.gz", pattern="*.log", dereference=True, compression="gzip")
         mock_fs.compress.assert_called_once_with(
             "res-123", "/src", "/dst.tar.gz",
-            pattern="*.log", dereference=True, compression="gzip"
+            dereference=True
         )
 
-    def test_extract_passes_compression(self):
+    def test_extract_no_kwargs_forwarded(self):
         fc, mock_fs = _make_client()
         fc.extract("/src.tar.gz", "/dst", compression="gzip")
-        mock_fs.extract.assert_called_once_with("res-123", "/src.tar.gz", "/dst", compression="gzip")
+        mock_fs.extract.assert_called_once_with("res-123", "/src.tar.gz", "/dst")
 
     def test_result_accessible_after_wait(self):
         fc, _ = _make_client()

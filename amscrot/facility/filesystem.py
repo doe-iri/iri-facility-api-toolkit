@@ -100,10 +100,6 @@ class FilesystemClient:
         """Change file permissions."""
         return self._run("chmod", path, mode)
 
-    def chown(self, path: str, *, owner: str | None = None, group: str | None = None) -> Task:
-        """Change file ownership."""
-        return self._run("chown", path, owner=owner, group=group)
-
     # ── Archive operations ─────────────────────────────────────────────────
 
     def compress(
@@ -116,11 +112,11 @@ class FilesystemClient:
         compression: str | None = None,
     ) -> Task:
         """Compress files into an archive."""
-        return self._run("compress", source, destination, pattern=pattern, dereference=dereference, compression=compression)
+        return self._run("compress", source, destination, dereference=dereference)
 
     def extract(self, source: str, destination: str, *, compression: str | None = None) -> Task:
         """Extract an archive."""
-        return self._run("extract", source, destination, compression=compression)
+        return self._run("extract", source, destination)
 
     def __repr__(self) -> str:
         return f"FilesystemClient(resource_id={self._resource_id!r})"
