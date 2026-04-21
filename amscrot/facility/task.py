@@ -1,6 +1,8 @@
 """Async-compatible wrapper for IRI filesystem operation results."""
 from __future__ import annotations
 
+from typing import Any
+
 TERMINAL_TASK_STATES = frozenset({"completed", "failed", "canceled"})
 
 
@@ -32,13 +34,13 @@ class Task:
         return True
 
     @property
-    def result(self):
+    def result(self) -> Any:
         """Operation output. Raises the stored exception if the operation failed."""
         if self._error is not None:
             raise self._error
         return self._result
 
-    def wait(self, timeout: int = 300, poll_interval: int = 2) -> "Task":
+    def wait(self, timeout: float = 300, poll_interval: float = 2) -> "Task":
         """No-op — the operation is already complete.
 
         Exists for API compatibility with amsc-python-client. If async
