@@ -116,11 +116,11 @@ class FilesystemClient:
         compression: str | None = None,
     ) -> Task:
         """Compress files into an archive."""
-        return self._run("compress", source, destination, dereference=dereference)
+        return self._run("compress", source, destination, pattern=pattern, dereference=dereference, compression=compression)
 
     def extract(self, source: str, destination: str, *, compression: str | None = None) -> Task:
         """Extract an archive."""
-        return self._run("extract", source, destination)
+        return self._run("extract", source, destination, compression=compression)
 
     def __repr__(self) -> str:
         return f"FilesystemClient(resource_id={self._resource_id!r})"
