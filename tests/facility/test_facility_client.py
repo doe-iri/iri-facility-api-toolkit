@@ -182,6 +182,34 @@ class TestCallApi:
         with pytest.raises(Exception, match="401"):
             fc._call_api(failing_op)
 
+    def test_call_api_retry_uses_refreshed_service_client(self):
+        """After a 401, retry must use the new service client's method, not the old one."""
+        provider_token = ["token-v1"]
+
+        def provider():
+            provider_token[0] = "token-v2"
+            return provider_token[0]
+
+        with patch("amscrot.facility.client.ServiceClient") as MockSC, \
+             patch("amscrot.facility.client.Session"):
+            old_sc = MagicMock()
+            new_sc = MagicMock()
+            MockSC.create.side_effect = [old_sc, new_sc]
+            fc = FacilityClient(endpoint=ENDPOINT, token_provider=provider)
+            fc._session = MagicMock()
+
+        # Simulate: old_sc.discover raises 401; new_sc.discover succeeds
+        old_sc.discover.side_effect = Exception("401 Unauthorized")
+        new_sc.discover.return_value = MagicMock(compute=[])
+
+        with patch("amscrot.facility.client.ServiceClient") as MockSC2:
+            MockSC2.create.return_value = new_sc
+            result = fc._call_api(old_sc.discover)
+
+        # The retry must have used new_sc.discover, not old_sc.discover
+        new_sc.discover.assert_called_once()
+        assert result.compute == []
+
 
 # ── _submit_job ────────────────────────────────────────────────────────────
 

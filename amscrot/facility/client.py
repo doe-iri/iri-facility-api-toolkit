@@ -120,8 +120,31 @@ class FacilityClient:
                 self._logger.warning(
                     f"[{self._name}] Auth error detected, refreshing token and retrying."
                 )
+                # Before rebuilding, detect whether `operation` is a bound method of
+                # the current service client so we can re-resolve it on the new one.
+                # We scan the old client's attributes by identity because __name__ is
+                # not reliable for all callable types (e.g. MagicMock children).
+                old_client = self._service_client
+                sc_method_name = next(
+                    (
+                        attr
+                        for attr in dir(old_client)
+                        if not attr.startswith("_")
+                        and getattr(old_client, attr, None) is operation
+                    ),
+                    None,
+                )
                 self._service_client = self._build_service_client()
-                return operation(*args, **kwargs)
+                # Re-resolve the method on the refreshed client when possible.
+                # For operations that were bound to the old service client, look up
+                # the same name on the new client. For plain callables (lambdas,
+                # test fakes), fall back to the original operation.
+                refreshed_op = (
+                    getattr(self._service_client, sc_method_name)
+                    if sc_method_name is not None
+                    else operation
+                )
+                return refreshed_op(*args, **kwargs)
             raise
 
     def _submit_job(
