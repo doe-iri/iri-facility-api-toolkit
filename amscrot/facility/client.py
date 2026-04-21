@@ -92,12 +92,13 @@ class FacilityClient:
             ValueError: If no resource with that name is found.
         """
         name_lower = name.lower()
-        for r in self.resources():
+        available = self.resources()
+        for r in available:
             if r.name.lower() == name_lower:
                 return r
         raise ValueError(
             f"No resource found with name {name!r} at {self._endpoint}. "
-            f"Available: {[r.name for r in self.resources()]}"
+            f"Available: {[r.name for r in available]}"
         )
 
     @property

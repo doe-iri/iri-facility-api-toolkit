@@ -150,7 +150,7 @@ class Job:
 
     @property
     def status(self) -> str:
-        """Live state — calls the API to refresh."""
+        """Live state — calls the IRI API on every access to refresh."""
         return self.refresh()
 
     @property

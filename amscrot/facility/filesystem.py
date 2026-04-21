@@ -80,7 +80,7 @@ class FilesystemClient:
 
     def cp(self, source: str, destination: str, *, dereference: bool = False) -> Task:
         """Copy a file or directory."""
-        return self._run("cp", source, destination, dereference=dereference)
+        return self._run("cp", source, destination)
 
     def mv(self, source: str, destination: str) -> Task:
         """Move (rename) a file or directory."""

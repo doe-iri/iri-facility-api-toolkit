@@ -115,10 +115,10 @@ class TestFilesystemClientDelegation:
         fc.head("/home/user/file.txt", lines=50)
         mock_fs.head.assert_called_once_with("res-123", "/home/user/file.txt", lines=50, bytes=None)
 
-    def test_cp_passes_dereference(self):
+    def test_cp_does_not_forward_dereference(self):
         fc, mock_fs = _make_client()
         fc.cp("/src", "/dst", dereference=True)
-        mock_fs.cp.assert_called_once_with("res-123", "/src", "/dst", dereference=True)
+        mock_fs.cp.assert_called_once_with("res-123", "/src", "/dst")
 
     def test_mkdir_defaults_parents_true(self):
         fc, mock_fs = _make_client()
