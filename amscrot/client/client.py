@@ -300,6 +300,41 @@ class Client:
                 f"and AMSC_TOKEN not set."
             )
 
+    def facility(
+        self,
+        endpoint: str,
+        *,
+        token=None,
+        token_provider=None,
+        name=None,
+    ):
+        """Connect to an IRI-compliant facility.
+
+        Args:
+            endpoint: Facility API base URL (e.g., "https://iri-dev.ppg.es.net").
+            token: Static bearer token (mutually exclusive with token_provider).
+            token_provider: Callable returning the current token (supports refresh).
+            name: Optional display name for logging.
+
+        Returns:
+            FacilityClient providing resource discovery and job submission.
+
+        Example::
+
+            facility = client.facility("https://api.alcf.anl.gov", token="my-key")
+            job = facility.resource("Polaris").submit(
+                executable="/bin/echo", nodes=1, queue="debug", account="proj"
+            )
+            job.wait()
+        """
+        from amscrot.facility.client import FacilityClient
+        return FacilityClient(
+            endpoint=endpoint,
+            token=token,
+            token_provider=token_provider,
+            name=name,
+        )
+
     def create_session(self, name: str) -> Session:
         session = Session(name=name, providers=list(self._providers), service_clients=list(self._service_clients.values()))
         self._sessions.append(session)
