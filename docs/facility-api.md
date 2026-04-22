@@ -128,7 +128,7 @@ facility = client.facility(
 
 ## Resource Discovery
 
-`facility.resources()` returns all compute resources at the facility. Discovery results are cached after the first call.
+`facility.resources()` returns all compute, storage, and network resources at the facility. Allocation and other resource types are excluded. Discovery results are cached after the first call.
 
 ```python
 resources = facility.resources()

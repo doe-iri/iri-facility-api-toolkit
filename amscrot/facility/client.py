@@ -77,12 +77,14 @@ class FacilityClient:
     # ── Public API ─────────────────────────────────────────────────────────
 
     def resources(self) -> list:
-        """Return all available resources at this facility."""
+        """Return compute, storage, and network resources at this facility."""
         from amscrot.facility.models import Resource
+        _INCLUDED_TYPES = {"compute", "storage", "network"}
         discovery = self._get_discovery()
         return [
             Resource(data=item.data, facility_client=self)
-            for item in discovery.compute
+            for item in discovery.all
+            if item.type in _INCLUDED_TYPES
         ]
 
     def resource(self, name: str):

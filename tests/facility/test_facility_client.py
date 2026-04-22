@@ -65,17 +65,28 @@ class TestFacilityClientInit:
 
 # ── Resource discovery ─────────────────────────────────────────────────────
 
+def _make_discovery(*items):
+    """Build a mock DiscoveryResult where .all returns the given items."""
+    mock_discovery = MagicMock()
+    mock_discovery.all = list(items)
+    return mock_discovery
+
+
+def _res(resource_id, name, resource_type, status="up"):
+    return MagicMock(
+        type=resource_type,
+        data={"id": resource_id, "name": name, "resource_type": resource_type,
+              "current_status": status},
+    )
+
+
 class TestFacilityClientDiscovery:
     def test_resources_wraps_compute_resources(self):
         fc, mock_sc, _ = _make_facility()
-        mock_discovery = MagicMock()
-        mock_discovery.compute = [
-            MagicMock(data={"id": "r1", "name": "Polaris", "resource_type": "compute",
-                            "current_status": "up"}),
-            MagicMock(data={"id": "r2", "name": "Aurora", "resource_type": "compute",
-                            "current_status": "up"}),
-        ]
-        mock_sc.discover.return_value = mock_discovery
+        mock_sc.discover.return_value = _make_discovery(
+            _res("r1", "Polaris", "compute"),
+            _res("r2", "Aurora", "compute"),
+        )
 
         resources = fc.resources()
         assert len(resources) == 2
@@ -83,11 +94,25 @@ class TestFacilityClientDiscovery:
         assert resources[0].name == "Polaris"
         assert resources[1].name == "Aurora"
 
+    def test_resources_includes_storage_and_network(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.discover.return_value = _make_discovery(
+            _res("r1", "Polaris", "compute"),
+            _res("r2", "Home", "storage"),
+            _res("r3", "ESnet", "network"),
+            _res("r4", "proj-alloc", "allocation"),  # should be excluded
+        )
+
+        resources = fc.resources()
+        names = [r.name for r in resources]
+        assert "Polaris" in names
+        assert "Home" in names
+        assert "ESnet" in names
+        assert "proj-alloc" not in names
+
     def test_resources_caches_discovery(self):
         fc, mock_sc, _ = _make_facility()
-        mock_discovery = MagicMock()
-        mock_discovery.compute = []
-        mock_sc.discover.return_value = mock_discovery
+        mock_sc.discover.return_value = _make_discovery()
 
         fc.resources()
         fc.resources()
@@ -95,12 +120,9 @@ class TestFacilityClientDiscovery:
 
     def test_resource_by_name_case_insensitive(self):
         fc, mock_sc, _ = _make_facility()
-        mock_discovery = MagicMock()
-        mock_discovery.compute = [
-            MagicMock(data={"id": "r1", "name": "Polaris", "resource_type": "compute",
-                            "current_status": "up"}),
-        ]
-        mock_sc.discover.return_value = mock_discovery
+        mock_sc.discover.return_value = _make_discovery(
+            _res("r1", "Polaris", "compute"),
+        )
 
         r = fc.resource("polaris")
         assert r.name == "Polaris"
@@ -110,12 +132,9 @@ class TestFacilityClientDiscovery:
 
     def test_resource_raises_on_no_match(self):
         fc, mock_sc, _ = _make_facility()
-        mock_discovery = MagicMock()
-        mock_discovery.compute = [
-            MagicMock(data={"id": "r1", "name": "Polaris", "resource_type": "compute",
-                            "current_status": "up"}),
-        ]
-        mock_sc.discover.return_value = mock_discovery
+        mock_sc.discover.return_value = _make_discovery(
+            _res("r1", "Polaris", "compute"),
+        )
 
         with pytest.raises(ValueError, match="No resource found"):
             fc.resource("NonExistent")
