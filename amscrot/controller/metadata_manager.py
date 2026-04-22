@@ -141,59 +141,6 @@ class MetadataManager:
             logger.warning(f"Unable to read local metadata file: {path}: {e}")
             return None
 
-    #
-    #
-    #
-    # def _get_remote_metadata(self) -> Optional[Dict[str, Any]]:
-    #     """
-    #     Fetch metadata from the remote repository using SENSE-O `MetadataApi()`.
-    #
-    #     Returns:
-    #         dict when found and valid; otherwise None (e.g., record not found).
-    #     """
-    #     if not os.getenv("HOME"):
-    #         os.environ["HOME"] = str(Path.home())
-    #
-    #     from sense.client.metadata_api import MetadataApi
-    #
-    #     # Preflight: the SENSE-O client expects an auth config file.
-    #     auth_path = Path.home() / ".sense-o-auth.yaml"
-    #     if not auth_path.exists():
-    #         raise FileNotFoundError(
-    #             f"SENSE-O auth config not found at '{auth_path}'. "
-    #             "Remote metadata fetch expects the SENSE-O client default configuration "
-    #             "(same behavior as sense_util.py)."
-    #         )
-    #
-    #     metadata_api = MetadataApi()
-    #
-    #     try:
-    #         record = metadata_api.get_metadata(domain=self.config.remote_domain, name=self.config.metadata_id)
-    #     except ValueError as e:
-    #         # If the record doesn't exist, treat it as "no remote metadata" so
-    #         # local|remote / remote|local preference works without crashing.
-    #         if self._is_remote_not_found(e):
-    #             logger.info(
-    #                 "Remote metadata not found (404): "
-    #                 f"{self.config.remote_domain}/{self.config.metadata_id}"
-    #             )
-    #             return None
-    #         raise
-    #
-    #     # Normalize return types for the rest of amscrot.
-    #     if isinstance(record, str):
-    #         try:
-    #             parsed = json.loads(record)
-    #         except json.JSONDecodeError as e:
-    #             raise ValueError(f"Remote metadata returned a string but not valid JSON: {e}") from e
-    #         if not isinstance(parsed, dict):
-    #             raise TypeError(f"Unexpected remote metadata JSON type: {type(parsed)}")
-    #         return parsed
-    #
-    #     if not isinstance(record, dict):
-    #         raise TypeError(f"Unexpected remote metadata type: {type(record)}")
-    #
-    #     return record
 
     def _to_st_mtime(self, s: str) -> float:
         # Parse and ensure UTC timezone
