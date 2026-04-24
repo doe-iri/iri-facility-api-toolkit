@@ -257,5 +257,4 @@ class MetadataManager:
 
 
     # how to run
-    # examples available at 'https://gitlab.com/amsc2/infrastructure-and-services/infrastructure-services/resource-orchestration/amsc-isro-toolkit/-/blob/develop/tests/test_metadata_manager.py'
-    # from amscrot.controller.metadata_manager import MetadataManager
+    # examples are available at 'https://gitlab.com/amsc2/infrastructure-and-services/infrastructure-services/resource-orchestration/amsc-isro-toolkit/-/blob/develop/tests/test_metadata_manager.py'
