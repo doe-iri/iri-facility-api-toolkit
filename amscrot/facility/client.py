@@ -12,6 +12,7 @@ from amscrot.client.job import (
     JobType,
     JobServiceType,
 )
+from amscrot.model.metadata import Incident, StatusEvent
 from amscrot.util import utils
 
 
@@ -102,6 +103,42 @@ class FacilityClient:
             f"No resource found with name {name!r} at {self._endpoint}. "
             f"Available: {[r.name for r in available]}"
         )
+
+    def incidents(self) -> list[Incident]:
+        """Return all incidents at this facility (live API call).
+
+        Mirrors ``amsc_client.facility.FacilityClient.incidents()``.
+        Each raw incident dict is wrapped in
+        an :class:`~amscrot.model.metadata.Incident` model.
+        """
+        raw = self._call_api(self._service_client.get_incidents)
+        return [Incident.from_dict(d) for d in (raw or [])]
+
+    def incident(self, incident_id: str) -> Incident | None:
+        """Return a single incident by ID (live API call).
+
+        Mirrors ``amsc_client.facility.FacilityClient.incident()``.
+
+        Args:
+            incident_id: UUID of the incident to retrieve.
+
+        Returns:
+            :class:`~amscrot.model.metadata.Incident`, or ``None`` if not found.
+        """
+        raw = self._call_api(self._service_client.get_incident, incident_id)
+        return Incident.from_dict(raw) if raw else None
+
+    def events(self, incident_id: str) -> list[StatusEvent]:
+        """Return events for a specific incident (live API call).
+
+        Args:
+            incident_id: UUID of the incident to retrieve events for.
+
+        Returns:
+            List of :class:`~amscrot.model.metadata.StatusEvent` objects.
+        """
+        raw_events = self._call_api(self._service_client.get_events, incident_id)
+        return [StatusEvent.from_dict(d) for d in (raw_events or [])]
 
     @property
     def session(self) -> Session:

@@ -21,16 +21,17 @@ def _build_mock_service_client(job_state_sequence=None):
     mock_sc = MagicMock()
     mock_sc.name = "smoke-sc"
 
-    # discover() returns compute resource
+    # discover() returns compute resource via .all (as consumed by FacilityClient.resources())
+    mock_resource = MagicMock()
+    mock_resource.type = "compute"
+    mock_resource.data = {
+        "id": "res-polaris-001",
+        "name": "Polaris",
+        "resource_type": "compute",
+        "current_status": "up",
+    }
     mock_discovery = MagicMock()
-    mock_discovery.compute = [
-        MagicMock(data={
-            "id": "res-polaris-001",
-            "name": "Polaris",
-            "resource_type": "compute",
-            "current_status": "up",
-        })
-    ]
+    mock_discovery.all = [mock_resource]
     mock_sc.discover.return_value = mock_discovery
 
     # plan() succeeds silently
@@ -161,11 +162,12 @@ class TestFullWorkflowSmoke:
         # 1. Two service-client instances: initial (raises 401) and refreshed (succeeds)
         mock_sc_initial = MagicMock()
         mock_sc_initial.name = "sc"
+        mock_resource = MagicMock()
+        mock_resource.type = "compute"
+        mock_resource.data = {"id": "r1", "name": "Polaris",
+                              "resource_type": "compute", "current_status": "up"}
         mock_discovery = MagicMock()
-        mock_discovery.compute = [
-            MagicMock(data={"id": "r1", "name": "Polaris",
-                            "resource_type": "compute", "current_status": "up"})
-        ]
+        mock_discovery.all = [mock_resource]
 
         mock_sc_refreshed = MagicMock()
         mock_sc_refreshed.name = "sc-refreshed"

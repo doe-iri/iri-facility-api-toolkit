@@ -143,6 +143,16 @@ class IriServiceClient(ServiceClient):
                             alloc_data['_project_name'] = project.name
                             items.append(DiscoveredResource(type="allocation", data=alloc_data))
 
+            # 5. Discover Incidents
+            self.logger.debug(f"[{self.name}] Discovering incidents...")
+            try:
+                incidents = self._status_api.get_incidents()
+                if incidents:
+                    for inc in incidents:
+                        items.append(DiscoveredResource(type="incident", data=inc.to_dict()))
+            except Exception as inc_exc:
+                self.logger.warning(f"[{self.name}] Could not fetch incidents: {inc_exc}")
+
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
@@ -600,6 +610,65 @@ class IriServiceClient(ServiceClient):
                 state="UNKNOWN",
                 message=str(e)
             )
+
+    def get_incidents(self, **filters) -> List[Any]:
+        """Fetch all incidents from the IRI API.
+
+        Args:
+            **filters: Optional filter kwargs forwarded to ``get_incidents()``
+                (e.g. ``status``, ``resource_id``, ``var_from``, ``to``).
+
+        Returns:
+            List of raw incident dicts (from ``amsc_iri.Incident.to_dict()``).
+        """
+        if not self._available:
+            return []
+        try:
+            incidents = self._status_api.get_incidents(**filters)
+            return [inc.to_dict() for inc in incidents] if incidents else []
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] Could not fetch incidents: {exc}")
+            return []
+
+    def get_incident(self, incident_id: str) -> Optional[Any]:
+        """Fetch a single incident by ID from the IRI API.
+
+        Args:
+            incident_id: UUID of the incident to retrieve.
+
+        Returns:
+            Raw incident dict, or ``None`` if not found / unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            inc = self._status_api.get_incident(incident_id=incident_id)
+            return inc.to_dict() if inc else None
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch incident {incident_id!r}: {exc}"
+            )
+            return None
+
+    def get_events(self, incident_id: str) -> List[Any]:
+        """Fetch events for a given incident ID from the IRI API.
+
+        Args:
+            incident_id: The UUID of the incident to fetch events for.
+
+        Returns:
+            List of raw event dicts (from ``amsc_iri.Event.to_dict()``).
+        """
+        if not self._available:
+            return []
+        try:
+            events = self._status_api.get_events_by_incident(incident_id=incident_id)
+            return [e.to_dict() for e in events] if events else []
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch events for incident {incident_id!r}: {exc}"
+            )
+            return []
 
     # -- Filesystem interface -------------------------------------------------
 

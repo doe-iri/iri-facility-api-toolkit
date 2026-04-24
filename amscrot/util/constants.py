@@ -25,6 +25,8 @@ class Constants:
     RES_FACILITY = "facility"
     RES_CAPABILITY = "capability"
     RES_INTENT = "intent"
+    RES_INCIDENT = "incident"
+    RES_EVENT = "event"
 
     RES_TYPE_NODE = "node"
     RES_TYPE_NETWORK = "network"
