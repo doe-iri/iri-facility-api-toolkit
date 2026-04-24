@@ -619,13 +619,13 @@ class IriServiceClient(ServiceClient):
                 (e.g. ``status``, ``resource_id``, ``var_from``, ``to``).
 
         Returns:
-            List of raw incident dicts (from ``amsc_iri.Incident.to_dict()``).
+            List of ``amsc_iri.models.Incident`` objects.
         """
         if not self._available:
             return []
         try:
             incidents = self._status_api.get_incidents(**filters)
-            return [inc.to_dict() for inc in incidents] if incidents else []
+            return list(incidents) if incidents else []
         except Exception as exc:
             self.logger.warning(f"[{self.name}] Could not fetch incidents: {exc}")
             return []
@@ -637,13 +637,12 @@ class IriServiceClient(ServiceClient):
             incident_id: UUID of the incident to retrieve.
 
         Returns:
-            Raw incident dict, or ``None`` if not found / unavailable.
+            ``amsc_iri.models.Incident``, or ``None`` if not found / unavailable.
         """
         if not self._available:
             return None
         try:
-            inc = self._status_api.get_incident(incident_id=incident_id)
-            return inc.to_dict() if inc else None
+            return self._status_api.get_incident(incident_id=incident_id)
         except Exception as exc:
             self.logger.warning(
                 f"[{self.name}] Could not fetch incident {incident_id!r}: {exc}"
@@ -657,13 +656,13 @@ class IriServiceClient(ServiceClient):
             incident_id: The UUID of the incident to fetch events for.
 
         Returns:
-            List of raw event dicts (from ``amsc_iri.Event.to_dict()``).
+            List of ``amsc_iri.models.Event`` objects.
         """
         if not self._available:
             return []
         try:
             events = self._status_api.get_events_by_incident(incident_id=incident_id)
-            return [e.to_dict() for e in events] if events else []
+            return list(events) if events else []
         except Exception as exc:
             self.logger.warning(
                 f"[{self.name}] Could not fetch events for incident {incident_id!r}: {exc}"

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Callable
+from typing import Any, Callable, List, Optional
 
 from amscrot.serviceclient import ServiceClient
 from amscrot.client.models import Session
@@ -12,7 +12,6 @@ from amscrot.client.job import (
     JobType,
     JobServiceType,
 )
-from amscrot.model.metadata import Incident, StatusEvent
 from amscrot.util import utils
 
 
@@ -104,17 +103,18 @@ class FacilityClient:
             f"Available: {[r.name for r in available]}"
         )
 
-    def incidents(self) -> list[Incident]:
+    def incidents(self) -> List[Any]:
         """Return all incidents at this facility (live API call).
 
         Mirrors ``amsc_client.facility.FacilityClient.incidents()``.
-        Each raw incident dict is wrapped in
-        an :class:`~amscrot.model.metadata.Incident` model.
-        """
-        raw = self._call_api(self._service_client.get_incidents)
-        return [Incident.from_dict(d) for d in (raw or [])]
 
-    def incident(self, incident_id: str) -> Incident | None:
+        Returns:
+            List of ``amsc_iri.models.Incident`` objects which callers can
+            introspect directly (e.g. ``inc.id``, ``inc.status``, ``inc.start``).
+        """
+        return self._call_api(self._service_client.get_incidents) or []
+
+    def incident(self, incident_id: str) -> Optional[Any]:
         """Return a single incident by ID (live API call).
 
         Mirrors ``amsc_client.facility.FacilityClient.incident()``.
@@ -123,22 +123,23 @@ class FacilityClient:
             incident_id: UUID of the incident to retrieve.
 
         Returns:
-            :class:`~amscrot.model.metadata.Incident`, or ``None`` if not found.
+            ``amsc_iri.models.Incident``, or ``None`` if not found.
         """
-        raw = self._call_api(self._service_client.get_incident, incident_id)
-        return Incident.from_dict(raw) if raw else None
+        return self._call_api(self._service_client.get_incident, incident_id)
 
-    def events(self, incident_id: str) -> list[StatusEvent]:
+    def events(self, incident_id: str) -> List[Any]:
         """Return events for a specific incident (live API call).
+
+        Mirrors ``amsc_client.facility.FacilityClient.events()``.
 
         Args:
             incident_id: UUID of the incident to retrieve events for.
 
         Returns:
-            List of :class:`~amscrot.model.metadata.StatusEvent` objects.
+            List of ``amsc_iri.models.Event`` objects which callers can
+            introspect directly (e.g. ``evt.id``, ``evt.status``, ``evt.occurred_at``).
         """
-        raw_events = self._call_api(self._service_client.get_events, incident_id)
-        return [StatusEvent.from_dict(d) for d in (raw_events or [])]
+        return self._call_api(self._service_client.get_events, incident_id) or []
 
     @property
     def session(self) -> Session:

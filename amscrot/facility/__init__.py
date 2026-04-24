@@ -20,7 +20,6 @@ from amscrot.facility.client import FacilityClient
 from amscrot.facility.models import Resource, Job
 from amscrot.facility.filesystem import FilesystemClient
 from amscrot.facility.task import Task
-from amscrot.model.metadata import Incident, StatusEvent
 
 __all__ = [
     "FacilityClient",
@@ -28,6 +27,4 @@ __all__ = [
     "Job",
     "FilesystemClient",
     "Task",
-    "Incident",
-    "StatusEvent",
 ]

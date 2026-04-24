@@ -2,17 +2,6 @@ from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
-def _extract_id(uri: Any) -> Optional[str]:
-    """Extract a bare ID from a URI string or return the value unchanged.
-
-    e.g. '/status/incidents/abc-123' -> 'abc-123'
-         'abc-123' -> 'abc-123'
-         None -> None
-    """
-    if uri is None:
-        return None
-    s = str(uri)
-    return s.rstrip("/").rsplit("/", 1)[-1] or None
 
 # -- Common base -------------------------------------------------------------
 
@@ -110,83 +99,6 @@ class Allocation(ResourceBase):
     qos: Optional[str] = None
     walltime_limit: Optional[str] = None
     exclusive: Optional[bool] = None
-
-
-class Incident(ResourceBase):
-    """An operational incident at an IRI facility.
-
-    Maps to the ``/status/incidents`` endpoint via ``amsc_iri.StatusApi``.
-    """
-    status: Optional[str] = None
-    type: Optional[str] = None
-    resolution: Optional[str] = None
-    start: Optional[str] = None
-    end: Optional[str] = None
-    last_modified: Optional[str] = None
-    resource_ids: Optional[List[str]] = None
-    event_ids: Optional[List[str]] = None
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "Incident":
-        """Construct from a raw API dict (e.g. ``amsc_iri.Incident.to_dict()")."""
-        status = d.get("status")
-        if hasattr(status, "value"):
-            status = status.value
-        inc_type = d.get("type")
-        if hasattr(inc_type, "value"):
-            inc_type = inc_type.value
-        resolution = d.get("resolution")
-        if hasattr(resolution, "value"):
-            resolution = resolution.value
-        # Flatten URI lists to bare IDs where possible
-        resource_ids = [
-            _extract_id(u) for u in (d.get("resource_uris") or [])
-        ] or None
-        event_ids = [
-            _extract_id(u) for u in (d.get("event_uris") or [])
-        ] or None
-        return cls(
-            id=d.get("id"),
-            name=d.get("name"),
-            description=d.get("description"),
-            status=status,
-            type=inc_type,
-            resolution=resolution,
-            start=str(d["start"]) if d.get("start") else None,
-            end=str(d["end"]) if d.get("end") else None,
-            last_modified=str(d["last_modified"]) if d.get("last_modified") else None,
-            resource_ids=resource_ids,
-            event_ids=event_ids,
-        )
-
-
-class StatusEvent(ResourceBase):
-    """An event associated with an IRI facility incident.
-
-    Maps to the ``/status/incidents/{id}/events`` endpoint via ``amsc_iri.StatusApi``.
-    """
-    status: Optional[str] = None
-    occurred_at: Optional[str] = None
-    last_modified: Optional[str] = None
-    resource_id: Optional[str] = None
-    incident_id: Optional[str] = None
-
-    @classmethod
-    def from_dict(cls, d: Dict[str, Any]) -> "StatusEvent":
-        """Construct from a raw API dict (e.g. ``amsc_iri.Event.to_dict()")."""
-        status = d.get("status")
-        if hasattr(status, "value"):
-            status = status.value
-        return cls(
-            id=d.get("id"),
-            name=d.get("name"),
-            description=d.get("description"),
-            status=status,
-            occurred_at=str(d["occurred_at"]) if d.get("occurred_at") else None,
-            last_modified=str(d["last_modified"]) if d.get("last_modified") else None,
-            resource_id=_extract_id(d.get("resource_uri")),
-            incident_id=_extract_id(d.get("incident_uri")),
-        )
 
 
 class Data(ResourceBase):

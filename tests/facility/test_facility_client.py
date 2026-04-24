@@ -317,33 +317,15 @@ class TestSubmitJob:
 
 # ── Incidents & Events ─────────────────────────────────────────────────────
 
-def _make_incident_item(incident_id="inc-001", name="Disk degraded"):
-    item = MagicMock()
-    item.type = "incident"
-    item.data = {
-        "id": incident_id,
-        "name": name,
-        "status": "active",
-        "type": "performance",
-    }
-    return item
-
-
 class TestIncidentsAndEvents:
     def test_incidents_makes_live_api_call(self):
-        from amscrot.model.metadata import Incident
         fc, mock_sc, _ = _make_facility()
-        mock_sc.get_incidents.return_value = [
-            {"id": "inc-001", "name": "Disk degraded", "status": "active", "type": "performance"},
-            {"id": "inc-002", "name": "Network blip",  "status": "resolved", "type": "outage"},
-        ]
+        mock_incidents = [MagicMock(id="inc-001"), MagicMock(id="inc-002")]
+        mock_sc.get_incidents.return_value = mock_incidents
 
-        incidents = fc.incidents()
+        result = fc.incidents()
         mock_sc.get_incidents.assert_called_once()
-        assert len(incidents) == 2
-        assert all(isinstance(i, Incident) for i in incidents)
-        assert incidents[0].id == "inc-001"
-        assert incidents[1].id == "inc-002"
+        assert result is mock_incidents
 
     def test_incidents_empty_when_none_returned(self):
         fc, mock_sc, _ = _make_facility()
@@ -360,55 +342,32 @@ class TestIncidentsAndEvents:
         fc.incidents()
         assert mock_sc.get_incidents.call_count == 2
 
-    def test_incident_returns_single_model(self):
-        from amscrot.model.metadata import Incident
+    def test_incident_passes_through_native_object(self):
         fc, mock_sc, _ = _make_facility()
-        mock_sc.get_incident.return_value = {
-            "id": "inc-001",
-            "name": "Disk degraded",
-            "status": "active",
-            "type": "performance",
-        }
+        mock_inc = MagicMock(id="inc-001", status="active")
+        mock_sc.get_incident.return_value = mock_inc
 
-        inc = fc.incident("inc-001")
+        result = fc.incident("inc-001")
         mock_sc.get_incident.assert_called_once_with("inc-001")
-        assert isinstance(inc, Incident)
-        assert inc.id == "inc-001"
-        assert inc.status == "active"
+        assert result is mock_inc
 
     def test_incident_returns_none_when_not_found(self):
         fc, mock_sc, _ = _make_facility()
         mock_sc.get_incident.return_value = None
 
-        result = fc.incident("inc-missing")
-        assert result is None
+        assert fc.incident("inc-missing") is None
 
     def test_events_calls_service_client_get_events(self):
-        from amscrot.model.metadata import StatusEvent
         fc, mock_sc, _ = _make_facility()
-        event_dicts = [
-            {
-                "id": "evt-001",
-                "name": "I/O error spike",
-                "status": "active",
-                "occurred_at": "2024-01-15T10:02:00Z",
-                "resource_uri": "/status/resources/res-001",
-                "incident_uri": "/status/incidents/inc-001",
-            }
-        ]
-        mock_sc.get_events.return_value = event_dicts
+        mock_events = [MagicMock(id="evt-001"), MagicMock(id="evt-002")]
+        mock_sc.get_events.return_value = mock_events
 
-        events = fc.events("inc-001")
+        result = fc.events("inc-001")
         mock_sc.get_events.assert_called_once_with("inc-001")
-        assert len(events) == 1
-        assert isinstance(events[0], StatusEvent)
-        assert events[0].id == "evt-001"
-        assert events[0].incident_id == "inc-001"
+        assert result is mock_events
 
     def test_events_returns_empty_list_when_none(self):
         fc, mock_sc, _ = _make_facility()
         mock_sc.get_events.return_value = []
 
-        events = fc.events("inc-001")
-        assert events == []
-
+        assert fc.events("inc-001") == []
