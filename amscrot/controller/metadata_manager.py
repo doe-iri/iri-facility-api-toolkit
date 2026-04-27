@@ -179,12 +179,30 @@ class MetadataManager:
 
         try:
             if self.config.metadata_id is not None:
-                latest_record = metadata_api.get_metadata(domain=self.config.remote_domain, name=self.config.metadata_id,full=True,)
+                latest_record = metadata_api.get_metadata(
+                    domain=self.config.remote_domain,
+                    name=self.config.metadata_id,
+                    full=True)
             else:
                 records = metadata_api.get_metadata(domain=self.config.remote_domain)
-                #records = metadata_api.get_metadata(domain='INSTANCE')
-                latest_record=max(records, key=lambda d: self._to_st_mtime(d['edited']), default=None)
-            latest_record_mtime = self._to_st_mtime(latest_record['edited'])
+
+                if not records:
+                    logger.info("No remote metadata records found")
+                    return None
+
+                latest_record = max(
+                    (record for record in records if record and record.get("edited")),
+                    key=lambda d: self._to_st_mtime(d["edited"]),
+                    default=None)
+
+            if latest_record is None:
+                logger.info("No remote metadata record found")
+                return None
+
+            if not isinstance(latest_record, dict):
+                raise TypeError(f"Unexpected remote metadata type: {type(latest_record)}")
+
+            latest_record_mtime = self._to_st_mtime(latest_record["edited"])
 
         except ValueError as e:
             # If the records don't exist, treat it as "no remote metadata" so
