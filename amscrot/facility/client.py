@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 from typing import Any, Callable, List, Optional
 
 from amscrot.serviceclient import ServiceClient
@@ -76,6 +77,32 @@ class FacilityClient:
 
     # ── Public API ─────────────────────────────────────────────────────────
 
+    @property
+    def name(self) -> str:
+        """Short name of the facility (defaults to the endpoint URL)."""
+        return self._name
+
+    @property
+    def display_name(self) -> str:
+        """Human-readable display name (same as ``name`` for IRI facilities)."""
+        return self._name
+
+    @property
+    def base_url(self) -> str:
+        """Base URL of the facility API."""
+        return self._endpoint
+
+    def info(self) -> Any:
+        """Return facility metadata (live API call).
+
+        Mirrors ``amsc_client.facility.FacilityClient.info()``.
+
+        Returns:
+            Native ``amsc_iri`` facility object with fields such as ``name``,
+            ``organization``, and ``support_url``.
+        """
+        return self._call_api(self._service_client.get_facility_info)
+
     def resources(self) -> list:
         """Return compute, storage, and network resources at this facility."""
         from amscrot.facility.models import Resource
@@ -141,12 +168,44 @@ class FacilityClient:
         """
         return self._call_api(self._service_client.get_events, incident_id) or []
 
+    def resource_by_id(self, resource_id: str) -> Optional[Any]:
+        """Return a single resource by UUID (live API call, not cached).
+
+        Mirrors ``amsc_client.facility.FacilityClient.resource_by_id()``.
+
+        Args:
+            resource_id: UUID of the resource to retrieve.
+
+        Returns:
+            ``Resource`` wrapper, or ``None`` if not found.
+        """
+        from amscrot.facility.models import Resource
+        data = self._call_api(self._service_client.get_resource_by_id, resource_id)
+        if data is None:
+            return None
+        return Resource(data=data, facility_client=self)
+
     @property
     def session(self) -> Session:
         """Access the underlying Session for advanced orchestration."""
         return self._session
 
     # ── Internal API (used by Resource and Job) ───────────────────────────
+
+    def _get_jobs(self, resource_id: str) -> list:
+        """Return Job wrappers for all jobs on a resource (live API call)."""
+        from amscrot.facility.models import Job
+        raw_jobs = self._call_api(self._service_client.get_jobs, resource_id) or []
+        jobs = []
+        for raw in raw_jobs:
+            handle = SimpleNamespace(
+                id=raw.get("id", ""),
+                resource_id=resource_id,
+                name=raw.get("name", ""),
+                status=SimpleNamespace(value=raw.get("status", "UNKNOWN")),
+            )
+            jobs.append(Job(amscrot_job=handle, resource_id=resource_id, facility_client=self))
+        return jobs
 
     def _call_api(self, operation: Callable, *args: Any, **kwargs: Any) -> Any:
         """Invoke an API operation with automatic token-refresh retry on 401/403.

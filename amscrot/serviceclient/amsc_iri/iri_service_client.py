@@ -669,6 +669,60 @@ class IriServiceClient(ServiceClient):
             )
             return []
 
+    def get_facility_info(self) -> Any:
+        """Fetch facility-level metadata from the IRI API.
+
+        Returns:
+            Native ``amsc_iri`` facility object, or ``None`` if unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            return self._facility_api.get_facility()
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] Could not fetch facility info: {exc}")
+            return None
+
+    def get_resource_by_id(self, resource_id: str) -> Optional[Any]:
+        """Fetch a single resource by UUID from the IRI API.
+
+        Args:
+            resource_id: UUID of the resource to retrieve.
+
+        Returns:
+            Resource data dict, or ``None`` if not found / unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            resource = self._status_api.get_resource(resource_id=resource_id)
+            return resource.to_dict() if resource else None
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch resource {resource_id!r}: {exc}"
+            )
+            return None
+
+    def get_jobs(self, resource_id: str) -> List[Any]:
+        """Fetch all jobs for a resource from the IRI API.
+
+        Args:
+            resource_id: UUID of the resource to list jobs for.
+
+        Returns:
+            List of job data dicts.
+        """
+        if not self._available:
+            return []
+        try:
+            jobs = self._compute_api.get_jobs(resource_id=resource_id)
+            return [j.to_dict() for j in jobs] if jobs else []
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch jobs for resource {resource_id!r}: {exc}"
+            )
+            return []
+
     # -- Filesystem interface -------------------------------------------------
 
     @property

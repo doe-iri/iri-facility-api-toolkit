@@ -231,3 +231,50 @@ class TestJobCancel:
         job.refresh()
         assert "job-repr" in repr(job)
         assert "QUEUED" in repr(job)
+
+
+# ── Resource.description ───────────────────────────────────────────────────
+
+class TestResourceDescription:
+    def test_description_returns_data_field(self):
+        data = {"id": "r1", "name": "Polaris", "resource_type": "compute",
+                "description": "Leadership-class GPU cluster"}
+        r = Resource(data=data, facility_client=MagicMock())
+        assert r.description == "Leadership-class GPU cluster"
+
+    def test_description_defaults_to_empty_string(self):
+        r, _ = _make_resource()
+        assert r.description == ""
+
+
+# ── Resource.group ─────────────────────────────────────────────────────────
+
+class TestResourceGroup:
+    def test_group_returns_data_field(self):
+        data = {"id": "r1", "name": "Polaris", "resource_type": "compute",
+                "group": "hpc"}
+        r = Resource(data=data, facility_client=MagicMock())
+        assert r.group == "hpc"
+
+    def test_group_defaults_to_empty_string(self):
+        r, _ = _make_resource()
+        assert r.group == ""
+
+
+# ── Resource.jobs() ────────────────────────────────────────────────────────
+
+class TestResourceJobs:
+    def test_jobs_delegates_to_facility(self):
+        r, mock_facility = _make_resource()
+        mock_job = MagicMock()
+        mock_facility._get_jobs.return_value = [mock_job]
+
+        result = r.jobs()
+        mock_facility._get_jobs.assert_called_once_with("res-123")
+        assert result == [mock_job]
+
+    def test_jobs_returns_empty_list_when_none(self):
+        r, mock_facility = _make_resource()
+        mock_facility._get_jobs.return_value = []
+
+        assert r.jobs() == []

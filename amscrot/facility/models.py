@@ -43,6 +43,14 @@ class Resource:
         return self._data.get("resource_type", "")
 
     @property
+    def description(self) -> str:
+        return self._data.get("description", "") or ""
+
+    @property
+    def group(self) -> str:
+        return self._data.get("group", "") or ""
+
+    @property
     def status(self) -> str:
         cs = self._data.get("current_status", "unknown")
         if cs is None:
@@ -64,6 +72,10 @@ class Resource:
         return self._fs
 
     # ── Compute ────────────────────────────────────────────────────────────
+
+    def jobs(self) -> list:
+        """Return all jobs submitted to this resource (live API call)."""
+        return self._facility._get_jobs(self.id)
 
     def submit(
         self,

@@ -371,3 +371,103 @@ class TestIncidentsAndEvents:
         mock_sc.get_events.return_value = []
 
         assert fc.events("inc-001") == []
+
+
+# ── Properties ─────────────────────────────────────────────────────────────
+
+class TestFacilityClientProperties:
+    def test_name_defaults_to_endpoint(self):
+        fc, _, _ = _make_facility(endpoint=ENDPOINT)
+        assert fc.name == ENDPOINT
+
+    def test_name_returns_custom_name(self):
+        with patch("amscrot.facility.client.ServiceClient") as MockSC, \
+             patch("amscrot.facility.client.Session"):
+            MockSC.create.return_value = MagicMock()
+            fc = FacilityClient(endpoint=ENDPOINT, token=TOKEN, name="my-facility")
+        assert fc.name == "my-facility"
+
+    def test_display_name_equals_name(self):
+        fc, _, _ = _make_facility()
+        assert fc.display_name == fc.name
+
+    def test_base_url_returns_endpoint(self):
+        fc, _, _ = _make_facility(endpoint=ENDPOINT)
+        assert fc.base_url == ENDPOINT
+
+
+# ── info() ─────────────────────────────────────────────────────────────────
+
+class TestFacilityClientInfo:
+    def test_info_makes_live_api_call(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_info = MagicMock()
+        mock_sc.get_facility_info.return_value = mock_info
+
+        result = fc.info()
+        mock_sc.get_facility_info.assert_called_once()
+        assert result is mock_info
+
+    def test_info_does_not_cache(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_facility_info.return_value = MagicMock()
+
+        fc.info()
+        fc.info()
+        assert mock_sc.get_facility_info.call_count == 2
+
+
+# ── resource_by_id() ───────────────────────────────────────────────────────
+
+class TestResourceById:
+    def test_resource_by_id_makes_live_api_call(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_resource_by_id.return_value = {
+            "id": "res-001", "name": "Polaris",
+            "resource_type": "compute", "current_status": "up",
+        }
+
+        r = fc.resource_by_id("res-001")
+        mock_sc.get_resource_by_id.assert_called_once_with("res-001")
+        assert isinstance(r, Resource)
+        assert r.id == "res-001"
+
+    def test_resource_by_id_returns_none_when_not_found(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_resource_by_id.return_value = None
+
+        result = fc.resource_by_id("nonexistent")
+        assert result is None
+
+    def test_resource_by_id_does_not_use_discovery_cache(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_resource_by_id.return_value = {
+            "id": "res-001", "name": "Polaris",
+            "resource_type": "compute", "current_status": "up",
+        }
+
+        fc.resource_by_id("res-001")
+        fc.resource_by_id("res-001")
+        assert mock_sc.get_resource_by_id.call_count == 2
+
+
+# ── _get_jobs() ────────────────────────────────────────────────────────────
+
+class TestGetJobs:
+    def test_get_jobs_returns_job_wrappers(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_jobs.return_value = [
+            {"id": "job-001", "name": "job-a", "status": "RUNNING"},
+        ]
+
+        jobs = fc._get_jobs("res-001")
+        mock_sc.get_jobs.assert_called_once_with("res-001")
+        assert len(jobs) == 1
+        assert isinstance(jobs[0], Job)
+        assert jobs[0].id == "job-001"
+
+    def test_get_jobs_returns_empty_list_when_none(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_jobs.return_value = []
+
+        assert fc._get_jobs("res-001") == []
