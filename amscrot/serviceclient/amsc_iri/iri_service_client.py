@@ -22,7 +22,7 @@ from amsc_iri.models.resource_type import ResourceType
 from amsc_iri.models.job_state import JobState as IriJobState
 from amsc_iri.models.job import Job as IriJob
 from amsc_iri.models.status import Status
-from amsc_iri.exceptions import NotFoundException
+from amsc_iri.exceptions import NotFoundException, BadRequestException
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
@@ -631,6 +631,23 @@ class IriServiceClient(ServiceClient):
                 job_id=job.id,
                 resource_id=job.resource_id,
             )
+        except BadRequestException as e:
+            # ALCF returns 400 (not 404) when a finished job has left the PBS
+            # queue. Detect by "not found" in the detail; treat as COMPLETED.
+            body = getattr(e, "body", "") or ""
+            if "not found" in body.lower():
+                self.logger.info(
+                    f"[{self.name}] Job {job.id!r} not found in PBS queue (400); "
+                    "assumed completed."
+                )
+                return JobStatus(
+                    state=AmscrotJobState.COMPLETED.value,
+                    message="Job no longer in PBS queue; assumed completed.",
+                    job_id=job.id,
+                    resource_id=job.resource_id,
+                )
+            self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
+            return JobStatus(state="UNKNOWN", message=str(e))
         except Exception as e:
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
             return JobStatus(
