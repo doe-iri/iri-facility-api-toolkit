@@ -22,6 +22,7 @@ from amsc_iri.models.resource_type import ResourceType
 from amsc_iri.models.job_state import JobState as IriJobState
 from amsc_iri.models.job import Job as IriJob
 from amsc_iri.models.status import Status
+from amsc_iri.exceptions import NotFoundException
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
@@ -588,13 +589,27 @@ class IriServiceClient(ServiceClient):
                 historical=False,
                 include_spec=False
             )
-            
+
+            # PBS removes completed jobs from the active queue; a None response
+            # means the job is no longer tracked — treat as COMPLETED.
+            if iri_job is None:
+                self.logger.info(
+                    f"[{self.name}] Job {job.id!r} not found in PBS queue; "
+                    "assumed completed."
+                )
+                return JobStatus(
+                    state=AmscrotJobState.COMPLETED.value,
+                    message="Job no longer in PBS queue; assumed completed.",
+                    job_id=job.id,
+                    resource_id=job.resource_id,
+                )
+
             # Map IRI JobState enum -> AmSCROT JobState
             amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
                 amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
             state_str = amscrot_state.value
-            
+
             return JobStatus(
                 state=state_str,
                 message=iri_job.status.message if iri_job.status else None,
@@ -603,7 +618,19 @@ class IriServiceClient(ServiceClient):
                 resource_id=job.resource_id,
                 provider_status=iri_job.status.to_dict() if iri_job.status else None,
             )
-                
+
+        except NotFoundException:
+            # PBS removes completed jobs from the active queue — 404 means done.
+            self.logger.info(
+                f"[{self.name}] Job {job.id!r} not found in PBS queue (404); "
+                "assumed completed."
+            )
+            return JobStatus(
+                state=AmscrotJobState.COMPLETED.value,
+                message="Job no longer in PBS queue; assumed completed.",
+                job_id=job.id,
+                resource_id=job.resource_id,
+            )
         except Exception as e:
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
             return JobStatus(
