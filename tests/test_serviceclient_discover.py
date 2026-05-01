@@ -1,3 +1,4 @@
+import pytest
 import unittest
 import json
 import logging
@@ -10,6 +11,7 @@ from amscrot.util.constants import Constants
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@pytest.mark.integration
 class TestServiceClientDiscovery(unittest.TestCase):
     """Test the discover method of ServiceClient implementations."""
 

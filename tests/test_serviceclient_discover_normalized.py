@@ -1,3 +1,4 @@
+import pytest
 import unittest
 import json
 import logging
@@ -11,6 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+@pytest.mark.integration
 class TestServiceClientDiscoverNormalized(unittest.TestCase):
     """Test discover(native=False) for all ServiceClient implementations.
 
