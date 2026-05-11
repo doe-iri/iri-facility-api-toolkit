@@ -90,6 +90,16 @@ class DiscoveryResult:
         ]
 
     @property
+    def incidents(self) -> List[DiscoveredResource]:
+        """Return discovered incident resources."""
+        return self.by_type(Constants.RES_INCIDENT)
+
+    @property
+    def events(self) -> List[DiscoveredResource]:
+        """Return discovered event resources."""
+        return self.by_type(Constants.RES_EVENT)
+
+    @property
     def all(self) -> List[DiscoveredResource]:
         """Return all discovered resources."""
         return list(self._items)

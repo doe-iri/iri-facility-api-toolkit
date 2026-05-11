@@ -22,6 +22,7 @@ from amsc_iri.models.resource_type import ResourceType
 from amsc_iri.models.job_state import JobState as IriJobState
 from amsc_iri.models.job import Job as IriJob
 from amsc_iri.models.status import Status
+from amsc_iri.exceptions import NotFoundException, BadRequestException
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
@@ -142,6 +143,16 @@ class IriServiceClient(ServiceClient):
                             alloc_data = alloc.to_dict()
                             alloc_data['_project_name'] = project.name
                             items.append(DiscoveredResource(type="allocation", data=alloc_data))
+
+            # 5. Discover Incidents
+            self.logger.debug(f"[{self.name}] Discovering incidents...")
+            try:
+                incidents = self._status_api.get_incidents()
+                if incidents:
+                    for inc in incidents:
+                        items.append(DiscoveredResource(type="incident", data=inc.to_dict()))
+            except Exception as inc_exc:
+                self.logger.warning(f"[{self.name}] Could not fetch incidents: {inc_exc}")
 
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during discovery: {e}")
@@ -578,13 +589,27 @@ class IriServiceClient(ServiceClient):
                 historical=False,
                 include_spec=False
             )
-            
+
+            # PBS removes completed jobs from the active queue; a None response
+            # means the job is no longer tracked — treat as COMPLETED.
+            if iri_job is None:
+                self.logger.info(
+                    f"[{self.name}] Job {job.id!r} not found in PBS queue; "
+                    "assumed completed."
+                )
+                return JobStatus(
+                    state=AmscrotJobState.COMPLETED.value,
+                    message="Job no longer in PBS queue; assumed completed.",
+                    job_id=job.id,
+                    resource_id=job.resource_id,
+                )
+
             # Map IRI JobState enum -> AmSCROT JobState
             amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
                 amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
             state_str = amscrot_state.value
-            
+
             return JobStatus(
                 state=state_str,
                 message=iri_job.status.message if iri_job.status else None,
@@ -593,13 +618,154 @@ class IriServiceClient(ServiceClient):
                 resource_id=job.resource_id,
                 provider_status=iri_job.status.to_dict() if iri_job.status else None,
             )
-                
+
+        except NotFoundException:
+            # PBS removes completed jobs from the active queue — 404 means done.
+            self.logger.info(
+                f"[{self.name}] Job {job.id!r} not found in PBS queue (404); "
+                "assumed completed."
+            )
+            return JobStatus(
+                state=AmscrotJobState.COMPLETED.value,
+                message="Job no longer in PBS queue; assumed completed.",
+                job_id=job.id,
+                resource_id=job.resource_id,
+            )
+        except BadRequestException as e:
+            # ALCF returns 400 (not 404) when a finished job has left the PBS
+            # queue. Detect by "not found" in the detail; treat as COMPLETED.
+            body = getattr(e, "body", "") or ""
+            if "not found" in body.lower():
+                self.logger.info(
+                    f"[{self.name}] Job {job.id!r} not found in PBS queue (400); "
+                    "assumed completed."
+                )
+                return JobStatus(
+                    state=AmscrotJobState.COMPLETED.value,
+                    message="Job no longer in PBS queue; assumed completed.",
+                    job_id=job.id,
+                    resource_id=job.resource_id,
+                )
+            self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
+            return JobStatus(state="UNKNOWN", message=str(e))
         except Exception as e:
             self.logger.error(f"[{self.name}] Error reading status for '{name}': {e}")
             return JobStatus(
                 state="UNKNOWN",
                 message=str(e)
             )
+
+    def get_incidents(self, **filters) -> List[Any]:
+        """Fetch all incidents from the IRI API.
+
+        Args:
+            **filters: Optional filter kwargs forwarded to ``get_incidents()``
+                (e.g. ``status``, ``resource_id``, ``var_from``, ``to``).
+
+        Returns:
+            List of ``amsc_iri.models.Incident`` objects.
+        """
+        if not self._available:
+            return []
+        try:
+            incidents = self._status_api.get_incidents(**filters)
+            return list(incidents) if incidents else []
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] Could not fetch incidents: {exc}")
+            return []
+
+    def get_incident(self, incident_id: str) -> Optional[Any]:
+        """Fetch a single incident by ID from the IRI API.
+
+        Args:
+            incident_id: UUID of the incident to retrieve.
+
+        Returns:
+            ``amsc_iri.models.Incident``, or ``None`` if not found / unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            return self._status_api.get_incident(incident_id=incident_id)
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch incident {incident_id!r}: {exc}"
+            )
+            return None
+
+    def get_events(self, incident_id: str) -> List[Any]:
+        """Fetch events for a given incident ID from the IRI API.
+
+        Args:
+            incident_id: The UUID of the incident to fetch events for.
+
+        Returns:
+            List of ``amsc_iri.models.Event`` objects.
+        """
+        if not self._available:
+            return []
+        try:
+            events = self._status_api.get_events_by_incident(incident_id=incident_id)
+            return list(events) if events else []
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch events for incident {incident_id!r}: {exc}"
+            )
+            return []
+
+    def get_facility_info(self) -> Any:
+        """Fetch facility-level metadata from the IRI API.
+
+        Returns:
+            Native ``amsc_iri`` facility object, or ``None`` if unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            return self._facility_api.get_facility()
+        except Exception as exc:
+            self.logger.warning(f"[{self.name}] Could not fetch facility info: {exc}")
+            return None
+
+    def get_resource_by_id(self, resource_id: str) -> Optional[Any]:
+        """Fetch a single resource by UUID from the IRI API.
+
+        Args:
+            resource_id: UUID of the resource to retrieve.
+
+        Returns:
+            Resource data dict, or ``None`` if not found / unavailable.
+        """
+        if not self._available:
+            return None
+        try:
+            resource = self._status_api.get_resource(resource_id=resource_id)
+            return resource.to_dict() if resource else None
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch resource {resource_id!r}: {exc}"
+            )
+            return None
+
+    def get_jobs(self, resource_id: str) -> List[Any]:
+        """Fetch all jobs for a resource from the IRI API.
+
+        Args:
+            resource_id: UUID of the resource to list jobs for.
+
+        Returns:
+            List of job data dicts.
+        """
+        if not self._available:
+            return []
+        try:
+            jobs = self._compute_api.get_jobs(resource_id=resource_id)
+            return [j.to_dict() for j in jobs] if jobs else []
+        except Exception as exc:
+            self.logger.warning(
+                f"[{self.name}] Could not fetch jobs for resource {resource_id!r}: {exc}"
+            )
+            return []
 
     # -- Filesystem interface -------------------------------------------------
 

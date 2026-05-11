@@ -2,6 +2,7 @@ from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
+
 # -- Common base -------------------------------------------------------------
 
 class ResourceBase(BaseModel):
