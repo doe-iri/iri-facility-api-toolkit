@@ -23,6 +23,7 @@ class TestServiceClientMethods(unittest.TestCase):
         client.destroy(job)
         self.assertEqual(client.status(job).state, JobState.CANCELED)
         
+    @pytest.mark.integration
     def test_kube_methods(self):
         client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
         if not client._available:

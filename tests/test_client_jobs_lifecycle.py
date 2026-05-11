@@ -4,6 +4,7 @@ from amscrot.client import Client, Session, Job, JobType, JobServiceType, JobSpe
 from amscrot.serviceclient import ServiceClient
 from amscrot.util.constants import Constants
 
+@pytest.mark.integration
 class TestClientJobsLifecycle(unittest.TestCase):
     def test_jobs_lifecycle(self):
         client = Client()
