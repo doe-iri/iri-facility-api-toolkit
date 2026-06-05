@@ -188,11 +188,17 @@ class Client:
 
     @staticmethod
     def _normalize_endpoint(url: str) -> str:
-        """Strip trailing ``/api`` and slashes so endpoints can be compared."""
-        url = url.rstrip('/')
-        if url.endswith('/api'):
-            url = url[:-4]
-        return url.rstrip('/')
+        """Normalize an IRI endpoint URL for identity comparison.
+
+        Reduces the URL to ``scheme://host`` so that a base URL stored in
+        credentials.yml (e.g. ``https://api.iri.nersc.gov``) matches the
+        versioned sub-path URLs returned by the IRO facility discovery endpoint
+        (e.g. ``https://api.iri.nersc.gov/nersc/api``).
+        """
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        # Reconstruct as scheme + netloc only, no path/query/fragment
+        return f"{parsed.scheme}://{parsed.netloc}".rstrip('/')
 
     @staticmethod
     def _slugify(name: str) -> str:
