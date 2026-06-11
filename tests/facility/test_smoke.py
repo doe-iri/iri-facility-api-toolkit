@@ -1,7 +1,7 @@
 """End-to-end smoke test for the facility convenience API.
 
 Exercises the full call chain from Client.facility() through resource
-discovery, job submission, wait, and filesystem operations — using mocks.
+discovery, job submission, wait, and filesystem operations -- using mocks.
 """
 import pytest
 from unittest.mock import MagicMock, patch
@@ -151,7 +151,7 @@ class TestFullWorkflowSmoke:
     def test_token_refresh_on_auth_error(self):
         # Scenario: token_provider is given; first discover() raises 401;
         # _call_api should call provider() once, rebuild the service client,
-        # and retry using the new client's discover() — which succeeds.
+        # and retry using the new client's discover() -- which succeeds.
 
         token_calls = [0]
 

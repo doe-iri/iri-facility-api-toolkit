@@ -27,7 +27,7 @@ def _make_facility(endpoint=ENDPOINT, token=TOKEN, mock_sc=None, mock_session=No
     return fc, mock_sc, mock_sess
 
 
-# ── Constructor ────────────────────────────────────────────────────────────
+# -- Constructor ------------------------------------------------------------
 
 class TestFacilityClientInit:
     def test_creates_with_static_token(self):
@@ -63,7 +63,7 @@ class TestFacilityClientInit:
         assert fc._session is mock_sess
 
 
-# ── Resource discovery ─────────────────────────────────────────────────────
+# -- Resource discovery -----------------------------------------------------
 
 def _make_discovery(*items):
     """Build a mock DiscoveryResult where .all returns the given items."""
@@ -144,7 +144,7 @@ class TestFacilityClientDiscovery:
         assert fc.session is mock_sess
 
 
-# ── _call_api ──────────────────────────────────────────────────────────────
+# -- _call_api --------------------------------------------------------------
 
 class TestCallApi:
     def test_call_api_invokes_operation(self):
@@ -230,7 +230,7 @@ class TestCallApi:
         assert result.compute == []
 
 
-# ── _submit_job ────────────────────────────────────────────────────────────
+# -- _submit_job ------------------------------------------------------------
 
 class TestSubmitJob:
     def test_submit_job_returns_job_wrapper(self):
@@ -315,7 +315,7 @@ class TestSubmitJob:
             assert call_kwargs["name"] == "my-job"
 
 
-# ── Incidents & Events ─────────────────────────────────────────────────────
+# -- Incidents & Events -----------------------------------------------------
 
 class TestIncidentsAndEvents:
     def test_incidents_makes_live_api_call(self):
@@ -334,7 +334,7 @@ class TestIncidentsAndEvents:
         assert fc.incidents() == []
 
     def test_incidents_does_not_cache(self):
-        """incidents() is a live call — calling it twice hits the API twice."""
+        """incidents() is a live call -- calling it twice hits the API twice."""
         fc, mock_sc, _ = _make_facility()
         mock_sc.get_incidents.return_value = []
 
@@ -373,7 +373,7 @@ class TestIncidentsAndEvents:
         assert fc.events("inc-001") == []
 
 
-# ── Properties ─────────────────────────────────────────────────────────────
+# -- Properties -------------------------------------------------------------
 
 class TestFacilityClientProperties:
     def test_name_defaults_to_endpoint(self):
@@ -396,7 +396,7 @@ class TestFacilityClientProperties:
         assert fc.base_url == ENDPOINT
 
 
-# ── info() ─────────────────────────────────────────────────────────────────
+# -- info() -----------------------------------------------------------------
 
 class TestFacilityClientInfo:
     def test_info_makes_live_api_call(self):
@@ -417,7 +417,7 @@ class TestFacilityClientInfo:
         assert mock_sc.get_facility_info.call_count == 2
 
 
-# ── resource_by_id() ───────────────────────────────────────────────────────
+# -- resource_by_id() -------------------------------------------------------
 
 class TestResourceById:
     def test_resource_by_id_makes_live_api_call(self):
@@ -451,7 +451,7 @@ class TestResourceById:
         assert mock_sc.get_resource_by_id.call_count == 2
 
 
-# ── _get_jobs() ────────────────────────────────────────────────────────────
+# -- _get_jobs() ------------------------------------------------------------
 
 class TestGetJobs:
     def test_get_jobs_returns_job_wrappers(self):

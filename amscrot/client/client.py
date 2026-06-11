@@ -137,10 +137,27 @@ class Client:
         return service_client
 
     def get_service_client(self, name: str = None) -> Union[Optional["ServiceClient"], List["ServiceClient"]]:
-        """Retrieve a service client by name, or list all if no name given."""
+        """Retrieve a service client by name, shorthand, or list all if no name given."""
         if name is None:
             return list(self._service_clients.values())
-        return self._service_clients.get(name)
+
+        # 1. Direct match
+        if name in self._service_clients:
+            return self._service_clients[name]
+
+        # 2. Shorthand match
+        shorthand = self.get_shorthand(name)
+        for sc in self._service_clients.values():
+            if self.get_shorthand(sc.name) == shorthand:
+                return sc
+
+        # 3. Case-insensitive substring match fallback
+        name_lower = name.lower()
+        for k, sc in self._service_clients.items():
+            if name_lower in k.lower():
+                return sc
+
+        return None
 
     def _create_service_clients_from_credentials(self):
         """Auto-create ServiceClient instances from credential entries that
@@ -206,6 +223,41 @@ class Client:
         slug = name.lower().strip()
         slug = re.sub(r'[^a-z0-9]+', '-', slug)
         return slug.strip('-')
+
+    _FACILITY_SHORTHANDS = {
+        "national-energy-research-scientific-computing-center": "nersc",
+        "nersc-facility-active": "nersc",
+        "esnet-facility-east": "esnet-east",
+        "esnet-facility-west": "esnet-west",
+        "argonne-leadership-computing-facility": "alcf",
+        "oak-ridge-leadership-computing-facility": "olcf",
+        "amsc-iro-orchestrator": "amsc-iro",
+    }
+
+    @classmethod
+    def get_shorthand(cls, name: str) -> str:
+        """Resolve a facility name or slug to a user-friendly shorthand."""
+        slug = cls._slugify(name)
+        if slug in cls._FACILITY_SHORTHANDS:
+            return cls._FACILITY_SHORTHANDS[slug]
+
+        # Common pattern heuristics
+        if "nersc" in slug:
+            return "nersc"
+        if "esnet" in slug:
+            if "east" in slug:
+                return "esnet-east"
+            if "west" in slug:
+                return "esnet-west"
+            return "esnet"
+        if "alcf" in slug or "argonne" in slug:
+            return "alcf"
+        if "olcf" in slug or "oak-ridge" in slug:
+            return "olcf"
+        if "amsc-iro" in slug:
+            return "amsc-iro"
+
+        return slug
 
     def _discover_and_create_iri_clients(self):
         """Query the IRO facility discovery endpoint and auto-create
