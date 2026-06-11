@@ -212,8 +212,20 @@ class IriServiceClient(ServiceClient):
 
         native_result = self._discover_native()
 
+        # Build map from capability ID (UUID) to name
+        cap_id_to_name = {}
+        for cap_item in native_result.by_type("capability"):
+            cap_d = cap_item.data
+            cap_id = cap_d.get("id")
+            cap_name = cap_d.get("name")
+            if cap_id and cap_name:
+                cap_id_to_name[cap_id] = cap_name
+
         def _build_compute(d: dict) -> Compute:
             cap_ids = d.get("_capability_ids") or None
+            cap_names = None
+            if cap_ids:
+                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
             return Compute(
                 id=d.get("id"),
                 name=d.get("name") or d.get("node_name"),
@@ -225,11 +237,14 @@ class IriServiceClient(ServiceClient):
                 nodes=d.get("node_count"),
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
-                capabilities=cap_ids if cap_ids else None,
+                capabilities=cap_names,
             )
 
         def _build_storage(d: dict) -> Storage:
             cap_ids = d.get("_capability_ids") or None
+            cap_names = None
+            if cap_ids:
+                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
             return Storage(
                 id=d.get("id"),
                 name=d.get("name"),
@@ -237,7 +252,7 @@ class IriServiceClient(ServiceClient):
                 type=d.get("storage_type") or d.get("type"),
                 quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
                 performance_tier=d.get("performance_tier"),
-                capabilities=cap_ids if cap_ids else None,
+                capabilities=cap_names,
             )
 
         def _build_network(d: dict) -> Network:
@@ -309,6 +324,7 @@ class IriServiceClient(ServiceClient):
                 capability_id = (
                     cap_uri.rstrip("/").rsplit("/", 1)[-1] if cap_uri else None
                 )
+                capability_name = cap_id_to_name.get(capability_id, capability_id)
 
                 # Build user allocations
                 user_allocs: list[UserAllocation] = []
@@ -324,7 +340,7 @@ class IriServiceClient(ServiceClient):
 
                 proj_allocs.append(ProjectAllocation(
                     id=pa_data.get("id"),
-                    capability=capability_id,
+                    capability=capability_name,
                     entries=[
                         _build_entry(e)
                         for e in pa_data.get("entries", [])

@@ -222,31 +222,6 @@ class Facility(ResourceBase):
 
         return result
 
-    def resources_for_capability(
-        self, capability: str,
-    ) -> Dict[str, List["ResourceBase"]]:
-        """Return compute and storage resources that support a capability.
-
-        Args:
-            capability: Capability ID such as ``'cpu'``, ``'gpu'``, or
-                ``'gpfs_storage'``.
-
-        Returns:
-            Dict keyed by resource category (``'compute'``, ``'storage'``)
-            containing matching resources.  Categories with no matches are
-            omitted.
-        """
-        result: Dict[str, List[ResourceBase]] = {}
-        compute = [c for c in (self.compute or [])
-                   if c.capabilities and capability in c.capabilities]
-        if compute:
-            result['compute'] = compute
-        storage = [s for s in (self.storage or [])
-                   if s.capabilities and capability in s.capabilities]
-        if storage:
-            result['storage'] = storage
-        return result
-
     def resources_for_project(
         self,
         project_name: Optional[str] = None,
@@ -261,13 +236,13 @@ class Facility(ResourceBase):
                 If ``None``, returns resources for **all** projects.
 
         Returns:
-            Dict keyed by project name → capability → resource category → resource list.
+            Dict keyed by project name -> capability -> resource category -> resource list.
             Only resource categories with matches are included.
 
         Example::
 
             fac.resources_for_project('mpesnet')
-            # → {'mpesnet': {
+            # -> {'mpesnet': {
             #       'cpu': {'compute': [Compute(name='compute', ...)]},
             #       'gpfs_storage': {'storage': [Storage(name='homes', ...), ...]},
             #   }}
@@ -284,9 +259,18 @@ class Facility(ResourceBase):
             for pa in (proj.allocations or []):
                 cap = pa.capability
                 if cap and cap not in cap_map:
-                    resources = self.resources_for_capability(cap)
-                    if resources:
-                        cap_map[cap] = resources
+                    res_map: Dict[str, List[ResourceBase]] = {}
+                    compute = [c for c in (self.compute or [])
+                               if c.capabilities and cap in c.capabilities]
+                    if compute:
+                        res_map['compute'] = compute
+                    storage = [s for s in (self.storage or [])
+                               if s.capabilities and cap in s.capabilities]
+                    if storage:
+                        res_map['storage'] = storage
+
+                    if res_map:
+                        cap_map[cap] = res_map
             if cap_map:
                 output[proj_key] = cap_map
 

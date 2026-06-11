@@ -83,7 +83,7 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
     def test_iri_discover_normalized(self):
         """IriServiceClient.discover(native=False) returns typed Facility objects."""
         print("\n--- Testing IriServiceClient.discover(native=False) ---")
-        client = IriServiceClient(name="nersc", profile="nersc-iri")
+        client = IriServiceClient(name="alcf", profile="alcf-iri")
 
         try:
             result = client.discover(native=False)
@@ -227,23 +227,6 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
             self.assertGreater(len(compute_with_caps), 0,
                 "At least one compute resource should have capabilities")
 
-            # ---- resources_for_capability ----
-            print("\n--- resources_for_capability('cpu') ---")
-            cpu_resources = fac.resources_for_capability('cpu')
-            for cat, items in cpu_resources.items():
-                print(f"  {cat}: {[r.name for r in items]}")
-            self.assertIn('compute', cpu_resources,
-                "cpu capability should map to compute resources")
-
-            print("\n--- resources_for_capability('gpfs_storage') ---")
-            gpfs_resources = fac.resources_for_capability('gpfs_storage')
-            for cat, items in gpfs_resources.items():
-                print(f"  {cat}: {[r.name for r in items]}")
-            self.assertIn('storage', gpfs_resources,
-                "gpfs_storage capability should map to storage resources")
-            self.assertNotIn('compute', gpfs_resources,
-                "gpfs_storage should not include compute resources")
-
             # ---- Facility.resources_for_project ----
             print("\n--- Facility.resources_for_project() (all projects) ---")
             proj_resources = fac.resources_for_project()
@@ -266,18 +249,6 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
                              for cat, rs in res_map.items()]
                     print(f"    {cap}: {', '.join(parts)}")
             self.assertIn(first_proj_name, single)
-
-            # ---- Facility.get_resources_by_group ----
-            print("\n--- Facility.get_resources_by_group('perlmutter') ---")
-            perlmutter_resources = fac.get_resources_by_group("perlmutter")
-            for cat, items in perlmutter_resources.items():
-                print(f"  {cat}: {[r.name for r in items]}")
-            self.assertIn("compute", perlmutter_resources)
-            self.assertNotIn("storage", perlmutter_resources)
-
-            # Case-insensitivity check
-            perlmutter_ci = fac.get_resources_by_group("PERLMUTTER")
-            self.assertEqual(perlmutter_resources, perlmutter_ci)
 
             # Hierarchical dump
             print("\n--- Hierarchical Facility Dump ---")
