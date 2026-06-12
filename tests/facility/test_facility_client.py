@@ -19,6 +19,7 @@ def _make_facility(endpoint=ENDPOINT, token=TOKEN, mock_sc=None, mock_session=No
          patch("amscrot.facility.client.Session") as MockSession:
         MockSC.create.return_value = mock_sc
         mock_sess = mock_session or MagicMock()
+        mock_sess.metadata.side_effect = lambda name, **kwargs: mock_sc.discover(**kwargs)
         MockSession.return_value = mock_sess
 
         fc = FacilityClient(endpoint=endpoint, token=token)

@@ -50,7 +50,7 @@ def setup_and_submit(client, session, args):
         print(f"======================================================================")
 
         # Discover normalized facility details including projects and resources
-        discovery_result = target_client.discover(native=False)
+        discovery_result = session.metadata(target_client.name, native=False)
         if not discovery_result.facilities:
             print(f"WARNING: No facilities discovered for {target_client.name}, skipping.")
             continue

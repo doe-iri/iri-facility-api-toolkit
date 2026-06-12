@@ -224,22 +224,12 @@ class Client:
         slug = re.sub(r'[^a-z0-9]+', '-', slug)
         return slug.strip('-')
 
-    _FACILITY_SHORTHANDS = {
-        "national-energy-research-scientific-computing-center": "nersc",
-        "nersc-facility-active": "nersc",
-        "esnet-facility-east": "esnet-east",
-        "esnet-facility-west": "esnet-west",
-        "argonne-leadership-computing-facility": "alcf",
-        "oak-ridge-leadership-computing-facility": "olcf",
-        "amsc-iro-orchestrator": "amsc-iro",
-    }
-
     @classmethod
     def get_shorthand(cls, name: str) -> str:
         """Resolve a facility name or slug to a user-friendly shorthand."""
         slug = cls._slugify(name)
-        if slug in cls._FACILITY_SHORTHANDS:
-            return cls._FACILITY_SHORTHANDS[slug]
+        if slug in Constants.FACILITY_SHORTHANDS:
+            return Constants.FACILITY_SHORTHANDS[slug]
 
         # Common pattern heuristics
         if "nersc" in slug:
@@ -276,7 +266,7 @@ class Client:
         self._logger.debug(f"Discovering IRI facilities from {url}")
 
         try:
-            resp = _requests.get(url, timeout=10, verify=False)
+            resp = _requests.get(url, timeout=10, verify=True)
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
@@ -302,11 +292,11 @@ class Client:
             fac_name = fac.get('facility_name', 'unknown')
             fac_endpoint = fac.get('api_endpoint', '')
             norm_ep = self._normalize_endpoint(fac_endpoint)
-            slug = self._slugify(fac_name)
+            shorthand = self.get_shorthand(fac_name)
 
             # Skip if already registered
-            if slug in self._service_clients:
-                self._logger.debug(f"Service client '{slug}' already exists, skipping.")
+            if shorthand in self._service_clients:
+                self._logger.debug(f"Service client '{shorthand}' already exists, skipping.")
                 continue
 
             # 1. Check for matching credential profile
@@ -321,15 +311,15 @@ class Client:
                 try:
                     sc = SC.create(
                         type=Constants.ServiceType.IRI,
-                        name=slug,
+                        name=shorthand,
                         profile=profile_name,
                         credential=cred,
                     )
-                    self._service_clients[slug] = sc
-                    self._logger.debug(f"Created IRI client '{slug}' from profile '{profile_name}'")
+                    self._service_clients[shorthand] = sc
+                    self._logger.debug(f"Created IRI client '{shorthand}' from profile '{profile_name}'")
                 except Exception as e:
                     self._logger.warning(
-                        f"Failed to create IRI client '{slug}' from profile '{profile_name}': {e}"
+                        f"Failed to create IRI client '{shorthand}' from profile '{profile_name}': {e}"
                     )
                 continue
 
@@ -338,17 +328,17 @@ class Client:
                 try:
                     sc = SC.create(
                         type=Constants.ServiceType.IRI,
-                        name=slug,
+                        name=shorthand,
                         endpoint_uri=norm_ep,
                         credential={'api_key': env_token, 'api_endpoint': norm_ep},
                     )
-                    self._service_clients[slug] = sc
+                    self._service_clients[shorthand] = sc
                     self._logger.info(
-                        f"Created IRI client '{slug}' for '{fac_name}' using AMSC_TOKEN"
+                        f"Created IRI client '{shorthand}' for '{fac_name}' using AMSC_TOKEN"
                     )
                 except Exception as e:
                     self._logger.warning(
-                        f"Failed to create IRI client '{slug}' with AMSC_TOKEN: {e}"
+                        f"Failed to create IRI client '{shorthand}' with AMSC_TOKEN: {e}"
                     )
                 continue
 
@@ -437,7 +427,6 @@ class Client:
                     if job_spec_dict:
                         spec = JobSpec(
                             resources=job_spec_dict.get('resources'),
-                            image=job_spec_dict.get('image'),
                             executable=job_spec_dict.get('executable'),
                             arguments=job_spec_dict.get('arguments'),
                             attributes=job_spec_dict.get('attributes')

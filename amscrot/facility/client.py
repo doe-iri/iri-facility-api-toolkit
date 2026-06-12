@@ -371,10 +371,20 @@ class FacilityClient:
             credential={"api_key": token, "api_endpoint": self._endpoint},
         )
 
-    def _get_discovery(self) -> Any:
-        """Return cached discovery result, fetching on first call."""
+    def _get_discovery(self, refresh: bool = False) -> Any:
+        """Return cached discovery result, fetching on first call.
+
+        Args:
+            refresh: If True, discard any in-memory cache and force a
+                fresh discovery (which also refreshes the on-disk cache
+                inside the service client).
+        """
+        if refresh:
+            self._discovery = None
         if self._discovery is None:
-            self._discovery = self._call_api(self._service_client.discover)
+            self._discovery = self._call_api(
+                self._session.metadata, self._name, refresh=refresh, native=True
+            )
         return self._discovery
 
     @staticmethod

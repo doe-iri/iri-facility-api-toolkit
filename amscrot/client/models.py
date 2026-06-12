@@ -183,6 +183,37 @@ class Session:
         """Look up a job by name."""
         return self._jobs.get(name)
 
+    def metadata(self, client_name: str, refresh: bool = False, native: bool = True) -> Any:
+        """Retrieve discovery metadata for a service client, utilizing a local cache.
+        
+        Args:
+            client_name: Name of the service client to query.
+            refresh: If True, bypass the local cache and perform a live discovery.
+            native: If True, return the raw native discovery items. If False,
+                return normalized/typed objects (e.g. Facility).
+        """
+        sc = self.get_service_client(client_name)
+        if not sc:
+            raise ValueError(f"Service client '{client_name}' not found in session.")
+            
+        from amscrot.controller.metadata_manager import DiscoveryCache
+        cache = DiscoveryCache()
+        
+        if not refresh:
+            cached_native = cache.load_discovery(client_name)
+            if cached_native is not None:
+                if native:
+                    return cached_native
+                return sc.normalize_discovery(cached_native)
+                
+        # Cache miss or refresh: perform live discovery
+        native_result = sc.discover(native=True)
+        cache.save_discovery(client_name, native_result)
+        
+        if native:
+            return native_result
+        return sc.normalize_discovery(native_result)
+
     def _build_config(self) -> Dict:
         resources = []
         for n in self._nodes.values():

@@ -90,10 +90,11 @@ class IriServiceClient(ServiceClient):
     
     def discover(self, native: bool = True) -> DiscoveryResult:
         """Discover resources. native=True returns raw DiscoveredResource items;
-        native=False returns normalized Facility objects."""
+        native=False returns normalized Facility objects.
+        """
         if native:
             return self._discover_native()
-        return self._discover_normalized()
+        return self.normalize_discovery(self._discover_native())
 
     def _discover_native(self) -> DiscoveryResult:
         """Return raw API resources (compute, storage, network, facilities, capabilities, allocations)."""
@@ -194,23 +195,25 @@ class IriServiceClient(ServiceClient):
         self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
 
-    def _discover_normalized(self) -> DiscoveryResult:
+    def normalize_discovery(self, native_result: DiscoveryResult) -> DiscoveryResult:
         """Aggregate raw API resources into a single typed Facility object.
 
-        Any resources found (compute, storage, network, allocations) can be assumed 
+        Any resources found (compute, storage, network, allocations) can be assumed
         to belong to the single facility found in the resources query.  There is no
         longer a 'default' catch-all facility.
+
+        Args:
+            native_result: A DiscoveryResult from either a live _discover_native()
+                call or a cached discovery load.
         """
         from ...model.metadata import (
             Compute, Storage, Network, Allocation, Facility,
             Project, ProjectAllocation, UserAllocation, AllocationEntry,
         )
 
-        if not self._api_client:
-            self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
+        if not native_result:
+            self.logger.warning(f"[{self.name}] Warning: No native results to normalize, returning empty discovery.")
             return DiscoveryResult()
-
-        native_result = self._discover_native()
 
         # Build map from capability ID (UUID) to name
         cap_id_to_name = {}

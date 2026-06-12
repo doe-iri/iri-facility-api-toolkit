@@ -73,7 +73,21 @@ class ServiceClient(ABC):
 
     @abstractmethod
     def discover(self, native: bool = True) -> "DiscoveryResult":
+        """Perform live discovery against the service.
+        
+        Args:
+            native: If True, return raw DiscoveredResource items.
+                If False, return typed objects (e.g. Facility) if the client supports it.
+        """
         pass
+
+    def normalize_discovery(self, native_result: "DiscoveryResult") -> "DiscoveryResult":
+        """Convert a raw native DiscoveryResult into typed objects.
+        
+        Base implementation returns the result unmodified. Subclasses should
+        override this if they support normalization (e.g., Facility objects).
+        """
+        return native_result
 
     @abstractmethod
     def plan(self, job: "Job", skip_checks: bool = False) -> Dict:

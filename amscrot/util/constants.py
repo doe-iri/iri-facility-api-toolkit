@@ -111,8 +111,22 @@ class Constants:
     NETWORK_STITCH_CONFIG = "policy"
     PROVIDER = 'provider'
     DEFAULT_IRO_ENDPOINT = "https://sense-o-east.es.net:8443/StackV-web/restapi"
+
+    # Metadata cache directories (relative to ~/.amscrot/)
+    METADATA_BASE_DIR = "metadata"
+    DISCOVERY_CACHE_DIR = "metadata/discovery"
+
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
-    
+    FACILITY_SHORTHANDS = {
+        "national-energy-research-scientific-computing-center": "nersc",
+        "nersc-facility-active": "nersc",
+        "esnet-facility-east": "esnet-east",
+        "esnet-facility-west": "esnet-west",
+        "argonne-leadership-computing-facility": "alcf",
+        "oak-ridge-leadership-computing-facility": "olcf",
+        "amsc-iro-orchestrator": "amsc-iro",
+    }
+
     class ServiceType:
         IRI = "iri"
         AMSC_IRI = "amsc-iri"
