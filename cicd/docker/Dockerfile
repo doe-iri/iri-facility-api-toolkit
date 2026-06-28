@@ -7,10 +7,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get -u -y install lsb-release python3 binutils python3-venv python3-pip wget git bash-completion vim yq jq \
     && apt-get -qq purge && apt-get -qq clean && rm -rf /var/lib/apt/lists/*
 
-COPY /requirements.txt /tmp/
-RUN pip install --no-cache-dir --break-system-packages --ignore-requires-python -r /tmp/requirements.txt
-
-COPY ./setup.py ./tools ./README.md ./MANIFEST.in /requirements.txt /
+COPY ./setup.py ./tools ./README.md ./MANIFEST.in /
 COPY ./fabfed /fabfed
 COPY ./tools /tools
 RUN python3 -m pip install --break-system-packages --no-cache-dir .
