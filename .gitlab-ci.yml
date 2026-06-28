@@ -4,22 +4,30 @@ stages:
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  UV_CACHE_DIR: "$CI_PROJECT_DIR/.cache/uv"
 
 cache:
   paths:
     - .cache/pip
+    - .cache/uv
 
 default:
   image: python:3.12
   before_script:
-    - pip install --quiet build
-    - pip install --quiet -r requirements.txt
-    - pip install --quiet -e .
+    - pip install --quiet uv
+
+# smoke for core being importable without heavy deps
+core:
+  stage: test
+  script:
+    - uv sync --locked
+    - uv run --no-sync python -c "import amscrot.facility, amscrot.client.job; from amscrot.serviceclient import ServiceClient; print('core import OK')"
 
 test:
   stage: test
   script:
-    - pytest -v --tb=short -m "not integration"
+    - uv sync --locked --all-extras
+    - uv run --no-sync pytest -v --tb=short -m "not integration"
   artifacts:
     when: always
     reports:
@@ -30,7 +38,7 @@ build:
   stage: build
   needs: [test]
   script:
-    - python -m build
+    - uv build
   artifacts:
     paths:
       - dist/
