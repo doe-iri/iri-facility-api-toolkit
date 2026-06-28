@@ -192,10 +192,12 @@ class FacilityClient:
 
     # ── Internal API (used by Resource and Job) ───────────────────────────
 
-    def _get_jobs(self, resource_id: str) -> list:
+    def _get_jobs(self, resource_id: str, *, historical: bool = False) -> list:
         """Return Job wrappers for all jobs on a resource (live API call)."""
         from amscrot.facility.models import Job
-        raw_jobs = self._call_api(self._service_client.get_jobs, resource_id) or []
+        raw_jobs = self._call_api(
+            self._service_client.get_jobs, resource_id, historical=historical
+        ) or []
         jobs = []
         for raw in raw_jobs:
             handle = SimpleNamespace(

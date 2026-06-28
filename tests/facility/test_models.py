@@ -193,7 +193,7 @@ class TestJobWait:
         states = ["QUEUED", "ACTIVE", "COMPLETED"]
         call_count = [0]
 
-        def side_effect(op, amscrot_job):
+        def side_effect(op, amscrot_job, **kwargs):
             s = MagicMock()
             s.state = states[min(call_count[0], len(states) - 1)]
             s.exit_code = None
@@ -270,7 +270,7 @@ class TestResourceJobs:
         mock_facility._get_jobs.return_value = [mock_job]
 
         result = r.jobs()
-        mock_facility._get_jobs.assert_called_once_with("res-123")
+        mock_facility._get_jobs.assert_called_once_with("res-123", historical=False)
         assert result == [mock_job]
 
     def test_jobs_returns_empty_list_when_none(self):
@@ -278,3 +278,10 @@ class TestResourceJobs:
         mock_facility._get_jobs.return_value = []
 
         assert r.jobs() == []
+
+    def test_jobs_forwards_historical(self):
+        r, mock_facility = _make_resource()
+        mock_facility._get_jobs.return_value = []
+
+        r.jobs(historical=True)
+        mock_facility._get_jobs.assert_called_once_with("res-123", historical=True)

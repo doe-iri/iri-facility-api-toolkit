@@ -461,7 +461,7 @@ class TestGetJobs:
         ]
 
         jobs = fc._get_jobs("res-001")
-        mock_sc.get_jobs.assert_called_once_with("res-001")
+        mock_sc.get_jobs.assert_called_once_with("res-001", historical=False)
         assert len(jobs) == 1
         assert isinstance(jobs[0], Job)
         assert jobs[0].id == "job-001"
@@ -471,3 +471,10 @@ class TestGetJobs:
         mock_sc.get_jobs.return_value = []
 
         assert fc._get_jobs("res-001") == []
+
+    def test_get_jobs_forwards_historical(self):
+        fc, mock_sc, _ = _make_facility()
+        mock_sc.get_jobs.return_value = []
+
+        fc._get_jobs("res-001", historical=True)
+        mock_sc.get_jobs.assert_called_once_with("res-001", historical=True)
