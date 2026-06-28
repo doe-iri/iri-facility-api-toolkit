@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "amscrot-py"
-dynamic = ["version", "dependencies"]
+dynamic = ["version"]
 description = "AmSC Resource Orchestration Client Toolkit"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -19,6 +19,24 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+# Core: only what the IRI service-client path imports
+dependencies = [
+    "amsc-iri==1.0.0",
+    "pydantic>=2",
+    "PyYAML>=6",
+]
+
+[project.optional-dependencies]
+fabric = ["fabrictestbed-extensions"]
+chi = ["python-chi==0.17.11", "paramiko==4.0.0"]
+sense = ["sense-o-api==1.52"]
+janus = ["ansible==9.5.1", "ansible-runner==2.3.6"]
+# KubeProvider drives nodes through the janus ansible helper, so kube pulls janus.
+kube = ["amscrot-py[janus]", "kubernetes==35.0.0"]
+cloudlab = ["xmltodict"]
+aws = ["boto3"]
+gcp = ["google-cloud-compute"]
+all = ["amscrot-py[fabric,chi,sense,janus,kube,cloudlab,aws,gcp]"]
 
 [project.urls]
 Homepage = "https://github.com/esnet/amsc-isro-toolkit"
@@ -29,7 +47,6 @@ fabfed = "tools.cli:main"
 
 [tool.setuptools.dynamic]
 version = {attr = "amscrot.__VERSION__"}
-dependencies = {file = ["requirements.txt"]}
 
 [tool.setuptools.packages.find]
 where = ["."]
