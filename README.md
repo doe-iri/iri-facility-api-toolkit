@@ -11,8 +11,26 @@ The American Science Cloud Infrastructure Services Resource Orchestration Toolki
 
 # <a name="install"></a>Installation
 
+The base install provides the core client and the IRI/AMSC service clients
+(ESnet IRI, NERSC IRI, AMSC-IRO):
+
 ```
 pip install amscrot-py
+```
+
+Infrastructure providers and the Kubernetes/Kueue backend pull heavier
+dependencies and are packaged as optional extras. Install only what you need:
+
+```
+pip install "amscrot-py[kube]"       # Kubernetes / Kueue jobs
+pip install "amscrot-py[fabric]"     # FABRIC testbed
+pip install "amscrot-py[chi]"        # Chameleon (CHI)
+pip install "amscrot-py[sense]"      # SENSE-O
+pip install "amscrot-py[janus]"      # Janus (Ansible)
+pip install "amscrot-py[cloudlab]"   # CloudLab
+pip install "amscrot-py[aws]"        # AWS
+pip install "amscrot-py[gcp]"        # Google Cloud
+pip install "amscrot-py[all]"        # everything
 ```
 
 # <a name="operate"></a>Operation Instructions
@@ -312,6 +330,8 @@ fs.compress(storage_resource_id, remote_path="/scratch/results/", archive_path="
 `storage_resource_id` is the UUID of a storage resource from `svc.discover()`. For most IRI deployments, the home storage resource is auto-resolved when calling `session.fetch_output_files()`.
 
 ## Kubernetes / Kueue Jobs
+
+Requires the `kube` extra: `pip install "amscrot-py[kube]"`.
 
 ```python
 spec = JobSpec(
