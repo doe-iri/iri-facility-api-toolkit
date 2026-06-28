@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get -u -y install lsb-release python3 binutils python3-venv python3-pip wget git bash-completion vim yq jq \
     && apt-get -qq purge && apt-get -qq clean && rm -rf /var/lib/apt/lists/*
 
-COPY ./setup.py ./tools ./README.md ./MANIFEST.in /
-COPY ./fabfed /fabfed
-COPY ./tools /tools
-RUN python3 -m pip install --break-system-packages --no-cache-dir .
+COPY ./pyproject.toml ./README.md ./MANIFEST.in /src/
+COPY ./amscrot /src/amscrot
+COPY ./tools /src/tools
+RUN python3 -m pip install --break-system-packages --no-cache-dir "/src[all]"
