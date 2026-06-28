@@ -149,7 +149,9 @@ __pycache__
 .eggs
 fabfed_py.egg-info
 .egg-info
+*.egg-info/
 venv
+.venv/
 
 # emacs auto-save
 *.*~
