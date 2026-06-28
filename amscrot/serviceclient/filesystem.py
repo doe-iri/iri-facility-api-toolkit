@@ -156,6 +156,24 @@ class FilesystemInterface(ABC):
         """
 
     @abstractmethod
+    def upload_bytes(
+        self,
+        resource_id: str,
+        data: bytes,
+        remote_path: str,
+    ) -> Dict[str, Any]:
+        """Upload in-memory bytes to a remote path (max 5 MB).
+
+        Args:
+            resource_id:  Storage resource identifier.
+            data:         Raw file contents to upload.
+            remote_path:  Destination path on the remote filesystem.
+
+        Returns:
+            Task result dict from the IRI API.
+        """
+
+    @abstractmethod
     def download(
         self,
         resource_id: str,
@@ -577,8 +595,18 @@ class IriFilesystem(FilesystemInterface):
         self._logger.debug(
             f"{self._tag()} upload local={str(local)!r} -> remote={remote_path!r}"
         )
-        file_bytes = local.read_bytes()
-        resp = self._fs.upload(resource_id, path=remote_path, file=file_bytes)
+        return self.upload_bytes(resource_id, local.read_bytes(), remote_path)
+
+    def upload_bytes(
+        self,
+        resource_id: str,
+        data: bytes,
+        remote_path: str,
+    ) -> Dict[str, Any]:
+        self._logger.debug(
+            f"{self._tag()} upload_bytes ({len(data)} bytes) -> remote={remote_path!r}"
+        )
+        resp = self._fs.upload(resource_id, path=remote_path, file=data)
         task = self._run_task(resp, op="upload")
         return self._result_dict(task)
 

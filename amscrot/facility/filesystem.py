@@ -94,6 +94,10 @@ class FilesystemClient:
         """Upload a file from local disk to the resource."""
         return self._run("upload", local_path=local_path, remote_path=remote_path)
 
+    def upload_bytes(self, data: bytes, remote_path: str) -> Task:
+        """Upload in-memory bytes to the resource (max 5 MB)."""
+        return self._run("upload_bytes", data, remote_path=remote_path)
+
     # ── Permission operations ──────────────────────────────────────────────
 
     def chmod(self, path: str, mode: str) -> Task:

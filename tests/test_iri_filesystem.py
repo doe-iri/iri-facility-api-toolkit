@@ -247,6 +247,14 @@ class TestUpload:
         with pytest.raises(FilesystemError):
             fs.upload("res-1", str(local), "/remote/f.txt")
 
+    def test_upload_bytes_calls_api_without_file_io(self):
+        fs, fsapi, _ = _make_fs()
+        fs.upload_bytes("res-1", b"generated content", "/remote/gen.yaml")
+        fsapi.upload.assert_called_once()
+        _, kwargs = fsapi.upload.call_args
+        assert kwargs["path"] == "/remote/gen.yaml"
+        assert kwargs["file"] == b"generated content"
+
 
 # ---------------------------------------------------------------------------
 # download
