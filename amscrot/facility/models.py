@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -78,6 +79,20 @@ class Resource:
     def jobs(self, *, historical: bool = False) -> list:
         """Return all jobs submitted to this resource (live API call)."""
         return self._facility._get_jobs(self.id, historical=historical)
+
+    def job(self, job_id: str) -> "Job":
+        """Return a handle to an existing job by id (no API call).
+
+        Use to refresh/cancel a known job without listing every job on the
+        resource: ``resource.job(job_id).refresh(historical=True)``.
+        """
+        handle = SimpleNamespace(
+            id=job_id,
+            resource_id=self.id,
+            name="",
+            status=SimpleNamespace(value="UNKNOWN"),
+        )
+        return Job(amscrot_job=handle, resource_id=self.id, facility_client=self._facility)
 
     def submit(
         self,
