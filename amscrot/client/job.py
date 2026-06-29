@@ -1,6 +1,9 @@
 from enum import Enum
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
 from amscrot.serviceclient import ServiceClient
+
+if TYPE_CHECKING:
+    from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 
 class JobServiceType(str, Enum):
     REALTIME = "REALTIME"
@@ -97,7 +100,7 @@ class Job:
         type: Union[JobType, str],
         service_type: Union[JobServiceType, str],
         service_client: Optional[ServiceClient] = None,
-        job_spec: Optional[JobSpec] = None,
+        job_spec: Optional[Union[JobSpec, "IriJobSpec"]] = None,
         dependency: Optional['Job'] = None,
         intent: Optional[str] = None,
         network: Optional[Any] = None,

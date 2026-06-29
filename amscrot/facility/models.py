@@ -5,6 +5,8 @@ import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
+    from amscrot.client.job import JobSpec
     from amscrot.facility.client import FacilityClient
     from amscrot.facility.filesystem import FilesystemClient
 
@@ -93,13 +95,15 @@ class Resource:
         pre_launch: str | None = None,
         post_launch: str | None = None,
         launcher: str | None = None,
+        job_spec: "JobSpec | IriJobSpec | None" = None,
         **custom_attributes: str,
     ) -> "Job":
         """Submit a job to this resource.
 
         IRI-standard parameters map directly to JobSpec fields. Any additional
         keyword arguments become scheduler-specific ``custom_attributes``
-        (e.g., ALCF's ``filesystems="home"``).
+        (e.g., ALCF's ``filesystems="home"``). Pass a jobspec object for passthrough
+        submission (typed JobSpecInput or amscrot JobSpec). 
         """
         return self._facility._submit_job(
             resource_id=self.id,
@@ -118,6 +122,7 @@ class Resource:
             post_launch=post_launch,
             launcher=launcher,
             custom_attributes=custom_attributes or None,
+            job_spec=job_spec,
         )
 
     def __repr__(self) -> str:
