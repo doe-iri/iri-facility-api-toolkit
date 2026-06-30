@@ -16,7 +16,7 @@ resolution-markers = [
 
 [[package]]
 name = "amsc-iri"
-version = "1.0.0"
+version = "1.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
@@ -24,9 +24,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/58/40/163304ed968c54dcf4177fa3b555a51a89661a117acf74d59e3c7766053b/amsc_iri-1.0.0.tar.gz", hash = "sha256:08a822ce09acf84f3b99e9a4a4e2fb51e2f05083fbc83d30003ffb32973db11d", size = 60564, upload-time = "2026-04-09T18:21:56.272Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/79/672b778b4f6e5555348003443c619ed770948100e646819e26ed6716704a/amsc_iri-1.2.0.tar.gz", hash = "sha256:02a8b2d95f7e550eff07b84738e3bb5ab7cc1949ceb80e6d70309c5e5407ff2c", size = 61902, upload-time = "2026-06-30T19:27:31.51Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2c/e7/a00bece53f19ac51e994dacf3522a98c8d64a60c23297cba67ba028d40fb/amsc_iri-1.0.0-py3-none-any.whl", hash = "sha256:89ab2dfece6dcab575dae181b0d1b62a43a56526906bb88e4c32e945663e8220", size = 106186, upload-time = "2026-04-09T18:21:54.828Z" },
+    { url = "https://files.pythonhosted.org/packages/81/43/fc55696dc125bdebd8d38f064c6f5cccc762c9332845378997131aa38d1e/amsc_iri-1.2.0-py3-none-any.whl", hash = "sha256:310ba3cc22ddb0fa19a8d4f3da416d992e3c488d08435d84cf53a077c467fb40", size = 105790, upload-time = "2026-06-30T19:27:30.501Z" },
 ]
 
 [[package]]
@@ -82,7 +82,7 @@ sense = [
 
 [package.metadata]
 requires-dist = [
-    { name = "amsc-iri", specifier = "==1.0.0" },
+    { name = "amsc-iri", specifier = "==1.2.0" },
     { name = "amscrot-py", extras = ["aws", "chi", "cloudlab", "fabric", "gcp", "janus", "kube", "sense"], marker = "extra == 'all'" },
     { name = "amscrot-py", extras = ["janus"], marker = "extra == 'kube'" },
     { name = "ansible", marker = "extra == 'janus'", specifier = "==9.5.1" },
