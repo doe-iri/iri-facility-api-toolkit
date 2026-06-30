@@ -210,6 +210,31 @@ for facility in result.facilities:
     print(facility.name, [c.cores for c in (facility.compute or [])])
 ```
 
+### Metadata Caching and Normalization
+
+To speed up execution, discovery results are automatically stored in a local, TTL-based file cache under `~/.amscrot/metadata/discovery/`. 
+
+Sessions expose the `metadata` method to query cached (or live) discovery metadata in either native or normalized formats:
+
+```python
+# Retrieve discovery result utilizing local cache (default TTL is 1 hour)
+result = session.metadata("my-service-client")
+
+# Query and normalize/convert to structured, provider-agnostic Facility objects
+normalized_result = session.metadata("my-service-client", native=False)
+for facility in normalized_result:
+    print(facility.name)
+    for compute in facility.compute or []:
+        print(f"  Compute: {compute.name} (capabilities: {compute.capabilities})")
+    for project in facility.projects or []:
+        print(f"  Project: {project.name}")
+        for alloc in project.allocations or []:
+            print(f"    Alloc: {alloc.id} (capability: {alloc.capability})")
+
+# Bypass the local cache and perform a live API discovery call
+fresh_result = session.metadata("my-service-client", refresh=True)
+```
+
 ### 3. Define a Job
 
 ```python
