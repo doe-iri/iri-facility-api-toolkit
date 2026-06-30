@@ -11,7 +11,14 @@ from amscrot.util.constants import Constants
 
 SESSION_NAME = "test-kube-kueue"
 
+try:
+    import kubernetes
+    HAS_KUBE = True
+except ImportError:
+    HAS_KUBE = False
 
+
+@pytest.mark.skipif(not HAS_KUBE, reason="Requires 'kubernetes' module")
 class TestKubeKueueServiceClient(unittest.TestCase):
     """Test Kubernetes/Kueue ServiceClient integration using Session and Job objects."""
 

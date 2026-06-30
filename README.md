@@ -11,8 +11,26 @@ The American Science Cloud Infrastructure Services Resource Orchestration Toolki
 
 # <a name="install"></a>Installation
 
+The base install provides the core client and the IRI/AMSC service clients
+(ESnet IRI, NERSC IRI, AMSC-IRO):
+
 ```
 pip install amscrot-py
+```
+
+Infrastructure providers and the Kubernetes/Kueue backend pull heavier
+dependencies and are packaged as optional extras. Install only what you need:
+
+```
+pip install "amscrot-py[kube]"       # Kubernetes / Kueue jobs
+pip install "amscrot-py[fabric]"     # FABRIC testbed
+pip install "amscrot-py[chi]"        # Chameleon (CHI)
+pip install "amscrot-py[sense]"      # SENSE-O
+pip install "amscrot-py[janus]"      # Janus (Ansible)
+pip install "amscrot-py[cloudlab]"   # CloudLab
+pip install "amscrot-py[aws]"        # AWS
+pip install "amscrot-py[gcp]"        # Google Cloud
+pip install "amscrot-py[all]"        # everything
 ```
 
 # <a name="operate"></a>Operation Instructions
@@ -210,13 +228,13 @@ spec = JobSpec(
     },
     attributes={
         "container": {"image": "python:3.12-slim"},  # provider image
-        "resource_id": "<compute-resource-id>"       # from discovery
     }
 )
 
 job = Job(
     name="my-job",
     type=JobType.COMPUTE,
+    resource_id="<compute-resource-id>",  # from discovery or apriori knowledge
     service_type=JobServiceType.BATCH,
     service_client=svc,
     job_spec=spec
@@ -271,11 +289,18 @@ spec = JobSpec(
     executable="python",
     arguments=["-c", "print('done')"],
     attributes={
-        "resource_id": "<compute-resource-id>",
         "directory": "/path/to/workdir",        # remote working directory
         "stdout_path": "/path/to/workdir/out.log",
         "stderr_path": "/path/to/workdir/err.log",
     }
+)
+
+job = Job(
+    name="my-job",
+    type=JobType.COMPUTE,
+    resource_id="<compute-resource-id>",
+    service_client=svc,
+    job_spec=spec
 )
 
 # After session.wait() returns COMPLETED:
@@ -312,6 +337,8 @@ fs.compress(storage_resource_id, remote_path="/scratch/results/", archive_path="
 `storage_resource_id` is the UUID of a storage resource from `svc.discover()`. For most IRI deployments, the home storage resource is auto-resolved when calling `session.fetch_output_files()`.
 
 ## Kubernetes / Kueue Jobs
+
+Requires the `kube` extra: `pip install "amscrot-py[kube]"`.
 
 ```python
 spec = JobSpec(

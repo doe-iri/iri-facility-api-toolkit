@@ -2,7 +2,12 @@ import pytest
 import unittest
 import json
 import logging
-from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
+try:
+    from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
+    HAS_KUBE = True
+except ImportError:
+    KubeServiceClient = None
+    HAS_KUBE = False
 from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClient
 from amscrot.model.discovery import DiscoveryResult
 from amscrot.model.metadata import Facility, ResourceBase
@@ -22,6 +27,8 @@ class TestServiceClientDiscoverNormalized(unittest.TestCase):
 
     def test_kube_discover_normalized(self):
         """KubeServiceClient.discover(native=False) returns a Facility with Compute list."""
+        if not HAS_KUBE:
+             self.skipTest("KubeServiceClient unavailable (kubernetes package not installed).")
         print("\n--- Testing KubeServiceClient.discover(native=False) ---")
         client = KubeServiceClient(name="test-kube")
 

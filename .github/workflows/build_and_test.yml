@@ -9,30 +9,43 @@ on:
   pull_request:
 
 jobs:
+  core:
+    # Guards the lean install: core deps only (no extras), then prove the IRI
+    # facility path imports with no heavy backend dependency present.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install core only
+        run: uv sync --locked
+
+      - name: Core import smoke test
+        run: uv run --no-sync python -c "import amscrot.facility, amscrot.client.job; from amscrot.serviceclient import ServiceClient; print('core import OK')"
+
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          enable-cache: true
           python-version: "3.12"
-          cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --quiet build
-          if [ -f requirements.txt ]; then pip install --quiet -r requirements.txt; fi
-          pip install --quiet -e .
-          # Ensure pytest is installed just in case it's not in requirements.txt or setup.py
-          pip install --quiet pytest
+        run: uv sync --locked --all-extras
 
       - name: Test
-        run: |
-          pytest -v --tb=short -m "not integration" --junitxml=report.xml
+        run: uv run --no-sync pytest -v --tb=short -m "not integration" --junitxml=report.xml
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
@@ -50,22 +63,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
         with:
+          enable-cache: true
           python-version: "3.12"
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install --quiet build
-          if [ -f requirements.txt ]; then pip install --quiet -r requirements.txt; fi
-          pip install --quiet -e .
 
       - name: Build
-        run: |
-          python -m build
+        run: uv build
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4

@@ -32,11 +32,14 @@ class TestSessionMultiResource(unittest.TestCase):
         )
         
         # 5. Setup Kube Service Client for Jobs
-        k_client = ServiceClient.create(
-            type=Constants.ServiceType.KUBE, 
-            name="k8s-client", 
-            endpoint_uri="http://localhost:8080"
-        )
+        try:
+            k_client = ServiceClient.create(
+                type=Constants.ServiceType.KUBE, 
+                name="k8s-client", 
+                endpoint_uri="http://localhost:8080"
+            )
+        except ImportError as e:
+            self.skipTest(f"KubeServiceClient not available: {e}")
         session.add_service_client(k_client)
         
         # 6. Create Jobs

@@ -2,7 +2,12 @@ import pytest
 import unittest
 import json
 import logging
-from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
+try:
+    from amscrot.serviceclient.kube.kube_service_client import KubeServiceClient
+    HAS_KUBE = True
+except ImportError:
+    KubeServiceClient = None
+    HAS_KUBE = False
 from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClient
 from amscrot.model.discovery import DiscoveryResult
 from amscrot.util.constants import Constants
@@ -21,6 +26,8 @@ class TestServiceClientDiscovery(unittest.TestCase):
         Skips if Kubernetes client is not available or connection fails.
         Dumps discovery JSON to stdout on success.
         """
+        if not HAS_KUBE:
+             self.skipTest("KubeServiceClient unavailable (kubernetes package not installed).")
         print("\n--- Testing KubeServiceClient.discover ---")
         client = KubeServiceClient(name="test-kube")
         
