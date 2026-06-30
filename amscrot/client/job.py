@@ -98,7 +98,8 @@ class Job:
         self,
         name: str,
         type: Union[JobType, str],
-        service_type: Union[JobServiceType, str],
+        resource_id: Optional[str] = None,
+        service_type: Union[JobServiceType, str] = None,
         service_client: Optional[ServiceClient] = None,
         job_spec: Optional[Union[JobSpec, "IriJobSpec"]] = None,
         dependency: Optional['Job'] = None,
@@ -111,9 +112,8 @@ class Job:
         self.name = name
         self.type = JobType(type) if isinstance(type, str) else type
         self.service_type = JobServiceType(service_type) if isinstance(service_type, str) else service_type
-        
         self.id = None
-        self.resource_id = None
+        self.resource_id = resource_id
         self.status = JobState.INIT
         self.service_client = service_client
         self.job_spec = job_spec or JobSpec()

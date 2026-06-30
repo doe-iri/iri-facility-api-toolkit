@@ -101,6 +101,7 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
 
         # -- Pull resource_id from upstream discover task if configured --
         attrs = dict(self.attributes)
+        resource_id = None
         if self.resource_id_task_id:
             resource_id = context["ti"].xcom_pull(
                 key="resource_id",
@@ -115,7 +116,6 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
                 "[amscrot] Using discovered resource_id='%s' from task '%s'.",
                 resource_id, self.resource_id_task_id,
             )
-            attrs["resource_id"] = resource_id
 
         spec = JobSpec(
             executable=self.executable,
@@ -127,6 +127,7 @@ class IriJobSubmitOperator(AmscrotBaseOperator):
         job = Job(
             name=self.job_name,
             type=JobType.COMPUTE,
+            resource_id=resource_id,
             service_type=JobServiceType.BATCH,
             service_client=sc,
             job_spec=spec,

@@ -295,7 +295,7 @@ class FacilityClient:
             resources["node_count"] = nodes
 
         # Build attributes dict
-        attributes: dict = {"resource_id": resource_id}
+        attributes: dict = {}
         if directory:
             attributes["directory"] = directory
         if duration is not None:
@@ -331,6 +331,7 @@ class FacilityClient:
         amscrot_job = AmscrotJob(
             name=job_name,
             type=JobType.COMPUTE,
+            resource_id=resource_id,
             service_type=JobServiceType.BATCH,
             service_client=self._service_client,
             job_spec=spec,
