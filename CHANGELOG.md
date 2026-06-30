@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Native IRI JobSpec Passthrough**: Added the ability to pass a native `IriJobSpec` object directly into the `Job` constructor (`job_spec` parameter), bypassing generic `JobSpec` translation.
 - **In-Memory File Uploads**: Supported uploading in-memory bytes/data streams directly via the remote filesystem interface without requiring writing to local files first.
 - **Historical Job Reads**: Exposed a `historical` parameter on the facility client/resource `jobs()` methods to fetch jobs that are no longer in the active scheduler queue.
+- **Discovery Metadata Normalization**: Added support for converting raw native discovery items to structured, strongly-typed model hierarchies (e.g. `Facility`, `Project`, `ProjectAllocation`, `UserAllocation`, `Compute`, `Storage`, `Network`, `Allocation`).
+- **Discovery Metadata Caching & `session.metadata`**: Introduced a local, TTL-based file cache (`DiscoveryCache`) under `~/.amscrot/metadata/discovery/` and exposed a convenience `session.metadata()` method to query cache-backed (or live) service client discovery information in both native and normalized formats.
 - **`uv` Package & Dependency Support**: Reorganized project metadata to move all dependencies from `requirements.txt` to standard PEP 621 dependencies/extras in `pyproject.toml` with `uv` package manager lockfile support.
 
 ### Changed

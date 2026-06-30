@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 from amscrot.util.constants import Constants
 
 if TYPE_CHECKING:
-    from amscrot.model.metadata import Facility
+    from amscrot.model.metadata import Facility, Project
     from amscrot.model.intent import Intent
 
 
@@ -108,6 +108,80 @@ class DiscoveryResult:
         """Filter resources by an arbitrary type string."""
         return [item for item in self._items if item.type == type_str]
 
+    @property
+    def projects_typed(self) -> List["Project"]:
+        """Return typed Project objects from all normalized Facility results."""
+        from amscrot.model.metadata import Project
+        projects: List[Project] = []
+        for fac in self.facilities:
+            projects.extend(fac.projects or [])
+        return projects
+
+    def resources_for_project(
+        self,
+        project_name: Optional[str] = None,
+        user_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get a structured summary of available resources by project.
+
+        Args:
+            project_name: Filter to a specific project (case-insensitive).
+                If ``None``, returns allocations across **all** projects.
+            user_id: If provided, returns only this user's allocation slice.
+                If ``None``, returns the project-level totals.
+
+        Returns:
+            Dict keyed by project name, each containing a dict keyed by
+            capability (e.g. ``'cpu'``, ``'gpfs_storage'``), each containing
+            a list of allocation entry dicts with allocation/usage/unit.
+
+            When *project_name* is given, the outer dict has a single key.
+
+        Example::
+
+            # All projects, project-level totals
+            result.resources_for_project()
+            # → {'mpesnet': {'cpu': [...], 'gpfs_storage': [...]},
+            #    'amsc013': {'gpu': [...], ...}}
+
+            # Single project, user-level slice
+            result.resources_for_project('mpesnet', user_id='53203')
+            # → {'mpesnet': {'cpu': [{'allocation': 74.9, ...}], ...}}
+        """
+        output: Dict[str, Dict[str, list]] = {}
+
+        for fac in self.facilities:
+            projects = fac.projects or []
+            if project_name is not None:
+                proj = fac.get_project(project_name)
+                projects = [proj] if proj else []
+
+            for proj in projects:
+                proj_key = proj.name or proj.id or "unknown"
+                cap_map: Dict[str, list] = {}
+
+                for pa in (proj.allocations or []):
+                    cap = pa.capability or "unknown"
+                    if user_id is not None:
+                        # Return user-level slice
+                        for ua in (pa.user_allocations or []):
+                            if ua.user_id == user_id:
+                                cap_map[cap] = [
+                                    e.model_dump(exclude_none=True)
+                                    for e in (ua.entries or [])
+                                ]
+                    else:
+                        # Return project-level totals
+                        cap_map[cap] = [
+                            e.model_dump(exclude_none=True)
+                            for e in (pa.entries or [])
+                        ]
+
+                if cap_map:
+                    output[proj_key] = cap_map
+
+        return output
+
     def summary(self) -> Dict[str, int]:
         """Return a dict of {type: count} for all resource types found."""
         counts: Dict[str, int] = {}
@@ -123,7 +197,7 @@ class DiscoveryResult:
         """Return a hierarchical representation of normalized (native=False) Facility results.
 
         Each Facility is serialized with its nested compute, storage, network,
-        and allocation resources.
+        allocation, and project resources.
         """
         from amscrot.model.metadata import Facility
 
@@ -133,7 +207,10 @@ class DiscoveryResult:
             for field in type(obj).model_fields:
                 val = getattr(obj, field, None)
                 if val is not None:
-                    d[field] = val
+                    if isinstance(val, list):
+                        d[field] = [_resource_dict(v) if hasattr(type(v), 'model_fields') else v for v in val]
+                    else:
+                        d[field] = val
             return d
 
         def _fac_to_dict(fac: "Facility") -> Dict[str, Any]:
@@ -145,6 +222,7 @@ class DiscoveryResult:
                 "storage":     [_resource_dict(s) for s in (fac.storage     or [])],
                 "networks":    [_resource_dict(n) for n in (fac.networks    or [])],
                 "allocations": [_resource_dict(a) for a in (fac.allocations or [])],
+                "projects":    [_resource_dict(p) for p in (fac.projects    or [])],
             }
 
         facilities = self.facilities  # List[Facility] from typed .metadata

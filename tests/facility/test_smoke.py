@@ -1,7 +1,7 @@
 """End-to-end smoke test for the facility convenience API.
 
 Exercises the full call chain from Client.facility() through resource
-discovery, job submission, wait, and filesystem operations — using mocks.
+discovery, job submission, wait, and filesystem operations -- using mocks.
 """
 import pytest
 from unittest.mock import MagicMock, patch
@@ -72,6 +72,7 @@ class TestFullWorkflowSmoke:
              patch("amscrot.facility.client.Session") as MockSession:
             MockSC.create.return_value = mock_sc
             mock_session = MagicMock()
+            mock_session.metadata.side_effect = lambda name, **kwargs: mock_sc.discover(**kwargs)
             MockSession.return_value = mock_session
 
             # 1. Create client and connect to facility
@@ -123,8 +124,11 @@ class TestFullWorkflowSmoke:
         mock_sc.destroy.return_value = None
 
         with patch("amscrot.facility.client.ServiceClient") as MockSC, \
-             patch("amscrot.facility.client.Session"):
+             patch("amscrot.facility.client.Session") as MockSession:
             MockSC.create.return_value = mock_sc
+            mock_session = MagicMock()
+            mock_session.metadata.side_effect = lambda name, **kwargs: mock_sc.discover(**kwargs)
+            MockSession.return_value = mock_session
             client = Client()
             facility = client.facility(ENDPOINT, token=TOKEN)
             polaris = facility.resource("Polaris")
@@ -151,7 +155,7 @@ class TestFullWorkflowSmoke:
     def test_token_refresh_on_auth_error(self):
         # Scenario: token_provider is given; first discover() raises 401;
         # _call_api should call provider() once, rebuild the service client,
-        # and retry using the new client's discover() — which succeeds.
+        # and retry using the new client's discover() -- which succeeds.
 
         token_calls = [0]
 
@@ -184,7 +188,7 @@ class TestFullWorkflowSmoke:
         # 2. First call to discover raises 401; subsequent calls succeed
         discover_call = [0]
 
-        def flaky_discover():
+        def flaky_discover(**kwargs):
             discover_call[0] += 1
             if discover_call[0] == 1:
                 raise Exception("401 Unauthorized")
@@ -194,8 +198,17 @@ class TestFullWorkflowSmoke:
 
         # 3. Build FacilityClient with token_provider, then trigger the 401 path
         with patch("amscrot.facility.client.ServiceClient") as MockSC, \
-             patch("amscrot.facility.client.Session"):
+             patch("amscrot.facility.client.Session") as MockSession:
             MockSC.create.side_effect = make_sc
+            mock_session = MagicMock()
+            
+            def mock_metadata(name, **kwargs):
+                # Delegate to the currently active service client inside the facility
+                return facility._service_client.discover(**kwargs)
+            
+            mock_session.metadata.side_effect = mock_metadata
+            MockSession.return_value = mock_session
+            
             client = Client()
             facility = client.facility(ENDPOINT, token_provider=provider)
 

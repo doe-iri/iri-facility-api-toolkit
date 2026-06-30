@@ -36,6 +36,7 @@ class KubeServiceClient(ServiceClient):
         self.namespace = "default" # Could be configurable
 
     def discover(self, native: bool = True) -> DiscoveryResult:
+        """Return raw Kubernetes resources (nodes, CRDs) as DiscoveredResource items."""
         # Check connectivity if client is available
         if self._available:
             try:
@@ -43,12 +44,7 @@ class KubeServiceClient(ServiceClient):
             except Exception as e:
                 # Raise exception so tests can catch it and skip
                 raise Exception(f"Kubernetes cluster unreachable during discover: {e}")
-        if native:
-            return self._discover_native()
-        return self._discover_normalized()
 
-    def _discover_native(self) -> DiscoveryResult:
-        """Return raw Kubernetes resources (nodes, CRDs) as DiscoveredResource items."""
         if not self._available:
             return DiscoveryResult()
 
@@ -91,29 +87,38 @@ class KubeServiceClient(ServiceClient):
         except Exception as e:
              self.logger.error(f"[{self.name}] Error during discovery: {e}")
 
-        return DiscoveryResult(items=items)
+        native_result = DiscoveryResult(items=items)
+        if native:
+            return native_result
+        return self.normalize_discovery(native_result)
 
-    def _discover_normalized(self) -> DiscoveryResult:
-        """Return a normalized Facility object aggregating all Kube nodes as Compute resources."""
+    def normalize_discovery(self, native_result: DiscoveryResult) -> DiscoveryResult:
+        """Return a normalized Facility object aggregating all Kube nodes as Compute resources.
+        
+        Parses the raw node data from the native_result to avoid redundant API calls.
+        """
         from ...model.metadata import Compute, Facility
 
-        if not self._available:
+        if not self._available or not native_result.items:
             return DiscoveryResult()
 
         compute_list = []
 
         try:
-            self.logger.info(f"[{self.name}] Discovering nodes for normalization...")
-            nodes = self.core_v1.list_node()
-            for node in nodes.items:
-                allocatable = node.status.allocatable or {}
-                node_info = node.status.node_info
-                labels = node.metadata.labels or {}
+            self.logger.info(f"[{self.name}] Normalizing kubernetes nodes...")
+            for item in native_result.items:
+                if item.type != "node":
+                    continue
+                    
+                node_data = item.data
+                allocatable = node_data.get("allocatable", {})
+                node_info = node_data.get("node_info", {})
+                labels = node_data.get("labels", {})
 
                 # Parse CPU (e.g. "4" or "4000m")
                 cpu_raw = allocatable.get("cpu", "0")
                 try:
-                    if cpu_raw.endswith("m"):
+                    if str(cpu_raw).endswith("m"):
                         cores = int(round(int(cpu_raw[:-1]) / 1000))
                     else:
                         cores = int(cpu_raw)
@@ -127,15 +132,13 @@ class KubeServiceClient(ServiceClient):
                 compute_list.append(Compute(
                     cores=cores,
                     memory=allocatable.get("memory"),
-                    architecture=node_info.architecture if node_info else None,
+                    architecture=node_info.get("architecture"),
                     gpus_per_node=gpus,
                     gpu_type=labels.get("nvidia.com/gpu.product"),
-                    container_runtime=node_info.container_runtime_version if node_info else None,
+                    container_runtime=node_info.get("container_runtime_version"),
                     node_selector=labels,
                 ))
 
-        except ApiException as e:
-            self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
         except Exception as e:
             self.logger.error(f"[{self.name}] Error during normalized discovery: {e}")
 

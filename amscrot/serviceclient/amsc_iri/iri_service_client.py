@@ -16,7 +16,7 @@ from amsc_iri.api.facility_api import FacilityApi
 from amsc_iri.api.account_api import AccountApi
 from amsc_iri.api.filesystem_api import FilesystemApi
 from amsc_iri.api.task_api import TaskApi
-from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
+from amsc_iri.models.job_spec import JobSpec as IriJobSpec
 from amsc_iri.models.resource_type import ResourceType
 from amsc_iri.models.job_state import JobState as IriJobState
 from amsc_iri.models.job import Job as IriJob
@@ -90,10 +90,11 @@ class IriServiceClient(ServiceClient):
     
     def discover(self, native: bool = True) -> DiscoveryResult:
         """Discover resources. native=True returns raw DiscoveredResource items;
-        native=False returns normalized Facility objects."""
+        native=False returns normalized Facility objects.
+        """
         if native:
             return self._discover_native()
-        return self._discover_normalized()
+        return self.normalize_discovery(self._discover_native())
 
     def _discover_native(self) -> DiscoveryResult:
         """Return raw API resources (compute, storage, network, facilities, capabilities, allocations)."""
@@ -113,7 +114,13 @@ class IriServiceClient(ServiceClient):
                 resources = self._status_api.get_resources(resource_type=res_type)
                 if resources:
                     for res in resources:
-                        items.append(DiscoveredResource(type=item_type, data=res.to_dict()))
+                        res_data = res.to_dict()
+                        # to_dict() omits capability_uris — stash them explicitly
+                        cap_uris = getattr(res, 'capability_uris', None) or []
+                        res_data['_capability_ids'] = [
+                            uri.rstrip('/').rsplit('/', 1)[-1] for uri in cap_uris
+                        ]
+                        items.append(DiscoveredResource(type=item_type, data=res_data))
 
             # 2. Discover Facilities (Sites)
             self.logger.debug(f"[{self.name}] Discovering facilities...")
@@ -129,19 +136,48 @@ class IriServiceClient(ServiceClient):
                 for cap in capabilities:
                     items.append(DiscoveredResource(type="capability", data=cap.to_dict()))
 
-            # 4. Discover Allocations (via Projects)
-            self.logger.debug(f"[{self.name}] Discovering allocations...")
+            # 4. Discover Allocations and Projects (with user allocations)
+            self.logger.debug(f"[{self.name}] Discovering projects and allocations...")
             projects = self._account_api.get_projects()
             if projects:
                 for project in projects:
-                    allocations = self._account_api.get_project_allocations_by_project(
+                    project_allocs = self._account_api.get_project_allocations_by_project(
                         project_id=project.id
                     )
-                    if allocations:
-                        for alloc in allocations:
-                            alloc_data = alloc.to_dict()
-                            alloc_data['_project_name'] = project.name
-                            items.append(DiscoveredResource(type="allocation", data=alloc_data))
+                    enriched_allocs = []
+                    if project_allocs:
+                        for pa in project_allocs:
+                            pa_data = pa.to_dict()
+                            pa_data['_project_name'] = project.name
+                            # to_dict() omits URI fields — stash them explicitly
+                            pa_data['capability_uri'] = getattr(pa, 'capability_uri', None)
+                            pa_data['project_uri'] = getattr(pa, 'project_uri', None)
+
+                            # Flat allocation item (backward compat)
+                            items.append(DiscoveredResource(type="allocation", data=pa_data))
+
+                            # Fetch per-user allocations for this project allocation
+                            try:
+                                user_allocs = self._account_api.get_user_allocations_by_project_allocation(
+                                    project_id=project.id,
+                                    project_allocation_id=pa.id,
+                                )
+                                pa_data['_user_allocations'] = [
+                                    ua.to_dict() for ua in (user_allocs or [])
+                                ]
+                            except Exception as ua_exc:
+                                self.logger.debug(
+                                    f"[{self.name}] Could not fetch user allocations for "
+                                    f"project {project.name} alloc {pa.id}: {ua_exc}"
+                                )
+                                pa_data['_user_allocations'] = []
+
+                            enriched_allocs.append(pa_data)
+
+                    # Emit enriched project item
+                    project_data = project.to_dict()
+                    project_data['_allocations'] = enriched_allocs
+                    items.append(DiscoveredResource(type="project", data=project_data))
 
             # 5. Discover Incidents
             self.logger.debug(f"[{self.name}] Discovering incidents...")
@@ -159,25 +195,44 @@ class IriServiceClient(ServiceClient):
         self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
 
-    def _discover_normalized(self) -> DiscoveryResult:
+    def normalize_discovery(self, native_result: DiscoveryResult) -> DiscoveryResult:
         """Aggregate raw API resources into a single typed Facility object.
 
-        Any resources found (compute, storage, network, allocations) can be assumed 
+        Any resources found (compute, storage, network, allocations) can be assumed
         to belong to the single facility found in the resources query.  There is no
         longer a 'default' catch-all facility.
-        """
-        from ...model.metadata import Compute, Storage, Network, Allocation, Facility
 
-        if not self._api_client:
-            self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
+        Args:
+            native_result: A DiscoveryResult from either a live _discover_native()
+                call or a cached discovery load.
+        """
+        from ...model.metadata import (
+            Compute, Storage, Network, Allocation, Facility,
+            Project, ProjectAllocation, UserAllocation, AllocationEntry,
+        )
+
+        if not native_result:
+            self.logger.warning(f"[{self.name}] Warning: No native results to normalize, returning empty discovery.")
             return DiscoveryResult()
 
-        native_result = self._discover_native()
+        # Build map from capability ID (UUID) to name
+        cap_id_to_name = {}
+        for cap_item in native_result.by_type("capability"):
+            cap_d = cap_item.data
+            cap_id = cap_d.get("id")
+            cap_name = cap_d.get("name")
+            if cap_id and cap_name:
+                cap_id_to_name[cap_id] = cap_name
 
         def _build_compute(d: dict) -> Compute:
+            cap_ids = d.get("_capability_ids") or None
+            cap_names = None
+            if cap_ids:
+                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
             return Compute(
                 id=d.get("id"),
                 name=d.get("name") or d.get("node_name"),
+                group=d.get("group") or d.get("group_name"),
                 description=d.get("description"),
                 architecture=d.get("architecture"),
                 cores=d.get("cores") or d.get("cpu_cores"),
@@ -185,9 +240,14 @@ class IriServiceClient(ServiceClient):
                 nodes=d.get("node_count"),
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
+                capabilities=cap_names,
             )
 
         def _build_storage(d: dict) -> Storage:
+            cap_ids = d.get("_capability_ids") or None
+            cap_names = None
+            if cap_ids:
+                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
             return Storage(
                 id=d.get("id"),
                 name=d.get("name"),
@@ -195,6 +255,7 @@ class IriServiceClient(ServiceClient):
                 type=d.get("storage_type") or d.get("type"),
                 quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
                 performance_tier=d.get("performance_tier"),
+                capabilities=cap_names,
             )
 
         def _build_network(d: dict) -> Network:
@@ -244,7 +305,61 @@ class IriServiceClient(ServiceClient):
                 exclusive=d.get("exclusive"),
             ))
 
-        # -- 3. Find the single facility ---------------------------------------
+        # -- Build Project hierarchy from native project items ----------------
+        def _build_entry(e: dict) -> AllocationEntry:
+            """Build an AllocationEntry, coercing enum unit values to str."""
+            unit = e.get("unit")
+            if hasattr(unit, "value"):
+                unit = unit.value
+            return AllocationEntry(
+                allocation=e.get("allocation"),
+                usage=e.get("usage"),
+                unit=str(unit) if unit is not None else None,
+            )
+
+        projects_typed: list[Project] = []
+        for item in native_result.by_type("project"):
+            d = item.data
+            proj_allocs: list[ProjectAllocation] = []
+            for pa_data in d.get("_allocations", []):
+                # Extract capability id from capability_uri
+                cap_uri = pa_data.get("capability_uri", "")
+                capability_id = (
+                    cap_uri.rstrip("/").rsplit("/", 1)[-1] if cap_uri else None
+                )
+                capability_name = cap_id_to_name.get(capability_id, capability_id)
+
+                # Build user allocations
+                user_allocs: list[UserAllocation] = []
+                for ua_data in pa_data.get("_user_allocations", []):
+                    user_allocs.append(UserAllocation(
+                        id=ua_data.get("id"),
+                        user_id=ua_data.get("user_id"),
+                        entries=[
+                            _build_entry(e)
+                            for e in ua_data.get("entries", [])
+                        ] or None,
+                    ))
+
+                proj_allocs.append(ProjectAllocation(
+                    id=pa_data.get("id"),
+                    capability=capability_name,
+                    entries=[
+                        _build_entry(e)
+                        for e in pa_data.get("entries", [])
+                    ] or None,
+                    user_allocations=user_allocs if user_allocs else None,
+                ))
+
+            projects_typed.append(Project(
+                id=d.get("id"),
+                name=d.get("name"),
+                description=d.get("description"),
+                user_ids=d.get("user_ids"),
+                allocations=proj_allocs if proj_allocs else None,
+            ))
+
+        # -- Find the single facility -----------------------------------------
         facilities = list(native_result.by_type("facility"))
         if not facilities:
             self.logger.warning(f"[{self.name}] No facilities found, returning empty discovery.")
@@ -263,6 +378,7 @@ class IriServiceClient(ServiceClient):
             storage=storage_resources if storage_resources else None,
             networks=network_resources if network_resources else None,
             allocations=allocations if allocations else None,
+            projects=projects_typed if projects_typed else None,
         )
 
         result_items = [
@@ -278,7 +394,7 @@ class IriServiceClient(ServiceClient):
             f"[{self.name}] Normalized discovery complete. "
             f"1 facility created with {len(compute_resources)} compute, "
             f"{len(storage_resources)} storage, {len(network_resources)} network resources, "
-            f"and {len(allocations)} allocations."
+            f"{len(allocations)} allocations, and {len(projects_typed)} projects."
         )
         return DiscoveryResult(items=result_items)
 
@@ -389,7 +505,7 @@ class IriServiceClient(ServiceClient):
                 kwargs["resources"] = IriResourceSpec(**res_kwargs)
 
         # --- Attributes and top-level IriJobSpec fields ---
-        # Fields that live directly on JobSpecInput (not in JobAttributes)
+        # Fields that live directly on JobSpec (not in JobAttributes)
         JOBSPEC_DIRECT_FIELDS = {
             "directory", "stdout_path", "stderr_path", "stdin_path",
             "inherit_environment", "environment", "pre_launch", "post_launch", "launcher",
@@ -409,7 +525,7 @@ class IriServiceClient(ServiceClient):
             elif container_data:
                 kwargs["container"] = container_data
 
-            # Lift all other direct JobSpecInput fields
+            # Lift all other direct JobSpec fields
             for field in JOBSPEC_DIRECT_FIELDS:
                 val = attrs.pop(field, None)
                 if val is not None:
@@ -516,7 +632,7 @@ class IriServiceClient(ServiceClient):
             # Submit the job via the typed API (returns an IriJob model)
             iri_job: IriJob = self._compute_api.launch_job(
                 resource_id=resource_id,
-                job_spec_input=iri_spec
+                job_spec=iri_spec
             )
             
             # Set job ID

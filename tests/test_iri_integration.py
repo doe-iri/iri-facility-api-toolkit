@@ -69,12 +69,12 @@ IRI_PROFILES = _discover_iri_profiles()
 
 # Each entry defines how job specs and resource selection differ per facility.
 # Keys:
-#   account           – scheduler account/project name
-#   directory         – remote working directory
-#   stdout_path       – remote stdout log path
-#   stderr_path       – remote stderr log path
-#   exclusive_node_use – whether to request exclusive node access
-#   resource_filter   – optional callable(resource_data) -> bool to pick
+#   account            - scheduler account/project name
+#   directory          - remote working directory
+#   stdout_path        - remote stdout log path
+#   stderr_path        - remote stderr log path
+#   exclusive_node_use - whether to request exclusive node access
+#   resource_filter    - optional callable(resource_data) -> bool to pick
 #                       a specific compute resource from discovery results
 
 PROFILE_CONFIGS = {
@@ -158,7 +158,7 @@ class TestIriIntegration:
             profile=profile,
         )
         assert client._available, (
-            f"IriServiceClient for profile '{profile}' is not available — "
+            f"IriServiceClient for profile '{profile}' is not available -- "
             "check api_key / api_endpoint in credentials.yml"
         )
         return client
@@ -182,7 +182,7 @@ class TestIriIntegration:
     # -- Full job lifecycle -------------------------------------------------
 
     def test_job_lifecycle(self, iri_client, profile):
-        """plan → create → wait → fetch_output_files → destroy."""
+        """plan -> create -> wait -> fetch_output_files -> destroy."""
         print(f"\n--- [{profile}] Job lifecycle ---")
         pcfg = _get_profile_config(profile)
 
@@ -291,7 +291,7 @@ class TestIriIntegration:
                 print(f"    {js.get('name')}: id={js.get('id', job.id)}")
 
             if not job.id:
-                msg = f"[{profile}] Job not submitted — apply returned no job ID"
+                msg = f"[{profile}] Job not submitted -- apply returned no job ID"
                 print(f"  SKIP: {msg}")
                 pytest.skip(msg)
             assert job.status == JobState.PENDING, f"Expected PENDING after apply, got {job.status}"

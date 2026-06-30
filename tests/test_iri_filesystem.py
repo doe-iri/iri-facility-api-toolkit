@@ -145,7 +145,7 @@ class TestDecodeResult:
         assert IriFilesystem._decode_result(task) == "hello"
 
     def test_plain_string_output_field(self):
-        # NERSC IRI returns {'output': 'plain text'} — not base64.
+        # NERSC IRI returns {'output': 'plain text'} -- not base64.
         # Should return the string directly, not the whole dict stringified.
         task = _make_task(result={"output": "Hello AmSC\n"})
         assert IriFilesystem._decode_result(task) == "Hello AmSC\n"

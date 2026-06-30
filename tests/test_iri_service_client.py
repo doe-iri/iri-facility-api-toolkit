@@ -100,7 +100,7 @@ class TestIriServiceClient(unittest.TestCase):
         self.assertNotIn("nersc-iri", Constants.SERVICE_CLIENT_CLASSES)
 
 
-# ── IriServiceClient.status() — PBS queue-exit behaviour ──────────────────
+# -- IriServiceClient.status() - PBS queue-exit behaviour ------------------
 
 def _make_iri_sc():
     """Build an IriServiceClient with mocked API clients."""
@@ -126,7 +126,7 @@ def _make_job_handle(job_id="job-001", resource_id="res-001"):
 
 class TestIriServiceClientStatus:
     def test_not_found_exception_returns_completed(self):
-        """PBS removes completed jobs from the active queue — NotFoundException → COMPLETED."""
+        """PBS removes completed jobs from the active queue -- NotFoundException -> COMPLETED."""
         sc = _make_iri_sc()
         sc._compute_api.get_job.side_effect = NotFoundException()
 
@@ -135,7 +135,7 @@ class TestIriServiceClientStatus:
         assert result.state == "COMPLETED"
 
     def test_none_response_returns_completed(self):
-        """A None return from get_job (job left queue silently) → COMPLETED."""
+        """A None return from get_job (job left queue silently) -> COMPLETED."""
         sc = _make_iri_sc()
         sc._compute_api.get_job.return_value = None
 

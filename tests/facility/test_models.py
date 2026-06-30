@@ -1,4 +1,4 @@
-"""Unit tests for amscrot.facility.models — Resource and Job."""
+"""Unit tests for amscrot.facility.models - Resource and Job."""
 import time
 import pytest
 from unittest.mock import MagicMock, patch
@@ -6,7 +6,7 @@ from amscrot.facility.models import Resource, Job, TERMINAL_STATES
 from amscrot.facility.filesystem import FilesystemClient
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+# -- Helpers ----------------------------------------------------------------
 
 def _make_resource(resource_id="res-123", name="Polaris", resource_type="compute",
                    status="up"):
@@ -45,7 +45,7 @@ def _make_job(job_id="job-456", initial_state="QUEUED"):
     return job, mock_facility, mock_status
 
 
-# ── Resource tests ─────────────────────────────────────────────────────────
+# -- Resource tests ---------------------------------------------------------
 
 class TestResource:
     def test_id_property(self):
@@ -112,7 +112,7 @@ class TestResource:
         assert "compute" in repr(r)
 
 
-# ── Job tests ──────────────────────────────────────────────────────────────
+# -- Job tests --------------------------------------------------------------
 
 class TestJobConstants:
     def test_terminal_states(self):
@@ -233,7 +233,7 @@ class TestJobCancel:
         assert "QUEUED" in repr(job)
 
 
-# ── Resource.description ───────────────────────────────────────────────────
+# -- Resource.description ---------------------------------------------------
 
 class TestResourceDescription:
     def test_description_returns_data_field(self):
@@ -247,7 +247,7 @@ class TestResourceDescription:
         assert r.description == ""
 
 
-# ── Resource.group ─────────────────────────────────────────────────────────
+# -- Resource.group ---------------------------------------------------------
 
 class TestResourceGroup:
     def test_group_returns_data_field(self):
@@ -261,7 +261,7 @@ class TestResourceGroup:
         assert r.group == ""
 
 
-# ── Resource.jobs() ────────────────────────────────────────────────────────
+# -- Resource.jobs() --------------------------------------------------------
 
 class TestResourceJobs:
     def test_jobs_delegates_to_facility(self):
