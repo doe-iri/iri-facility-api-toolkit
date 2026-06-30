@@ -21,7 +21,7 @@ classifiers = [
 ]
 # Core: only what the IRI service-client path imports
 dependencies = [
-    "amsc-iri==1.0.0",
+    "amsc-iri==1.2.0",
     "pydantic>=2",
     "PyYAML>=6",
 ]

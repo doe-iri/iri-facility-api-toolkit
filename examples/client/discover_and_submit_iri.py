@@ -121,7 +121,6 @@ def setup_and_submit(client, session, args):
             arguments=[f"Hello from {fac.name}"],
             resources=resources,
             attributes={
-                "resource_id": res_id,
                 "directory": dir_path,
                 "duration": 300,
                 "queue_name": args.queue,
@@ -135,6 +134,7 @@ def setup_and_submit(client, session, args):
         job = Job(
             name=f"job-{target_client.name}",
             type=JobType.COMPUTE,
+            resource_id=res_id,
             service_type=JobServiceType.BATCH,
             service_client=target_client,
             job_spec=spec
