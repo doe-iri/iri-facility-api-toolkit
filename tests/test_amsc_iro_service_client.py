@@ -7,9 +7,16 @@ from amscrot.serviceclient import ServiceClient
 from amscrot.util.constants import Constants
 
 
+try:
+    import sense
+    HAS_SENSE = True
+except ImportError:
+    HAS_SENSE = False
+
 CREDENTIALS_FILE = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
 HAS_CREDENTIALS = os.path.exists(CREDENTIALS_FILE)
 
+@pytest.mark.skipif(not HAS_SENSE, reason="Requires 'sense' module")
 class TestAmscIroServiceClient(unittest.TestCase):
     """Test AMSC IRO ServiceClient integration focusing on discovery."""
     

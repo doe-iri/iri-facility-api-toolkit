@@ -385,11 +385,10 @@ class Controller:
         if not Constants.RUN_SSH_TESTER:
             return
 
-        from amscrot.util.node_tester import SshNodeTester
-
         nodes = [n for prov in self.provider_factory.providers if prov.type != "dummy" for n in prov.nodes]
 
         if nodes:
+            from amscrot.util.node_tester import SshNodeTester
             for n in nodes:
                 if n.get_dataplane_address(af=Constants.IPv4) is None \
                         and n.get_dataplane_address(af=Constants.IPv6) is None:

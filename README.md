@@ -228,13 +228,13 @@ spec = JobSpec(
     },
     attributes={
         "container": {"image": "python:3.12-slim"},  # provider image
-        "resource_id": "<compute-resource-id>"       # from discovery
     }
 )
 
 job = Job(
     name="my-job",
     type=JobType.COMPUTE,
+    resource_id="<compute-resource-id>",  # from discovery or apriori knowledge
     service_type=JobServiceType.BATCH,
     service_client=svc,
     job_spec=spec
@@ -289,11 +289,18 @@ spec = JobSpec(
     executable="python",
     arguments=["-c", "print('done')"],
     attributes={
-        "resource_id": "<compute-resource-id>",
         "directory": "/path/to/workdir",        # remote working directory
         "stdout_path": "/path/to/workdir/out.log",
         "stderr_path": "/path/to/workdir/err.log",
     }
+)
+
+job = Job(
+    name="my-job",
+    type=JobType.COMPUTE,
+    resource_id="<compute-resource-id>",
+    service_client=svc,
+    job_spec=spec
 )
 
 # After session.wait() returns COMPLETED:

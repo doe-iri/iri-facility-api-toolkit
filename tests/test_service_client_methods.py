@@ -25,7 +25,10 @@ class TestServiceClientMethods(unittest.TestCase):
         
     @pytest.mark.integration
     def test_kube_methods(self):
-        client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
+        try:
+            client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="kube1", endpoint_uri="http://kube")
+        except ImportError as e:
+            self.skipTest(f"KubeServiceClient not available: {e}")
         if not client._available:
             self.skipTest("Skipping test - no kubeconfig found")
         spec = JobSpec(executable="echo", arguments=["hello"], attributes={"container": {"image": "busybox"}})
@@ -47,7 +50,10 @@ class TestServiceClientMethods(unittest.TestCase):
     @pytest.mark.integration
     def test_kube_log_capture(self):
         # Test with a job that sleeps and prints
-        client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="logtest", endpoint_uri="http://kube")
+        try:
+            client = ServiceClient.create(type=Constants.ServiceType.KUBE, name="logtest", endpoint_uri="http://kube")
+        except ImportError as e:
+            self.skipTest(f"KubeServiceClient not available: {e}")
         spec = JobSpec(
             executable="python",
             arguments=["-c", "import time; print('Hello K8s Logs'); time.sleep(5); print('Done Sleep')"],
