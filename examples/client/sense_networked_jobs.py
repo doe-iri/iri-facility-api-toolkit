@@ -59,26 +59,28 @@ class SENSENetworkedJobs(unittest.TestCase):
         session.add_job(Job(
             name="job-1",
             type=JobType.COMPUTE,
+            resource_id=east_resource_id,
             service_type=JobServiceType.BATCH,
             service_client=east_client,
             job_spec=JobSpec(
                 executable="/bin/echo",
                 arguments=["Hello AmSC East"],
                 resources=common_resources,
-                attributes={"resource_id": east_resource_id, **common_attributes}
+                attributes=common_attributes
             )
         ))
 
         session.add_job(Job(
             name="job-2",
             type=JobType.COMPUTE,
+            resource_id=west_resource_id,
             service_type=JobServiceType.BATCH,
             service_client=west_client,
             job_spec=JobSpec(
                 executable="/bin/echo",
                 arguments=["Hello AmSC West"],
                 resources=common_resources,
-                attributes={"resource_id": west_resource_id, **common_attributes}
+                attributes=common_attributes
             )
         ))
 

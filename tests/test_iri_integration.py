@@ -251,7 +251,6 @@ class TestIriIntegration:
             arguments=["Hello AmSC"],
             resources=resources,
             attributes={
-                "resource_id": resource_id,
                 "directory": pcfg["directory"],
                 "duration": 600,
                 "queue_name": "debug",
@@ -265,6 +264,7 @@ class TestIriIntegration:
         job = Job(
             name=f"{profile}-test-job",
             type=JobType.COMPUTE,
+            resource_id=resource_id,
             service_type=JobServiceType.BATCH,
             service_client=iri_client,
             job_spec=spec,

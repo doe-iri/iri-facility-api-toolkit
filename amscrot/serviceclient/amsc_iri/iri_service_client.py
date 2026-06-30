@@ -1,10 +1,9 @@
 import os
-import time
 import yaml
 from pathlib import Path
-from typing import Dict, List, Any, Optional, TYPE_CHECKING
+from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
 from ..serviceclient import ServiceClient, PlanError, CreateError, DestroyError
-from ..filesystem import IriFilesystem, FilesystemInterface, FilesystemError
+from ..filesystem import IriFilesystem, FilesystemError
 from ...util.constants import Constants
 from ...model.discovery import DiscoveryResult, DiscoveredResource
 from ...client.job import JobStatus, JobState as AmscrotJobState
@@ -349,17 +348,24 @@ class IriServiceClient(ServiceClient):
         except Exception as e:
             self.logger.error(f"[{self.name}] Error loading credentials: {e}")
     
-    def _convert_to_iri_job_spec(self, job_spec: "JobSpec", name: str = None) -> IriJobSpec:
+    def _convert_to_iri_job_spec(self, job_spec: Union["JobSpec", IriJobSpec], name: str = None) -> IriJobSpec:
         """Convert AmSCROT JobSpec to IRI JobSpecInput format.
 
         Constructs IriJobSpec using direct keyword arguments rather than from_dict()
         to avoid pydantic setting None for absent fields in model_fields_set, which
         would cause those fields to be serialized as null and rejected by the API's
         min_length=1 constraints.
+
+        Callers that already hold a typed ``IriJobSpec`` may pass it straight through.
         """
         from amsc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
         from amsc_iri.models.job_attributes import JobAttributes as IriJobAttributes
         from amsc_iri.models.container import Container as IriContainer
+
+        if isinstance(job_spec, IriJobSpec):
+            if name and not job_spec.name:
+                job_spec.name = name
+            return job_spec
 
         # --- Executable / arguments ---
         executable = job_spec.executable or None
@@ -396,9 +402,6 @@ class IriServiceClient(ServiceClient):
         if job_spec.attributes:
             attrs = {k: v for k, v in job_spec.attributes.items() if v is not None}
 
-            # Remove resource_id -- handled separately via _get_resource_id
-            attrs.pop("resource_id", None)
-
             # Lift container dict -> IriContainer object
             container_data = attrs.pop("container", None)
             if container_data and isinstance(container_data, dict):
@@ -426,17 +429,6 @@ class IriServiceClient(ServiceClient):
 
         return IriJobSpec(**kwargs)
     
-    def _get_resource_id(self, job_spec: "JobSpec") -> str:
-        """Extract resource_id from JobSpec attributes."""
-        if job_spec.attributes and 'resource_id' in job_spec.attributes:
-            return job_spec.attributes['resource_id']
-        
-        # Fallback: if we've run discovery, use the first compute resource
-        if hasattr(self, '_default_resource_id') and self._default_resource_id:
-            return self._default_resource_id
-            
-        return None
-    
     def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         """Validate the job specification.
 
@@ -459,12 +451,10 @@ class IriServiceClient(ServiceClient):
             else:
                 raise PlanError(errors=[msg])
         
-        # Validate resource_id is present
-        resource_id = None
-        try:
-            resource_id = self._get_resource_id(job.job_spec)
-        except Exception as e:
-            errors.append(f"Failed to get resource_id: {e}")
+        resource_id = job.resource_id
+        if not resource_id:
+            errors.append("Job must have a resource_id")
+
         # Validate executable is present
         if not job.job_spec.executable:
             errors.append("Job spec must have an executable")
@@ -517,10 +507,9 @@ class IriServiceClient(ServiceClient):
             raise CreateError(errors=["IRI client not available - check credentials"])
         
         try:
-            # Get resource_id and convert job spec
-            resource_id = job.resource_id or self._get_resource_id(job.job_spec)
-            if not job.resource_id:
-                job.resource_id = resource_id
+            resource_id = job.resource_id
+            if not resource_id:
+                raise CreateError(errors=[f"Job '{name}' has no resource_id"])
             
             iri_spec = self._convert_to_iri_job_spec(job.job_spec, name=name)
             

@@ -41,23 +41,6 @@ class TestIriServiceClient(unittest.TestCase):
         self.assertIsNotNone(iri_client)
         self.assertEqual(iri_client.type, "iri")
 
-    @pytest.mark.skipif(not HAS_CREDENTIALS, reason="Requires ~/.amscrot/credentials.yml")
-    def test_resource_id_extraction(self):
-        """Test that resource_id is correctly extracted from JobSpec attributes."""
-        iri_client = ServiceClient.create(
-            type="iri",
-            name="test-iri",
-            profile="esnet-iri-east"
-        )
-
-        spec = JobSpec(
-            executable="echo",
-            arguments=["test"],
-            attributes={"resource_id": "custom-resource-id"}
-        )
-
-        resource_id = iri_client._get_resource_id(spec)
-        self.assertEqual(resource_id, "custom-resource-id")
 
     def test_job_local_files_attribute(self):
         """Test that Job.local_files is initialized correctly and mutable."""

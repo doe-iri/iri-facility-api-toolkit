@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from types import SimpleNamespace
-from typing import Any, Callable, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, List, Optional
 
 from amscrot.serviceclient import ServiceClient
 from amscrot.client.models import Session
@@ -14,6 +14,9 @@ from amscrot.client.job import (
     JobServiceType,
 )
 from amscrot.util import utils
+
+if TYPE_CHECKING:
+    from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
 
 
 class FacilityClient:
@@ -267,9 +270,26 @@ class FacilityClient:
         post_launch: str | None = None,
         launcher: str | None = None,
         custom_attributes: dict | None = None,
+        job_spec: JobSpec | "IriJobSpec" | None = None,
     ) -> Any:
         """Build JobSpec + AmscrotJob from flat kwargs and submit."""
         from amscrot.facility.models import Job
+
+        if job_spec is not None:
+            amscrot_job = AmscrotJob(
+                name=name or "",
+                type=JobType.COMPUTE,
+                service_type=JobServiceType.BATCH,
+                service_client=self._service_client,
+                job_spec=job_spec,
+            )
+            amscrot_job.resource_id = resource_id
+            self._call_api(self._service_client.create, amscrot_job)
+            return Job(
+                amscrot_job=amscrot_job,
+                resource_id=resource_id,
+                facility_client=self,
+            )
 
         # Build resources dict
         resources: dict = {}
@@ -277,7 +297,7 @@ class FacilityClient:
             resources["node_count"] = nodes
 
         # Build attributes dict
-        attributes: dict = {"resource_id": resource_id}
+        attributes: dict = {}
         if directory:
             attributes["directory"] = directory
         if duration is not None:
@@ -313,6 +333,7 @@ class FacilityClient:
         amscrot_job = AmscrotJob(
             name=job_name,
             type=JobType.COMPUTE,
+            resource_id=resource_id,
             service_type=JobServiceType.BATCH,
             service_client=self._service_client,
             job_spec=spec,
