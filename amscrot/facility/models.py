@@ -73,9 +73,9 @@ class Resource:
 
     # ── Compute ────────────────────────────────────────────────────────────
 
-    def jobs(self) -> list:
+    def jobs(self, *, historical: bool = False) -> list:
         """Return all jobs submitted to this resource (live API call)."""
-        return self._facility._get_jobs(self.id)
+        return self._facility._get_jobs(self.id, historical=historical)
 
     def submit(
         self,
@@ -179,14 +179,14 @@ class Job:
 
     # ── Actions ────────────────────────────────────────────────────────────
 
-    def refresh(self) -> str:
+    def refresh(self, *, historical: bool = False) -> str:
         """Poll the IRI API for current job status. Returns state string."""
         self._last_status = self._facility._call_api(
-            self._facility._service_client.status, self._job
+            self._facility._service_client.status, self._job, historical=historical
         )
         return self.state
 
-    def wait(self, timeout: float = 300, poll_interval: float = 5) -> "Job":
+    def wait(self, timeout: float = 300, poll_interval: float = 5, *, historical: bool = False) -> "Job":
         """Block until the job reaches a terminal state.
 
         Raises:
@@ -194,7 +194,7 @@ class Job:
         """
         start = time.time()
         while True:
-            self.refresh()
+            self.refresh(historical=historical)
             if self.is_terminal:
                 return self
             if time.time() - start >= timeout:

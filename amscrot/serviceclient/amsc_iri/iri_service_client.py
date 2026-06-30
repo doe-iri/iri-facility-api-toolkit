@@ -567,7 +567,7 @@ class IriServiceClient(ServiceClient):
         except Exception as e:
             raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
     
-    def status(self, job: "Job") -> JobStatus:
+    def status(self, job: "Job", *, historical: bool = False) -> JobStatus:
         """Get the status of a job on the IRI facility."""
         name = job.name or self.name
         
@@ -586,7 +586,7 @@ class IriServiceClient(ServiceClient):
             iri_job: IriJob = self._compute_api.get_job(
                 resource_id=job.resource_id,
                 job_id=job.id,
-                historical=False,
+                historical=historical,
                 include_spec=False
             )
 
@@ -747,11 +747,12 @@ class IriServiceClient(ServiceClient):
             )
             return None
 
-    def get_jobs(self, resource_id: str) -> List[Any]:
+    def get_jobs(self, resource_id: str, *, historical: bool = False) -> List[Any]:
         """Fetch all jobs for a resource from the IRI API.
 
         Args:
             resource_id: UUID of the resource to list jobs for.
+            historical: Include jobs that have left the active scheduler queue.
 
         Returns:
             List of job data dicts.
@@ -759,7 +760,7 @@ class IriServiceClient(ServiceClient):
         if not self._available:
             return []
         try:
-            jobs = self._compute_api.get_jobs(resource_id=resource_id)
+            jobs = self._compute_api.get_jobs(resource_id=resource_id, historical=historical)
             return [j.to_dict() for j in jobs] if jobs else []
         except Exception as exc:
             self.logger.warning(

@@ -44,7 +44,7 @@ def _build_mock_service_client(job_state_sequence=None):
     mock_sc.create.side_effect = do_create
 
     # status() cycles through states
-    def do_status(job):
+    def do_status(job, **kwargs):
         s = MagicMock()
         idx = min(call_count[0], len(job_states) - 1)
         s.state = job_states[idx]
