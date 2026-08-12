@@ -17,7 +17,6 @@ from amsc_iri.api.account_api import AccountApi
 from amsc_iri.api.filesystem_api import FilesystemApi
 from amsc_iri.api.task_api import TaskApi
 from amsc_iri.models.job_spec import JobSpec as IriJobSpec
-from amsc_iri.models.resource_type import ResourceType
 from amsc_iri.models.job_state import JobState as IriJobState
 from amsc_iri.models.job import Job as IriJob
 from amsc_iri.models.status import Status
@@ -34,10 +33,11 @@ class IriServiceClient(ServiceClient):
     appropriate credentials section in ``~/.amscrot/credentials.yml``.
     """
 
-    # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
+    # Map IRI JobState enum -> AmSCROT JobState
     _IRI_TO_AMSCROT = {
         IriJobState.NEW:       AmscrotJobState.NEW,
         IriJobState.QUEUED:    AmscrotJobState.QUEUED,
+        IriJobState.HELD:      AmscrotJobState.QUEUED,   # v2 state; treat as QUEUED
         IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
         IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
         IriJobState.FAILED:    AmscrotJobState.FAILED,
@@ -105,13 +105,13 @@ class IriServiceClient(ServiceClient):
         items = []
         try:
             # 1. Discover typed resources (compute, storage, network)
-            for res_type, item_type in [
-                (ResourceType.COMPUTE,  "compute"),
-                (ResourceType.STORAGE,  "storage"),
-                (ResourceType.NETWORK,  "network"),
+            for res_type_urn, item_type in [
+                (Constants.IRI_RESOURCE_TYPE_COMPUTE,  "compute"),
+                (Constants.IRI_RESOURCE_TYPE_STORAGE,  "storage"),
+                (Constants.IRI_RESOURCE_TYPE_NETWORK,  "network"),
             ]:
                 self.logger.debug(f"[{self.name}] Discovering {item_type} resources...")
-                resources = self._status_api.get_resources(resource_type=res_type)
+                resources = self._status_api.get_resources(resource_type=res_type_urn)
                 if resources:
                     for res in resources:
                         res_data = res.to_dict()
@@ -908,7 +908,7 @@ class IriServiceClient(ServiceClient):
         """
         try:
             storage_resources = self._status_api.get_resources(
-                resource_type=ResourceType.STORAGE
+                resource_type=Constants.IRI_RESOURCE_TYPE_STORAGE
             ) or []
 
             def _is_available(res) -> bool:

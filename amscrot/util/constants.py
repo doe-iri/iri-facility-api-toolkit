@@ -112,6 +112,11 @@ class Constants:
     PROVIDER = 'provider'
     DEFAULT_IRO_ENDPOINT = "https://sense-o-east.es.net:8443/StackV-web/restapi"
 
+    # DOE IRI v2 resource-type URNs (urn:doe-iri:resource:<type>)
+    IRI_RESOURCE_TYPE_COMPUTE = "urn:doe-iri:resource:compute"
+    IRI_RESOURCE_TYPE_STORAGE = "urn:doe-iri:resource:storage"
+    IRI_RESOURCE_TYPE_NETWORK = "urn:doe-iri:resource:network"
+
     # Metadata cache directories (relative to ~/.amscrot/)
     METADATA_BASE_DIR = "metadata"
     DISCOVERY_CACHE_DIR = "metadata/discovery"
