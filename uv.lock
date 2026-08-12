@@ -45,11 +45,15 @@ all = [
     { name = "boto3" },
     { name = "fabrictestbed-extensions" },
     { name = "google-cloud-compute" },
+    { name = "httpx" },
     { name = "kubernetes" },
     { name = "paramiko" },
     { name = "python-chi" },
     { name = "sense-o-api" },
     { name = "xmltodict" },
+]
+async = [
+    { name = "httpx" },
 ]
 aws = [
     { name = "boto3" },
@@ -83,13 +87,14 @@ sense = [
 [package.metadata]
 requires-dist = [
     { name = "amsc-iri", specifier = "==1.2.0" },
-    { name = "amscrot-py", extras = ["aws", "chi", "cloudlab", "fabric", "gcp", "janus", "kube", "sense"], marker = "extra == 'all'" },
+    { name = "amscrot-py", extras = ["async", "aws", "chi", "cloudlab", "fabric", "gcp", "janus", "kube", "sense"], marker = "extra == 'all'" },
     { name = "amscrot-py", extras = ["janus"], marker = "extra == 'kube'" },
     { name = "ansible", marker = "extra == 'janus'", specifier = "==9.5.1" },
     { name = "ansible-runner", marker = "extra == 'janus'", specifier = "==2.3.6" },
     { name = "boto3", marker = "extra == 'aws'" },
     { name = "fabrictestbed-extensions", marker = "extra == 'fabric'" },
     { name = "google-cloud-compute", marker = "extra == 'gcp'" },
+    { name = "httpx", marker = "extra == 'async'", specifier = ">=0.27" },
     { name = "kubernetes", marker = "extra == 'kube'", specifier = "==35.0.0" },
     { name = "paramiko", marker = "extra == 'chi'", specifier = "==4.0.0" },
     { name = "pydantic", specifier = ">=2" },
@@ -98,7 +103,7 @@ requires-dist = [
     { name = "sense-o-api", marker = "extra == 'sense'", specifier = "==1.52" },
     { name = "xmltodict", marker = "extra == 'cloudlab'" },
 ]
-provides-extras = ["fabric", "chi", "sense", "janus", "kube", "cloudlab", "aws", "gcp", "all"]
+provides-extras = ["async", "fabric", "chi", "sense", "janus", "kube", "cloudlab", "aws", "gcp", "all"]
 
 [[package]]
 name = "annotated-types"
