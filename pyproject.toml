@@ -27,6 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+async = ["httpx>=0.27"]
 fabric = ["fabrictestbed-extensions"]
 chi = ["python-chi==0.17.11", "paramiko==4.0.0"]
 sense = ["sense-o-api==1.52"]
@@ -36,7 +37,7 @@ kube = ["amscrot-py[janus]", "kubernetes==35.0.0"]
 cloudlab = ["xmltodict"]
 aws = ["boto3"]
 gcp = ["google-cloud-compute"]
-all = ["amscrot-py[fabric,chi,sense,janus,kube,cloudlab,aws,gcp]"]
+all = ["amscrot-py[fabric,chi,sense,janus,kube,cloudlab,aws,gcp,async]"]
 
 [project.urls]
 Homepage = "https://github.com/esnet/amsc-isro-toolkit"

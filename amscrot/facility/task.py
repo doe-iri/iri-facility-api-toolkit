@@ -48,5 +48,17 @@ class Task:
         """
         return self
 
+    async def async_wait(self, timeout: float = 300, poll_interval: float = 2) -> "Task":
+        """Async-compatible wait — no-op since Task is already resolved.
+
+        Provided so async callers can ``await task.async_wait()`` without
+        needing to know whether the operation completed synchronously.
+        """
+        return self
+
+    def __await__(self):
+        """Allow ``result = await task`` as shorthand for ``async_wait()``."""
+        return self.async_wait().__await__()
+
     def __repr__(self) -> str:
         return f"Task(state={self.state!r})"
