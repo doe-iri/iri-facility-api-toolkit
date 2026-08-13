@@ -3,6 +3,7 @@
  - [Description](#descr)
  - [Installation](#install)
  - [Operating Instructions](#operate)
+ - [Async Client Usage](#async)
  - [Jupyter Notebook Examples](#jupyter)
  - [Apache Airflow Support](#airflow)
 
@@ -381,6 +382,147 @@ spec = JobSpec(
 ```
 
 See [`scripts/kube/setup-kueue.sh`](scripts/kube/setup-kueue.sh) to install Kueue and create the required `ResourceFlavor`, `ClusterQueue`, `LocalQueue`, and `PriorityClass` resources on your cluster.
+
+
+# <a name="async"></a>Async Client Usage
+
+AmSCROT provides first-class `asyncio` support through `AsyncClient`,
+`AsyncSession`, and the async facility convenience API (`AsyncFacilityClient`,
+`AsyncResource`, `AsyncJob`, `AsyncFilesystemClient`).
+
+Install the `async` extra to pull in `httpx` for non-blocking HTTP:
+
+```
+pip install "amscrot-py[async]"
+```
+
+### Design Principle
+
+Only I/O-bound methods are `async def`. In-memory property accessors
+(`name`, `status`, `base_url`, etc.) and the constructors remain synchronous —
+no unnecessary `await` overhead.
+
+### AsyncClient + AsyncSession Workflow
+
+`AsyncClient` mirrors the synchronous `Client` but uses `async with` for
+initialization and `await` for I/O operations:
+
+```python
+import asyncio
+from amscrot.client import AsyncClient
+from amscrot.client.job import Job, JobSpec, JobType, JobServiceType
+
+async def main():
+    async with AsyncClient(discover_endpoints=True) as client:
+        # create_session is async (disk I/O for state hydration)
+        session = await client.create_session("my-session")
+
+        # Discover resources (async API call)
+        result = await session.metadata("nersc", native=False)
+        fac = result.facilities[0]
+        resource_id = fac.compute[0].id
+
+        # Define and add a job
+        spec = JobSpec(
+            executable="python",
+            arguments=["-c", "print('hello from async')"],
+            resources={"node_count": 1},
+        )
+        job = Job(
+            name="async-job",
+            type=JobType.COMPUTE,
+            resource_id=resource_id,
+            service_type=JobServiceType.BATCH,
+            service_client=client.get_service_client("nersc"),
+            job_spec=spec,
+        )
+        session.add_job(job)          # sync — in-memory only
+
+        # Plan, submit, wait, cleanup — all async
+        await session.plan(verbose=True)
+        await session.apply()
+        results = await session.wait(timeout=300, verbose=True)
+        await session.destroy()
+
+asyncio.run(main())
+```
+
+### AsyncFacilityClient (High-Level Convenience API)
+
+For quick, notebook-style workflows, the async facility API provides a
+streamlined interface — no manual `JobSpec` / `Session` wiring required:
+
+```python
+import asyncio
+from amscrot.client import AsyncClient
+
+async def main():
+    async with AsyncClient(discover_endpoints=True) as client:
+        # Get an AsyncFacilityClient (sync — no I/O)
+        facility = client.facility("https://api.iri.nersc.gov", token="...")
+
+        # Facility info and resource discovery (async)
+        info = await facility.info()
+        resources = await facility.resources()
+        polaris = await facility.resource("Polaris")
+
+        # Submit a job (async)
+        job = await polaris.submit(
+            executable="/bin/echo",
+            arguments=["hello"],
+            nodes=1,
+            queue="debug",
+            account="datascience",
+            duration=300,
+        )
+
+        # Wait for completion (uses asyncio.sleep, keeps event loop responsive)
+        await job.wait(timeout=300)
+        print(job.state, job.exit_code)
+
+asyncio.run(main())
+```
+
+**Key classes:**
+
+| Class | Role |
+|---|---|
+| `AsyncFacilityClient` | Async counterpart of `FacilityClient` — wraps an IRI endpoint |
+| `AsyncResource` | Resource handle with async `submit()`, `jobs()`, and a `fs` property |
+| `AsyncJob` | Job handle with async `refresh()`, `wait()`, `cancel()` |
+| `AsyncFilesystemClient` | Async filesystem operations (`ls`, `upload`, `download`, etc.) |
+
+### Async Filesystem Operations
+
+Each `AsyncResource` exposes an `fs` property that returns an
+`AsyncFilesystemClient`. All methods return an awaitable `Task`:
+
+```python
+polaris = await facility.resource("Polaris")
+
+# List remote directory
+task = await polaris.fs.ls("/home/user/project")
+print(task.result)
+
+# Upload / download
+await polaris.fs.upload("/tmp/input.dat", "/scratch/input.dat")
+await polaris.fs.download("/scratch/results.tar.gz", "/tmp/results.tar.gz")
+
+# Directory management
+await polaris.fs.mkdir("/scratch/workdir")
+await polaris.fs.rm("/scratch/old_results")
+```
+
+### Incidents and Events
+
+```python
+incidents = await facility.incidents()
+for inc in incidents:
+    events = await facility.events(inc["id"])
+```
+
+A full working example is available in
+[`examples/client/async_discover_and_submit.py`](examples/client/async_discover_and_submit.py).
 
 
 # <a name="jupyter"></a>Jupyter Notebook Examples
