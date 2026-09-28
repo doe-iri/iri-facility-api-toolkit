@@ -11,10 +11,12 @@ Demonstrates:
   5. Using resources_for_project() to map projects to actual accessible compute resources.
   6. Defining JobSpec and Job objects, adding them to a Session.
   7. Using Session plan(), apply(), wait(), and destroy() to manage the job lifecycle.
+  8. Fetching and displaying job stdout/stderr after completion via fetch_output_files().
 
 Usage:
   python discover_and_submit_iri.py
   python discover_and_submit_iri.py --directory /my/working/dir --account my-project
+  python discover_and_submit_iri.py --refresh-discovery
 
 Requires ~/.amscrot/credentials.yml with valid client profiles.
 """
@@ -50,7 +52,7 @@ def setup_and_submit(client, session, args):
         print(f"======================================================================")
 
         # Discover normalized facility details including projects and resources
-        discovery_result = session.metadata(target_client.name, native=False)
+        discovery_result = session.metadata(target_client.name, refresh=args.refresh_discovery, native=False)
         if not discovery_result.facilities:
             print(f"WARNING: No facilities discovered for {target_client.name}, skipping.")
             continue
@@ -186,6 +188,8 @@ def main():
     parser.add_argument("--directory", help="Remote working directory for the jobs")
     parser.add_argument("--account", help="Project account to charge")
     parser.add_argument("--queue", default="debug", help="Queue to submit to (default: debug)")
+    parser.add_argument("--refresh-discovery", action="store_true", default=False,
+                        help="Force a refresh of the discovery cache instead of using cached results")
     args = parser.parse_args()
 
     print("--- Initializing Client and Discovering Endpoints ---")
@@ -222,7 +226,33 @@ def main():
     for job_name, status in results.items():
         print(f"  {job_name}: state={status.state}, exit_code={status.exit_code}")
 
-    # 4. Destroy Phase (Cleanup)
+    # 4. Fetch Job Output (stdout/stderr)
+    print("\n======================================================================")
+    print("Fetching Job Output (stdout/stderr)")
+    print("======================================================================")
+    try:
+        fetched = session.fetch_output_files()
+        if fetched:
+            for job_name, file_map in fetched.items():
+                print(f"\n--- Output for {job_name} ---")
+                for stream, local_path in file_map.items():
+                    print(f"\n  [{stream}] ({local_path}):")
+                    try:
+                        with open(local_path, "r") as f:
+                            content = f.read()
+                        if content.strip():
+                            for line in content.splitlines():
+                                print(f"    {line}")
+                        else:
+                            print("    (empty)")
+                    except OSError as read_err:
+                        print(f"    (could not read file: {read_err})")
+        else:
+            print("No output files were fetched (jobs may lack stdout/stderr paths).")
+    except Exception as e:
+        print(f"Warning: Failed to fetch job output: {e}")
+
+    # 5. Destroy Phase (Cleanup)
     print("\n======================================================================")
     print("Session Destroy Phase (Cleanup)")
     print("======================================================================")
