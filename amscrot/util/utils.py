@@ -380,3 +380,114 @@ def normalize_alias(alias):
     alias = alias.replace(":", "")
     alias = alias.replace("_", "-")
     return alias.lower()
+
+
+def load_pat_from_file(pat_file: str = None) -> str:
+    """Read a Personal Access Token (PAT) from a JSON or plain-text file.
+
+    Supports:
+    * JSON files (e.g. ``~/.amsc_token.json``) containing a key like
+      ``AMSC_PAT``, ``token``, ``pat``, ``access_token``, or ``api_key``.
+    * Plain text files (e.g. ``~/.amsc_pat``) containing the raw token string.
+
+    Args:
+        pat_file: Path to token file (tilde-expanded).
+
+    Returns:
+        The token string if found, or None if the file is missing or unreadable.
+    """
+    if not pat_file:
+        return None
+
+    import os
+    import json
+
+    expanded = os.path.expanduser(pat_file)
+    if not os.path.exists(expanded):
+        return None
+
+    try:
+        with open(expanded, "r") as f:
+            content = f.read().strip()
+
+        if not content:
+            return None
+
+        # Check if the content is JSON
+        if content.startswith("{"):
+            try:
+                data = json.loads(content)
+                for key in ("AMSC_PAT", "token", "pat", "access_token", "api_key"):
+                    val = data.get(key)
+                    if val and isinstance(val, str) and val.strip():
+                        return val.strip()
+            except json.JSONDecodeError:
+                pass
+
+        # Otherwise treat as plain-text token
+        return content
+    except Exception:
+        return None
+
+
+def format_api_exception(exc: Exception) -> str:
+    """Format an exception, pretty-printing any JSON response body if present."""
+    if exc is None:
+        return ""
+
+    import json
+
+    # 1. Check if exc has a 'body' attribute (standard in OpenAPI ApiException)
+    body = getattr(exc, "body", None)
+    if body and isinstance(body, str):
+        try:
+            parsed = json.loads(body)
+            pretty_body = json.dumps(parsed, indent=2)
+            status = getattr(exc, "status", None)
+            reason = getattr(exc, "reason", None)
+            headers = getattr(exc, "headers", None)
+            lines = []
+            if status is not None:
+                lines.append(f"({status})")
+            if reason:
+                lines.append(f"Reason: {reason}")
+            if headers:
+                lines.append(f"HTTP response headers: {headers}")
+            lines.append(f"HTTP response body:\n{pretty_body}")
+            data = getattr(exc, "data", None)
+            if data is not None:
+                lines.append(f"HTTP response data: {data}")
+            return "\n".join(lines)
+        except (ValueError, TypeError):
+            pass
+
+    # 2. Check if str(exc) contains 'HTTP response body: ' with a JSON payload
+    msg = str(exc)
+    marker = "HTTP response body: "
+    if marker in msg:
+        try:
+            idx = msg.find(marker)
+            prefix = msg[:idx + len(marker)]
+            rest = msg[idx + len(marker):]
+            data_marker = "\nHTTP response data: "
+            if data_marker in rest:
+                body_str, suffix = rest.split(data_marker, 1)
+                suffix = data_marker + suffix
+            else:
+                body_str = rest
+                suffix = ""
+            parsed = json.loads(body_str.strip())
+            pretty_body = json.dumps(parsed, indent=2)
+            return f"{prefix}\n{pretty_body}{suffix}"
+        except (ValueError, TypeError):
+            pass
+
+    # 3. Check if str(exc) is itself a JSON string
+    try:
+        parsed = json.loads(msg.strip())
+        return json.dumps(parsed, indent=2)
+    except (ValueError, TypeError):
+        pass
+
+    return msg
+

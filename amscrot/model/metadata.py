@@ -12,6 +12,7 @@ class ResourceBase(BaseModel):
     group: Optional[str] = None
     description: Optional[str] = None
     capabilities: Optional[List[str]] = None
+    attributes: Optional[Dict[str, Any]] = Field(default=None, description="Optional type-specific metadata from the facility API.")
 
 
 # -- Resource Models ----------------------------------------------------------

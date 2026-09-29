@@ -382,8 +382,8 @@ class TestServiceClientFilesystemProperty:
     """Verify the filesystem property wires up correctly through the service client."""
 
     def test_iri_filesystem_returns_iri_filesystem(self):
-        from amscrot.serviceclient.amsc_iri.iri_service_client import (
-            IriServiceClient,
+        from amscrot.serviceclient.amsc_iri._v1 import (
+            IriServiceClientV1 as IriServiceClient,
         )
         client = IriServiceClient.__new__(IriServiceClient)
         client._available = True
@@ -397,8 +397,8 @@ class TestServiceClientFilesystemProperty:
         assert isinstance(fs, FilesystemInterface)
 
     def test_iri_filesystem_returns_none_when_unavailable(self):
-        from amscrot.serviceclient.amsc_iri.iri_service_client import (
-            IriServiceClient,
+        from amscrot.serviceclient.amsc_iri._v1 import (
+            IriServiceClientV1 as IriServiceClient,
         )
         client = IriServiceClient.__new__(IriServiceClient)
         client._available = False
@@ -409,8 +409,8 @@ class TestServiceClientFilesystemProperty:
         assert client.filesystem is None
 
     def test_filesystem_is_lazily_cached(self):
-        from amscrot.serviceclient.amsc_iri.iri_service_client import (
-            IriServiceClient,
+        from amscrot.serviceclient.amsc_iri._v1 import (
+            IriServiceClientV1 as IriServiceClient,
         )
         client = IriServiceClient.__new__(IriServiceClient)
         client._available = True

@@ -8,7 +8,7 @@ try:
 except ImportError:
     KubeServiceClient = None
     HAS_KUBE = False
-from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClient
+from amscrot.serviceclient.amsc_iri import IriServiceClient
 from amscrot.model.discovery import DiscoveryResult
 from amscrot.util.constants import Constants
 

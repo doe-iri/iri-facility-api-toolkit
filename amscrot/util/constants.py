@@ -116,6 +116,9 @@ class Constants:
     METADATA_BASE_DIR = "metadata"
     DISCOVERY_CACHE_DIR = "metadata/discovery"
 
+    # IRI API version cache file (relative to ~/.amscrot/)
+    IRI_VERSION_CACHE_FILE = "metadata/iri_version_cache.json"
+
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
     FACILITY_SHORTHANDS = {
         "national-energy-research-scientific-computing-center": "nersc",
@@ -147,8 +150,8 @@ class Constants:
     }
 
     SERVICE_CLIENT_CLASSES = {
-        ServiceType.IRI: "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient",
-        ServiceType.AMSC_IRI: "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient",
+        ServiceType.IRI: "amscrot.serviceclient.amsc_iri.IriServiceClient",
+        ServiceType.AMSC_IRI: "amscrot.serviceclient.amsc_iri.IriServiceClient",
         ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
         ServiceType.AMSC_IRO: "amscrot.serviceclient.amsc_iro.amsc_iro_service_client.AmscIroServiceClient",
         ServiceType.DUMMY: "amscrot.serviceclient.dummy.dummy_service_client.DummyServiceClient",

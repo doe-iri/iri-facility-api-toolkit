@@ -1,93 +1,214 @@
+"""Shared base class for versioned IRI service clients.
+
+Contains all version-agnostic logic: credential loading, discovery
+normalization, job spec conversion, status polling, filesystem/output
+file helpers, and incident/event/facility queries.
+
+Subclasses (:class:`IriServiceClientV1`, :class:`IriServiceClientV2`, ...)
+implement :meth:`_init_api_client`, :meth:`_resource_type`, and any
+version-exclusive methods.
+"""
+
 import os
 import yaml
+from abc import abstractmethod
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
-from ..serviceclient import ServiceClient, PlanError, CreateError, DestroyError
-from ..filesystem import IriFilesystem, FilesystemError
-from ...util.constants import Constants
-from ...model.discovery import DiscoveryResult, DiscoveredResource
-from ...client.job import JobStatus, JobState as AmscrotJobState
 
-from amsc_iri.configuration import Configuration as IriConfiguration
-from amsc_iri.api_client import ApiClient as IriApiClient
-from amsc_iri.api.compute_api import ComputeApi
-from amsc_iri.api.status_api import StatusApi
-from amsc_iri.api.facility_api import FacilityApi
-from amsc_iri.api.account_api import AccountApi
-from amsc_iri.api.filesystem_api import FilesystemApi
-from amsc_iri.api.task_api import TaskApi
-from amsc_iri.models.job_spec import JobSpec as IriJobSpec
-from amsc_iri.models.resource_type import ResourceType
-from amsc_iri.models.job_state import JobState as IriJobState
-from amsc_iri.models.job import Job as IriJob
-from amsc_iri.models.status import Status
-from amsc_iri.exceptions import NotFoundException, BadRequestException
+from amscrot.serviceclient.serviceclient import ServiceClient, PlanError, CreateError, DestroyError
+from amscrot.serviceclient.filesystem import IriFilesystem, FilesystemError
+from amscrot.util.constants import Constants
+from amscrot.util import utils
+from amscrot.model.discovery import DiscoveryResult, DiscoveredResource
+from amscrot.client.job import JobStatus, JobState as AmscrotJobState
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
 
-class IriServiceClient(ServiceClient):
-    """Unified ServiceClient implementation for IRI compute jobs.
+
+class IriServiceClientBase(ServiceClient):
+    """Version-agnostic base for IRI service clients.
 
     Works with any IRI-compliant facility (ESnet, NERSC, etc.).  The target
     facility is determined by the ``profile`` parameter, which selects the
     appropriate credentials section in ``~/.amscrot/credentials.yml``.
+
+    Subclasses must implement:
+
+    * :meth:`_init_api_client` -- configure the generated API client and
+      typed API helpers for their specific ``amsc_iri`` / ``amsc_iri_v2``
+      package.
+    * :meth:`_resource_type` -- return the correct resource-type filter
+      value for the API version.
     """
 
-    # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
-    _IRI_TO_AMSCROT = {
-        IriJobState.NEW:       AmscrotJobState.NEW,
-        IriJobState.QUEUED:    AmscrotJobState.QUEUED,
-        IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
-        IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
-        IriJobState.FAILED:    AmscrotJobState.FAILED,
-        IriJobState.CANCELED:  AmscrotJobState.CANCELED,
-    }
+    #: The integer API version this client class targets.
+    #: Overridden in each subclass.
+    API_VERSION: int = 0
+
+    @property
+    def api_version(self) -> int:
+        """Return the integer API version targeted by this client."""
+        return self.API_VERSION
 
     def __init__(self, **kwargs):
+        kwargs.pop('api_version', None)
+        if not kwargs.get('name'):
+            kwargs['name'] = kwargs.get('profile') or 'iri'
         super().__init__(type=Constants.ServiceType.IRI, **kwargs)
-        
+
         # Load credentials
         self.api_key = None
         self.api_endpoint = None
         self._load_credentials()
-        
+
         # Override endpoint if provided via ServiceClient init
         if self.endpoint_uri:
             self.api_endpoint = self.endpoint_uri
         else:
             self.endpoint_uri = self.api_endpoint
-        
+
         # Normalize endpoint: strip trailing slashes to avoid double-slash URLs
         if self.api_endpoint:
             self.api_endpoint = self.api_endpoint.rstrip('/')
             self.endpoint_uri = self.api_endpoint
 
-        # Initialize the API client
+        # Typed API accessors (populated by subclass _init_api_client)
         self._api_client = None
+        self._compute_api = None
+        self._status_api = None
+        self._facility_api = None
+        self._account_api = None
+        self._filesystem_api = None
+        self._storage_api = None
+        self._task_api = None
+
+        # Initialize the version-specific API client
         if self.api_key and self.api_endpoint:
-            configuration = IriConfiguration(
-                host=self.api_endpoint,
-                api_key={'APIKeyHeader': self.api_key},
-                api_key_prefix={'APIKeyHeader': 'Bearer'},
-                access_token=self.api_key
-            )
-            self._api_client = IriApiClient(configuration)
-            self._compute_api = ComputeApi(self._api_client)
-            self._status_api = StatusApi(self._api_client)
-            self._facility_api = FacilityApi(self._api_client)
-            self._account_api = AccountApi(self._api_client)
-            self._filesystem_api = FilesystemApi(self._api_client)
-            self._task_api = TaskApi(self._api_client)
+            self._init_api_client()
             self._available = True
+            self.logger.debug(
+                f"[{self.name}] Using IRI API v{self.API_VERSION} (native)"
+            )
         else:
             self._available = False
-            self.logger.warning(f"[{self.name}] Warning: Could not load IRI credentials.")
-        
+            self.logger.warning(
+                f"[{self.name}] Warning: Could not load IRI credentials."
+            )
+
         self._default_resource_id = None
         # Lazily-created filesystem interface
         self._filesystem: Optional[IriFilesystem] = None
-    
+
+    # ------------------------------------------------------------------
+    # Abstract hooks for subclasses
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _init_api_client(self) -> None:
+        """Create the generated API client and typed API helpers.
+
+        Implementations should set ``self._api_client`` and all the
+        ``self._*_api`` attributes using their version-specific package.
+        """
+
+    @abstractmethod
+    def _resource_type(self, kind: str) -> str:
+        """Return the correct resource_type filter value for the API version.
+
+        Args:
+            kind: One of ``"compute"``, ``"storage"``, ``"network"``.
+        """
+
+    # ------------------------------------------------------------------
+    # Credential loading
+    # ------------------------------------------------------------------
+
+    def _load_credentials(self):
+        """Load IRI credentials from ProviderCredential object or
+        ``~/.amscrot/credentials.yml``.
+        """
+        # 1. Use provided ProviderCredential object if available
+        if self.credential:
+            try:
+                if hasattr(self.credential, 'to_dict'):
+                    creds = self.credential.to_dict()
+                elif isinstance(self.credential, dict):
+                    creds = self.credential
+                else:
+                    creds = {}
+
+                self.api_key = creds.get('api_key')
+                if not self.api_key and creds.get('pat_file'):
+                    from amscrot.util import utils
+                    self.api_key = utils.load_pat_from_file(creds.get('pat_file'))
+                self.api_endpoint = creds.get('api_endpoint')
+                return
+            except Exception as e:
+                print(f"[{self.name}] Error loading from credential object: {e}")
+
+        # 2. Load from file
+        default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
+        cred_file = self.credential_file or default_file
+        cred_file = os.path.expanduser(cred_file)
+
+        if not os.path.exists(cred_file):
+            if self.credential_file:
+                self.logger.warning(
+                    f"[{self.name}] Warning: Custom credentials file not found at {cred_file}"
+                )
+            if not self.credential_file and cred_file == default_file:
+                self.logger.warning(
+                    f"[{self.name}] Warning: Credentials file not found at {cred_file}"
+                )
+            return
+
+        try:
+            with open(cred_file, 'r') as f:
+                credentials = yaml.safe_load(f) or {}
+
+            lookups = []
+            if self.profile:
+                lookups.append(self.profile)
+            if self.name and self.name not in lookups:
+                lookups.append(self.name)
+            lookups.append(Constants.ServiceType.IRI)
+
+            section_creds = None
+            used_key = None
+
+            for key in lookups:
+                if key in credentials:
+                    section_creds = credentials[key]
+                    used_key = key
+                    break
+
+            if section_creds:
+                self.api_key = section_creds.get('api_key')
+                if not self.api_key and section_creds.get('pat_file'):
+                    from amscrot.util import utils
+                    self.api_key = utils.load_pat_from_file(section_creds.get('pat_file'))
+                self.api_endpoint = section_creds.get('api_endpoint')
+
+                if not self.api_key or not self.api_endpoint:
+                    self.logger.warning(
+                        f"[{self.name}] Warning: Missing api_key or api_endpoint "
+                        f"in credentials (section: {used_key})"
+                    )
+            else:
+                searched = f"'{self.profile}' or " if self.profile else ""
+                self.logger.warning(
+                    f"[{self.name}] Warning: Section {searched}"
+                    f"'{Constants.ServiceType.IRI}' not found in credentials"
+                )
+
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Error loading credentials: {e}")
+
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+
     def discover(self, native: bool = True) -> DiscoveryResult:
         """Discover resources. native=True returns raw DiscoveredResource items;
         native=False returns normalized Facility objects.
@@ -97,25 +218,30 @@ class IriServiceClient(ServiceClient):
         return self.normalize_discovery(self._discover_native())
 
     def _discover_native(self) -> DiscoveryResult:
-        """Return raw API resources (compute, storage, network, facilities, capabilities, allocations)."""
+        """Return raw API resources (compute, storage, network, facilities,
+        capabilities, allocations).
+        """
         if not self._api_client:
-            self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
+            self.logger.warning(
+                f"[{self.name}] Warning: Client not initialized, "
+                "returning empty discovery."
+            )
             return DiscoveryResult()
 
         items = []
         try:
             # 1. Discover typed resources (compute, storage, network)
             for res_type, item_type in [
-                (ResourceType.COMPUTE,  "compute"),
-                (ResourceType.STORAGE,  "storage"),
-                (ResourceType.NETWORK,  "network"),
+                (self._resource_type("compute"),  "compute"),
+                (self._resource_type("storage"),  "storage"),
+                (self._resource_type("network"),  "network"),
             ]:
                 self.logger.debug(f"[{self.name}] Discovering {item_type} resources...")
                 resources = self._status_api.get_resources(resource_type=res_type)
                 if resources:
                     for res in resources:
                         res_data = res.to_dict()
-                        # to_dict() omits capability_uris — stash them explicitly
+                        # to_dict() omits capability_uris -- stash them explicitly
                         cap_uris = getattr(res, 'capability_uris', None) or []
                         res_data['_capability_ids'] = [
                             uri.rstrip('/').rsplit('/', 1)[-1] for uri in cap_uris
@@ -149,7 +275,7 @@ class IriServiceClient(ServiceClient):
                         for pa in project_allocs:
                             pa_data = pa.to_dict()
                             pa_data['_project_name'] = project.name
-                            # to_dict() omits URI fields — stash them explicitly
+                            # to_dict() omits URI fields -- stash them explicitly
                             pa_data['capability_uri'] = getattr(pa, 'capability_uri', None)
                             pa_data['project_uri'] = getattr(pa, 'project_uri', None)
 
@@ -190,7 +316,7 @@ class IriServiceClient(ServiceClient):
                 self.logger.warning(f"[{self.name}] Could not fetch incidents: {inc_exc}")
 
         except Exception as e:
-            self.logger.error(f"[{self.name}] Error during discovery: {e}")
+            self.logger.error(f"[{self.name}] Error during discovery: {utils.format_api_exception(e)}")
 
         self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
@@ -206,13 +332,16 @@ class IriServiceClient(ServiceClient):
             native_result: A DiscoveryResult from either a live _discover_native()
                 call or a cached discovery load.
         """
-        from ...model.metadata import (
+        from amscrot.model.metadata import (
             Compute, Storage, Network, Allocation, Facility,
             Project, ProjectAllocation, UserAllocation, AllocationEntry,
         )
 
         if not native_result:
-            self.logger.warning(f"[{self.name}] Warning: No native results to normalize, returning empty discovery.")
+            self.logger.warning(
+                f"[{self.name}] Warning: No native results to normalize, "
+                "returning empty discovery."
+            )
             return DiscoveryResult()
 
         # Build map from capability ID (UUID) to name
@@ -241,6 +370,7 @@ class IriServiceClient(ServiceClient):
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
                 capabilities=cap_names,
+                attributes=d.get("attributes"),
             )
 
         def _build_storage(d: dict) -> Storage:
@@ -256,6 +386,7 @@ class IriServiceClient(ServiceClient):
                 quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
                 performance_tier=d.get("performance_tier"),
                 capabilities=cap_names,
+                attributes=d.get("attributes"),
             )
 
         def _build_network(d: dict) -> Network:
@@ -266,6 +397,7 @@ class IriServiceClient(ServiceClient):
                 fabric=d.get("fabric") or d.get("network_type"),
                 bandwidth_limit=d.get("bandwidth_limit"),
                 external_connectivity=d.get("external_connectivity"),
+                attributes=d.get("attributes"),
             )
 
         compute_resources = []
@@ -398,85 +530,24 @@ class IriServiceClient(ServiceClient):
         )
         return DiscoveryResult(items=result_items)
 
-    def _load_credentials(self):
-        """Load IRI credentials."""
-        # 1. Use provided ProviderCredential object if available
-        # self.credential is populated by ServiceClient.__init__
-        if self.credential:
-            try:
-                # Handle ProviderCredential object (duck typing or to_dict)
-                if hasattr(self.credential, 'to_dict'):
-                    creds = self.credential.to_dict()
-                elif isinstance(self.credential, dict):
-                    creds = self.credential
-                else:
-                    creds = {}
+    # ------------------------------------------------------------------
+    # Job lifecycle
+    # ------------------------------------------------------------------
 
-                self.api_key = creds.get('api_key')
-                self.api_endpoint = creds.get('api_endpoint')
-                return
-            except Exception as e:
-                print(f"[{self.name}] Error loading from credential object: {e}")
+    def _convert_to_iri_job_spec(self, job_spec, name: str = None):
+        """Convert AmSCROT JobSpec to IRI JobSpec format.
 
-        # 2. Load from file
-        default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
-        # self.credential_file is populated by ServiceClient.__init__
-        cred_file = self.credential_file or default_file
-        cred_file = os.path.expanduser(cred_file)
-        
-        if not os.path.exists(cred_file):
-            if self.credential_file:
-                 self.logger.warning(f"[{self.name}] Warning: Custom credentials file not found at {cred_file}")
-            # If default file is missing and no explicit file given, just return silent warning if desired
-            if not self.credential_file and cred_file == default_file:
-                 self.logger.warning(f"[{self.name}] Warning: Credentials file not found at {cred_file}")
-            return
+        Subclasses import the correct model types from their version-specific
+        package.  This base implementation handles the field mapping logic.
 
-        try:
-            with open(cred_file, 'r') as f:
-                credentials = yaml.safe_load(f) or {}
-
-            # 3. Look up profile or default type
-            lookups = []
-            if self.profile:
-                lookups.append(self.profile)
-            lookups.append(Constants.ServiceType.IRI)
-
-            section_creds = None
-            used_key = None
-
-            for key in lookups:
-                if key in credentials:
-                    section_creds = credentials[key]
-                    used_key = key
-                    break
-
-            if section_creds:
-                self.api_key = section_creds.get('api_key')
-                self.api_endpoint = section_creds.get('api_endpoint')
-
-                if not self.api_key or not self.api_endpoint:
-                    self.logger.warning(f"[{self.name}] Warning: Missing api_key or api_endpoint in credentials (section: {used_key})")
-            else:
-                 searched = f"'{self.profile}' or " if self.profile else ""
-                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.IRI}' not found in credentials")
-
-        except Exception as e:
-            self.logger.error(f"[{self.name}] Error loading credentials: {e}")
-    
-    def _convert_to_iri_job_spec(self, job_spec: Union["JobSpec", IriJobSpec], name: str = None) -> IriJobSpec:
-        """Convert AmSCROT JobSpec to IRI JobSpecInput format.
-
-        Constructs IriJobSpec using direct keyword arguments rather than from_dict()
-        to avoid pydantic setting None for absent fields in model_fields_set, which
-        would cause those fields to be serialized as null and rejected by the API's
-        min_length=1 constraints.
-
-        Callers that already hold a typed ``IriJobSpec`` may pass it straight through.
+        The method is defined here so both V1 and V2 share the same conversion
+        logic.  Subclasses must set ``self._iri_models`` dict with keys:
+        ``JobSpec``, ``ResourceSpec``, ``JobAttributes``, ``Container``.
         """
-        from amsc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
-        from amsc_iri.models.job_attributes import JobAttributes as IriJobAttributes
-        from amsc_iri.models.container import Container as IriContainer
+        IriJobSpec = self._iri_models['JobSpec']
+        IriResourceSpec = self._iri_models['ResourceSpec']
+        IriJobAttributes = self._iri_models['JobAttributes']
+        IriContainer = self._iri_models['Container']
 
         if isinstance(job_spec, IriJobSpec):
             if name and not job_spec.name:
@@ -554,7 +625,7 @@ class IriServiceClient(ServiceClient):
                 kwargs["attributes"] = IriJobAttributes(**attrs_kwargs)
 
         return IriJobSpec(**kwargs)
-    
+
     def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         """Validate the job specification.
 
@@ -563,12 +634,15 @@ class IriServiceClient(ServiceClient):
             skip_checks: If True, all validation errors are downgraded
                 to warnings and PlanError is never raised.
         """
+        IriJobState = self._iri_models['JobState']
+        Status = self._iri_models['Status']
+
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Planning IRI job for '{name}'...")
-        
+
         errors = []
         warnings = []
-        
+
         # Check if client is available
         if not self._available:
             msg = "IRI client not available - check credentials"
@@ -576,7 +650,7 @@ class IriServiceClient(ServiceClient):
                 warnings.append(msg)
             else:
                 raise PlanError(errors=[msg])
-        
+
         resource_id = job.resource_id
         if not resource_id:
             errors.append("Job must have a resource_id")
@@ -584,7 +658,7 @@ class IriServiceClient(ServiceClient):
         # Validate executable is present
         if not job.job_spec.executable:
             errors.append("Job spec must have an executable")
-        
+
         # Try to convert to IRI format
         try:
             iri_spec = self._convert_to_iri_job_spec(job.job_spec)
@@ -623,82 +697,95 @@ class IriServiceClient(ServiceClient):
             "status": AmscrotJobState.PLANNED.value,
             "warnings": warnings,
         }
-    
+
     def create(self, job: "Job"):
         """Submit a job to the IRI facility."""
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Creating IRI job for '{name}'...")
-        
+
         if not self._available:
             raise CreateError(errors=["IRI client not available - check credentials"])
-        
+
         try:
             resource_id = job.resource_id
             if not resource_id:
                 raise CreateError(errors=[f"Job '{name}' has no resource_id"])
-            
+
             iri_spec = self._convert_to_iri_job_spec(job.job_spec, name=name)
-            
+
             # Submit the job via the typed API (returns an IriJob model)
-            iri_job: IriJob = self._compute_api.launch_job(
+            iri_job = self._compute_api.launch_job(
                 resource_id=resource_id,
                 job_spec=iri_spec
             )
-            
+
             # Set job ID
             job.id = iri_job.id
             self._status = AmscrotJobState.PENDING.value
-            self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
-                
+            self.logger.debug(
+                f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}"
+            )
+
         except CreateError:
             raise
         except Exception as e:
-            raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
-    
+            raise CreateError(errors=[f"Error submitting job '{name}': {utils.format_api_exception(e)}"]) from e
+
     def destroy(self, job: "Job"):
         """Cancel a job on the IRI facility."""
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Destroying IRI job for '{name}'...")
-        
+
         if not self._available:
             raise DestroyError(errors=["IRI client not available - check credentials"])
-        
-        # Check if we have a job ID for this job
+
         if not job.id or not job.resource_id:
-            raise DestroyError(errors=[f"Job ID or Resource ID missing for '{name}'. Cannot cancel."])
-        
+            raise DestroyError(
+                errors=[f"Job ID or Resource ID missing for '{name}'. Cannot cancel."]
+            )
+
         try:
-            # Cancel the job
             self._compute_api.cancel_job(
                 resource_id=job.resource_id,
                 job_id=job.id
             )
-            
             self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job.id}) cancelled.")
             self._status = AmscrotJobState.CANCELED.value
-            
+
         except DestroyError:
             raise
         except Exception as e:
-            raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
-    
+            raise DestroyError(errors=[f"Error cancelling job '{name}': {utils.format_api_exception(e)}"]) from e
+
     def status(self, job: "Job", *, historical: bool = False) -> JobStatus:
         """Get the status of a job on the IRI facility."""
+        IriJobState = self._iri_models['JobState']
+        NotFoundException = self._iri_models['NotFoundException']
+        BadRequestException = self._iri_models['BadRequestException']
+
+        # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
+        iri_to_amscrot = {
+            IriJobState.NEW:       AmscrotJobState.NEW,
+            IriJobState.QUEUED:    AmscrotJobState.QUEUED,
+            IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
+            IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
+            IriJobState.FAILED:    AmscrotJobState.FAILED,
+            IriJobState.CANCELED:  AmscrotJobState.CANCELED,
+        }
+
         name = job.name or self.name
-        
+
         if not self._available:
             return JobStatus(state=self._status)
-        
-        # Check if we have a job ID for this job
+
         if not job.id or not job.resource_id:
             return JobStatus(
                 state="UNKNOWN",
                 message="Job ID or Resource ID missing, job likely not submitted"
             )
-        
+
         try:
-            # Get job via the typed API (returns an IriJob model)
-            iri_job: IriJob = self._compute_api.get_job(
+            iri_job = self._compute_api.get_job(
                 resource_id=job.resource_id,
                 job_id=job.id,
                 historical=historical,
@@ -706,7 +793,7 @@ class IriServiceClient(ServiceClient):
             )
 
             # PBS removes completed jobs from the active queue; a None response
-            # means the job is no longer tracked — treat as COMPLETED.
+            # means the job is no longer tracked -- treat as COMPLETED.
             if iri_job is None:
                 self.logger.info(
                     f"[{self.name}] Job {job.id!r} not found in PBS queue; "
@@ -722,7 +809,7 @@ class IriServiceClient(ServiceClient):
             # Map IRI JobState enum -> AmSCROT JobState
             amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
-                amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
+                amscrot_state = iri_to_amscrot.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
             state_str = amscrot_state.value
 
             return JobStatus(
@@ -735,7 +822,7 @@ class IriServiceClient(ServiceClient):
             )
 
         except NotFoundException:
-            # PBS removes completed jobs from the active queue — 404 means done.
+            # PBS removes completed jobs from the active queue -- 404 means done.
             self.logger.info(
                 f"[{self.name}] Job {job.id!r} not found in PBS queue (404); "
                 "assumed completed."
@@ -770,6 +857,10 @@ class IriServiceClient(ServiceClient):
                 message=str(e)
             )
 
+    # ------------------------------------------------------------------
+    # Query helpers
+    # ------------------------------------------------------------------
+
     def get_incidents(self, **filters) -> List[Any]:
         """Fetch all incidents from the IRI API.
 
@@ -778,7 +869,7 @@ class IriServiceClient(ServiceClient):
                 (e.g. ``status``, ``resource_id``, ``var_from``, ``to``).
 
         Returns:
-            List of ``amsc_iri.models.Incident`` objects.
+            List of incident objects.
         """
         if not self._available:
             return []
@@ -796,7 +887,7 @@ class IriServiceClient(ServiceClient):
             incident_id: UUID of the incident to retrieve.
 
         Returns:
-            ``amsc_iri.models.Incident``, or ``None`` if not found / unavailable.
+            Incident object, or ``None`` if not found / unavailable.
         """
         if not self._available:
             return None
@@ -815,7 +906,7 @@ class IriServiceClient(ServiceClient):
             incident_id: The UUID of the incident to fetch events for.
 
         Returns:
-            List of ``amsc_iri.models.Event`` objects.
+            List of event objects.
         """
         if not self._available:
             return []
@@ -832,7 +923,7 @@ class IriServiceClient(ServiceClient):
         """Fetch facility-level metadata from the IRI API.
 
         Returns:
-            Native ``amsc_iri`` facility object, or ``None`` if unavailable.
+            Native facility object, or ``None`` if unavailable.
         """
         if not self._available:
             return None
@@ -918,7 +1009,7 @@ class IriServiceClient(ServiceClient):
         """
         try:
             storage_resources = self._status_api.get_resources(
-                resource_type=ResourceType.STORAGE
+                resource_type=self._resource_type("storage")
             ) or []
 
             def _is_available(res) -> bool:
@@ -1040,3 +1131,10 @@ class IriServiceClient(ServiceClient):
         # Store results back on the Job object
         job.local_files.update(results)
         return results
+
+
+def __getattr__(name):
+    if name == "IriServiceClient":
+        from amscrot.serviceclient.amsc_iri import IriServiceClient
+        return IriServiceClient
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

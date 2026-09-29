@@ -15,7 +15,11 @@ class ProviderCredential:
         self._attributes = kwargs
 
     def __getattr__(self, item):
-        return self._attributes.get(item)
+        val = self._attributes.get(item)
+        if val is None and item == "api_key" and self._attributes.get("pat_file"):
+            from amscrot.util import utils
+            return utils.load_pat_from_file(self._attributes.get("pat_file"))
+        return val
 
     def __setattr__(self, key, value):
         if key == "_attributes":
@@ -24,7 +28,13 @@ class ProviderCredential:
             self._attributes[key] = value
 
     def to_dict(self) -> Dict:
-        return self._attributes.copy()
+        data = self._attributes.copy()
+        if not data.get("api_key") and data.get("pat_file"):
+            from amscrot.util import utils
+            resolved = utils.load_pat_from_file(data["pat_file"])
+            if resolved:
+                data["api_key"] = resolved
+        return data
 
     def update(self, **kwargs):
         self._attributes.update(kwargs)
@@ -71,6 +81,11 @@ class Client:
         creds = load_yaml_from_file(file_path) or {}
         # Merge dicts to ProviderCredential objects
         for k, v in creds.items():
+            if isinstance(v, dict) and v.get("pat_file") and not v.get("api_key"):
+                from amscrot.util import utils
+                resolved = utils.load_pat_from_file(v["pat_file"])
+                if resolved:
+                    v["api_key"] = resolved
             if k in self._credentials:
                 self._credentials[k].update(**v)
             else:
@@ -228,26 +243,31 @@ class Client:
     def get_shorthand(cls, name: str) -> str:
         """Resolve a facility name or slug to a user-friendly shorthand."""
         slug = cls._slugify(name)
+        is_rig = slug.endswith("-rig") or "-rig-" in slug
+
         if slug in Constants.FACILITY_SHORTHANDS:
-            return Constants.FACILITY_SHORTHANDS[slug]
-
-        # Common pattern heuristics
-        if "nersc" in slug:
-            return "nersc"
-        if "esnet" in slug:
+            base = Constants.FACILITY_SHORTHANDS[slug]
+        elif "nersc" in slug:
+            base = "nersc"
+        elif "esnet" in slug:
             if "east" in slug:
-                return "esnet-east"
-            if "west" in slug:
-                return "esnet-west"
-            return "esnet"
-        if "alcf" in slug or "argonne" in slug:
-            return "alcf"
-        if "olcf" in slug or "oak-ridge" in slug:
-            return "olcf"
-        if "amsc-iro" in slug:
-            return "amsc-iro"
+                base = "esnet-east"
+            elif "west" in slug:
+                base = "esnet-west"
+            else:
+                base = "esnet"
+        elif "alcf" in slug or "argonne" in slug:
+            base = "alcf"
+        elif "olcf" in slug or "oak-ridge" in slug:
+            base = "olcf"
+        elif "amsc-iro" in slug:
+            base = "amsc-iro"
+        else:
+            base = slug
 
-        return slug
+        if is_rig and not base.endswith("-rig"):
+            return f"{base}-rig"
+        return base
 
     def _discover_and_create_iri_clients(self):
         """Query the IRO facility discovery endpoint and auto-create
@@ -344,7 +364,7 @@ class Client:
 
             # 3. No token available
             self._logger.warning(
-                f"Skipping facility '{fac_name}' — no matching credential profile "
+                f"Skipping facility '{fac_name}' -- no matching credential profile "
                 f"and AMSC_TOKEN not set."
             )
 

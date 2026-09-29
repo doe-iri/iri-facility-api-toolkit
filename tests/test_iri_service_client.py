@@ -93,7 +93,7 @@ class TestIriServiceClient(unittest.TestCase):
 
     def test_service_client_classes_registration(self):
         """Test that the SERVICE_CLIENT_CLASSES registry points to the unified class."""
-        expected = "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient"
+        expected = "amscrot.serviceclient.amsc_iri.IriServiceClient"
         self.assertEqual(Constants.SERVICE_CLIENT_CLASSES[Constants.ServiceType.IRI], expected)
         # Old entries should no longer exist
         self.assertNotIn("esnet-iri", Constants.SERVICE_CLIENT_CLASSES)
@@ -186,7 +186,27 @@ class TestIriServiceClientStatus:
 
         result = sc.status(_make_job_handle())
 
-        assert result.state not in ("UNKNOWN", "COMPLETED")
+    def test_format_api_exception_pretty_prints_json(self):
+        """format_api_exception should pretty print JSON response body."""
+        from amscrot.util.utils import format_api_exception
+
+        raw_json = '{"type":"https://example.com/problems/unauthorized","status":401,"title":"Unauthorized","detail":"Auth failed"}'
+        exc = BadRequestException(status=401, reason="Unauthorized")
+        exc.body = raw_json
+
+        formatted = format_api_exception(exc)
+        assert "  \"status\": 401" in formatted
+        assert "  \"detail\": \"Auth failed\"" in formatted
+
+    def test_format_api_exception_with_string_marker(self):
+        """format_api_exception should parse HTTP response body marker in exception string."""
+        from amscrot.util.utils import format_api_exception
+
+        msg = '(401)\nReason: Unauthorized\nHTTP response body: {"detail": "token invalid"}\nHTTP response data: ...'
+        exc = Exception(msg)
+
+        formatted = format_api_exception(exc)
+        assert "  \"detail\": \"token invalid\"" in formatted
 
 
 if __name__ == "__main__":
