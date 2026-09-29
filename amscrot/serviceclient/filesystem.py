@@ -488,9 +488,16 @@ class IriFilesystem(FilesystemInterface):
                 )
                 if status_val in ('completed', 'failed', 'canceled'):
                     if status_val != 'completed':
+                        # Include task result/error details when available
+                        detail = ''
+                        for attr in ('result', 'error', 'message'):
+                            val = getattr(task, attr, None)
+                            if val:
+                                detail = f" -- {attr}: {val}"
+                                break
                         raise FilesystemError(
                             f"{self._tag()} {op} task ended with status "
-                            f"'{status_val}' (task_id={task_id})",
+                            f"'{status_val}' (task_id={task_id}){detail}",
                             task_id=task_id,
                             status=status_val,
                         )

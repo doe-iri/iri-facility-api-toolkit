@@ -531,6 +531,16 @@ class IriServiceClient(ServiceClient):
                 if val is not None:
                     kwargs[field] = val
 
+            # Resolve relative stdout/stderr/stdin paths to absolute paths
+            # using the job directory.  Some IRI deployments (e.g. ESnet)
+            # require absolute paths for output file creation.
+            job_dir = kwargs.get("directory")
+            if job_dir:
+                for path_field in ("stdout_path", "stderr_path", "stdin_path"):
+                    pval = kwargs.get(path_field)
+                    if pval and not os.path.isabs(pval):
+                        kwargs[path_field] = os.path.join(job_dir, pval)
+
             # Whatever remains goes into JobAttributes
             attrs_kwargs = {k: v for k, v in attrs.items() if k in JOB_ATTRIBUTES_FIELDS}
             unknown = {k: v for k, v in attrs.items() if k not in JOB_ATTRIBUTES_FIELDS}
@@ -990,6 +1000,7 @@ class IriServiceClient(ServiceClient):
 
         fs = self.filesystem
         attrs = job.job_spec.attributes or {}
+        job_directory = attrs.get('directory', '')
         results: Dict[str, str] = {}
 
         for stream, attr_key in [('stdout', 'stdout_path'), ('stderr', 'stderr_path')]:
@@ -997,12 +1008,16 @@ class IriServiceClient(ServiceClient):
             if not remote_path:
                 continue
 
+            # Resolve relative paths against the job's working directory
+            if not os.path.isabs(remote_path) and job_directory:
+                remote_path = os.path.join(job_directory, remote_path)
+
             local_path = os.path.join(session_dir, f"{stream}.log")
 
             try:
-                self.logger.debug(
+                self.logger.info(
                     f"[{self.name}] Downloading {stream} from '{remote_path}' "
-                    f"for job '{job.name}'..."
+                    f"(storage_resource={storage_resource_id}) for job '{job.name}'..."
                 )
                 fs.download(
                     storage_resource_id,
