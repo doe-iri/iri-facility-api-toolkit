@@ -35,6 +35,9 @@ from amsc_iri_v2.models.container import Container as IriContainer
 from amsc_iri_v2.exceptions import NotFoundException, BadRequestException
 
 from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClientBase
+from amscrot.serviceclient.amsc_iri._v2.filesystem import IriFilesystemV2
+
+__all__ = ["IriServiceClientV2", "IriFilesystemV2"]
 
 
 # v2 uses DOE IRI URN strings for resource type filters.
@@ -90,6 +93,15 @@ class IriServiceClientV2(IriServiceClientBase):
     def _resource_type(self, kind: str) -> str:
         """Return v2 resource type filter (DOE IRI URN strings)."""
         return _RESOURCE_TYPE_V2[kind]
+
+    def _create_filesystem(self):
+        """Create v2-specific filesystem interface."""
+        return IriFilesystemV2(
+            filesystem_api=self._filesystem_api,
+            task_api=self._task_api,
+            logger=self.logger,
+            client_name=self.name,
+        )
 
     # ------------------------------------------------------------------
     # v2-only features

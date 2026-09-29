@@ -12,9 +12,11 @@ from pathlib import Path
 
 from amscrot.serviceclient.filesystem import (
     FilesystemInterface,
-    IriFilesystem,
     FilesystemError,
 )
+from amscrot.serviceclient.amsc_iri.filesystem import IriFilesystemBase
+from amscrot.serviceclient.amsc_iri._v1.filesystem import IriFilesystemV1
+from amscrot.serviceclient.amsc_iri._v2.filesystem import IriFilesystemV2
 
 
 # ---------------------------------------------------------------------------
@@ -41,7 +43,7 @@ def _make_task_response(task_id: str = "task-123"):
 def _make_fs(
     task_result=None, task_status="completed", timeout=5.0, interval=0.01
 ):
-    """Build an IriFilesystem wired to mock filesystem_api and task_api."""
+    """Build an IriFilesystemV1 wired to mock filesystem_api and task_api."""
     filesystem_api = MagicMock()
     task_api = MagicMock()
     logger = MagicMock()
@@ -58,11 +60,41 @@ def _make_fs(
     ]:
         getattr(filesystem_api, method).return_value = task_resp
 
-    fs = IriFilesystem(
+    fs = IriFilesystemV1(
         filesystem_api=filesystem_api,
         task_api=task_api,
         logger=logger,
         client_name="test-client",
+        default_task_timeout=timeout,
+        default_task_interval=interval,
+    )
+    return fs, filesystem_api, task_api
+
+
+def _make_v2_fs(
+    task_result=None, task_status="completed", timeout=5.0, interval=0.01
+):
+    """Build an IriFilesystemV2 wired to mock filesystem_api and task_api."""
+    filesystem_api = MagicMock()
+    task_api = MagicMock()
+    logger = MagicMock()
+
+    task = _make_task(status=task_status, result=task_result)
+    task_api.get_task.return_value = task
+
+    task_resp = _make_task_response()
+    for method in [
+        "mkdir", "ls", "stat", "upload", "download", "rm", "mv",
+        "cp", "chmod", "head", "tail", "checksum", "compress",
+        "extract", "symlink",
+    ]:
+        getattr(filesystem_api, method).return_value = task_resp
+
+    fs = IriFilesystemV2(
+        filesystem_api=filesystem_api,
+        task_api=task_api,
+        logger=logger,
+        client_name="test-client-v2",
         default_task_timeout=timeout,
         default_task_interval=interval,
     )
@@ -142,32 +174,32 @@ class TestDecodeResult:
     def test_base64_dict(self):
         import base64
         task = _make_task(result={"output": base64.b64encode(b"hello").decode()})
-        assert IriFilesystem._decode_result(task) == "hello"
+        assert IriFilesystemBase._decode_result(task) == "hello"
 
     def test_plain_string_output_field(self):
         # NERSC IRI returns {'output': 'plain text'} -- not base64.
         # Should return the string directly, not the whole dict stringified.
         task = _make_task(result={"output": "Hello AmSC\n"})
-        assert IriFilesystem._decode_result(task) == "Hello AmSC\n"
+        assert IriFilesystemBase._decode_result(task) == "Hello AmSC\n"
 
     def test_plain_dict(self):
         task = _make_task(result={"key": "value"})
         # No 'output' key -> returns as-is
-        assert IriFilesystem._decode_result(task) == {"key": "value"}
+        assert IriFilesystemBase._decode_result(task) == {"key": "value"}
 
     def test_plain_string(self):
         task = _make_task(result="some output")
-        assert IriFilesystem._decode_result(task) == "some output"
+        assert IriFilesystemBase._decode_result(task) == "some output"
 
     def test_none_result(self):
         task = _make_task(result=None)
-        assert IriFilesystem._decode_result(task) == ""
+        assert IriFilesystemBase._decode_result(task) == ""
 
     def test_regression_no_dict_stringified(self):
         # The old code fell back to str(raw) which returned the whole dict.
         # Ensure we never get "{'output': ...}" when the value is a plain string.
         task = _make_task(result={"output": "just text"})
-        result = IriFilesystem._decode_result(task)
+        result = IriFilesystemBase._decode_result(task)
         assert result == "just text"
         assert not result.startswith("{"), "should not return the whole dict stringified"
 
@@ -381,26 +413,37 @@ class TestArchive:
 class TestServiceClientFilesystemProperty:
     """Verify the filesystem property wires up correctly through the service client."""
 
-    def test_iri_filesystem_returns_iri_filesystem(self):
-        from amscrot.serviceclient.amsc_iri._v1 import (
-            IriServiceClientV1 as IriServiceClient,
-        )
-        client = IriServiceClient.__new__(IriServiceClient)
+    def test_v1_client_returns_v1_filesystem(self):
+        from amscrot.serviceclient.amsc_iri._v1 import IriServiceClientV1
+        client = IriServiceClientV1.__new__(IriServiceClientV1)
         client._available = True
         client._filesystem = None
         client._filesystem_api = MagicMock()
         client._task_api = MagicMock()
-        client.name = "test"
+        client.name = "test-v1"
         client.logger = MagicMock()
 
         fs = client.filesystem
+        assert isinstance(fs, IriFilesystemV1)
+        assert isinstance(fs, FilesystemInterface)
+
+    def test_v2_client_returns_v2_filesystem(self):
+        from amscrot.serviceclient.amsc_iri._v2 import IriServiceClientV2
+        client = IriServiceClientV2.__new__(IriServiceClientV2)
+        client._available = True
+        client._filesystem = None
+        client._filesystem_api = MagicMock()
+        client._task_api = MagicMock()
+        client.name = "test-v2"
+        client.logger = MagicMock()
+
+        fs = client.filesystem
+        assert isinstance(fs, IriFilesystemV2)
         assert isinstance(fs, FilesystemInterface)
 
     def test_iri_filesystem_returns_none_when_unavailable(self):
-        from amscrot.serviceclient.amsc_iri._v1 import (
-            IriServiceClientV1 as IriServiceClient,
-        )
-        client = IriServiceClient.__new__(IriServiceClient)
+        from amscrot.serviceclient.amsc_iri._v1 import IriServiceClientV1
+        client = IriServiceClientV1.__new__(IriServiceClientV1)
         client._available = False
         client._filesystem = None
         client.name = "test"
@@ -409,10 +452,8 @@ class TestServiceClientFilesystemProperty:
         assert client.filesystem is None
 
     def test_filesystem_is_lazily_cached(self):
-        from amscrot.serviceclient.amsc_iri._v1 import (
-            IriServiceClientV1 as IriServiceClient,
-        )
-        client = IriServiceClient.__new__(IriServiceClient)
+        from amscrot.serviceclient.amsc_iri._v1 import IriServiceClientV1
+        client = IriServiceClientV1.__new__(IriServiceClientV1)
         client._available = True
         client._filesystem = None
         client._filesystem_api = MagicMock()
@@ -439,4 +480,79 @@ class TestServiceClientFilesystemProperty:
         except Exception:
             # If kube client can't be instantiated barebones, skip
             pytest.skip("KubeServiceClient not available for bare instantiation")
+
+
+# ---------------------------------------------------------------------------
+# IriFilesystemV2 tests
+# ---------------------------------------------------------------------------
+
+class TestIriFilesystemV2:
+    def test_download_calls_api_with_dict(self, tmp_path):
+        import base64
+        local = str(tmp_path / "out.log")
+        encoded = base64.b64encode(b"v2 log output").decode()
+        fs, fsapi, _ = _make_v2_fs(task_result={"output": encoded})
+
+        result = fs.download("res-1", "/data/out.log", local)
+        assert result == local
+        fsapi.download.assert_called_once_with("res-1", {"path": "/data/out.log"})
+        assert Path(local).read_text() == "v2 log output"
+
+    def test_ls_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result=[])
+        fs.ls("res-1", "/data/dir", show_hidden=True, recursive=True)
+        fsapi.ls.assert_called_once_with(
+            "res-1",
+            {"path": "/data/dir", "show_hidden": True, "recursive": True},
+        )
+
+    def test_stat_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result={})
+        fs.stat("res-1", "/data/file.txt", dereference=True)
+        fsapi.stat.assert_called_once_with(
+            "res-1",
+            {"path": "/data/file.txt", "dereference": True},
+        )
+
+    def test_rm_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result={})
+        fs.rm("res-1", "/data/old.txt")
+        fsapi.rm.assert_called_once_with("res-1", {"path": "/data/old.txt"})
+
+    def test_mv_cp_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result={})
+        fs.mv("res-1", "/data/src.txt", "/data/dst.txt")
+        fsapi.mv.assert_called_once_with("res-1", {"path": "/data/src.txt", "target_path": "/data/dst.txt"})
+
+        fs.cp("res-1", "/data/src.txt", "/data/dst.txt")
+        fsapi.cp.assert_called_once_with("res-1", {"path": "/data/src.txt", "target_path": "/data/dst.txt"})
+
+    def test_head_tail_checksum_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result="sample text")
+        head_res = fs.head("res-1", "/data/file.txt", lines=10)
+        assert head_res == "sample text"
+        fsapi.head.assert_called_once_with(
+            "res-1",
+            {"path": "/data/file.txt", "lines": 10, "bytes": None},
+        )
+
+        tail_res = fs.tail("res-1", "/data/file.txt", bytes=50)
+        assert tail_res == "sample text"
+        fsapi.tail.assert_called_once_with(
+            "res-1",
+            {"path": "/data/file.txt", "lines": None, "bytes": 50},
+        )
+
+        chk = fs.checksum("res-1", "/data/file.txt")
+        assert chk == "sample text"
+        fsapi.checksum.assert_called_once_with("res-1", {"path": "/data/file.txt"})
+
+    def test_symlink_calls_api_with_dict(self):
+        fs, fsapi, _ = _make_v2_fs(task_result={})
+        fs.symlink("res-1", "/data/link", "/data/target")
+        fsapi.symlink.assert_called_once_with(
+            "res-1",
+            {"path": "/data/target", "link_path": "/data/link"},
+        )
+
 

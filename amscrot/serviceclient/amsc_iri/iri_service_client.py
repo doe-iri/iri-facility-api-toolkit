@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
 
 from amscrot.serviceclient.serviceclient import ServiceClient, PlanError, CreateError, DestroyError
-from amscrot.serviceclient.filesystem import IriFilesystem, FilesystemError
+from amscrot.serviceclient.filesystem import FilesystemError, FilesystemInterface
 from amscrot.util.constants import Constants
 from amscrot.util import utils
 from amscrot.model.discovery import DiscoveryResult, DiscoveredResource
@@ -98,7 +98,7 @@ class IriServiceClientBase(ServiceClient):
 
         self._default_resource_id = None
         # Lazily-created filesystem interface
-        self._filesystem: Optional[IriFilesystem] = None
+        self._filesystem: Optional[FilesystemInterface] = None
 
     # ------------------------------------------------------------------
     # Abstract hooks for subclasses
@@ -974,10 +974,15 @@ class IriServiceClientBase(ServiceClient):
             )
             return []
 
+    @abstractmethod
+    def _create_filesystem(self) -> FilesystemInterface:
+        """Create a version-specific filesystem interface instance."""
+        raise NotImplementedError
+
     # -- Filesystem interface -------------------------------------------------
 
     @property
-    def filesystem(self) -> Optional[IriFilesystem]:
+    def filesystem(self) -> Optional[FilesystemInterface]:
         """Return the IRI filesystem interface for this client.
 
         Returns ``None`` if the client is not available (e.g. missing credentials).
@@ -986,12 +991,7 @@ class IriServiceClientBase(ServiceClient):
         if not self._available:
             return None
         if self._filesystem is None:
-            self._filesystem = IriFilesystem(
-                filesystem_api=self._filesystem_api,
-                task_api=self._task_api,
-                logger=self.logger,
-                client_name=self.name,
-            )
+            self._filesystem = self._create_filesystem()
         return self._filesystem
 
     # -- Output file retrieval -------------------------------------------------
@@ -1125,16 +1125,11 @@ class IriServiceClientBase(ServiceClient):
                 )
             except Exception as e:
                 self.logger.error(
-                    f"[{self.name}] Error fetching {stream} for '{job.name}': {e}"
+                    f"[{self.name}] Error fetching {stream} for '{job.name}': "
+                    f"{utils.format_api_exception(e)}"
                 )
 
         # Store results back on the Job object
         job.local_files.update(results)
         return results
 
-
-def __getattr__(name):
-    if name == "IriServiceClient":
-        from amscrot.serviceclient.amsc_iri import IriServiceClient
-        return IriServiceClient
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

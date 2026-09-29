@@ -28,6 +28,9 @@ from amsc_iri.models.container import Container as IriContainer
 from amsc_iri.exceptions import NotFoundException, BadRequestException
 
 from amscrot.serviceclient.amsc_iri.iri_service_client import IriServiceClientBase
+from amscrot.serviceclient.amsc_iri._v1.filesystem import IriFilesystemV1
+
+__all__ = ["IriServiceClientV1", "IriFilesystemV1"]
 
 
 # v1 uses simple enum-style strings for resource type filters.
@@ -82,3 +85,13 @@ class IriServiceClientV1(IriServiceClientBase):
     def _resource_type(self, kind: str) -> str:
         """Return v1 resource type filter (simple strings)."""
         return _RESOURCE_TYPE_V1[kind]
+
+    def _create_filesystem(self):
+        """Create v1-specific filesystem interface."""
+        return IriFilesystemV1(
+            filesystem_api=self._filesystem_api,
+            task_api=self._task_api,
+            logger=self.logger,
+            client_name=self.name,
+        )
+
