@@ -57,6 +57,7 @@ class Client:
 
         if create_service_clients:
             self._create_service_clients_from_credentials()
+            self._expand_rig_service_clients()
 
         if discover_endpoints:
             self._discover_and_create_iri_clients()
@@ -215,6 +216,54 @@ class Client:
                     f"Failed to create service client '{entry_name}' "
                     f"(type={service_type}): {e}"
                 )
+
+    def _expand_rig_service_clients(self):
+        """Expand each registered AMSC_RIG gateway into per-facility clients.
+
+        An ``AMSC_RIG`` credential entry describes a gateway, not a facility.
+        For each such client we query ``/ready`` once and register an
+        ``IriServiceClient`` for every IRI facility it fronts, named
+        ``<shorthand>-rig`` (e.g. ``nersc-rig``, ``esnet-east-rig``).
+
+        Clients already registered under the same name -- notably those from
+        direct ``AMSC_IRI`` credential entries -- always win and are left
+        untouched.
+        """
+        from amscrot.serviceclient.amsc_rig import RigServiceClient
+
+        gateways = [
+            sc for sc in self._service_clients.values()
+            if isinstance(sc, RigServiceClient)
+        ]
+
+        for gateway in gateways:
+            try:
+                children = gateway.create_facility_clients()
+            except Exception as e:
+                self._logger.warning(
+                    f"Failed to expand RIG service client '{gateway.name}': {e}"
+                )
+                continue
+
+            if not children:
+                self._logger.warning(
+                    f"RIG '{gateway.name}' returned no usable facilities."
+                )
+                continue
+
+            added = 0
+            for child_name, child in children.items():
+                if child_name in self._service_clients:
+                    self._logger.debug(
+                        f"Service client '{child_name}' already exists, skipping."
+                    )
+                    continue
+                self._service_clients[child_name] = child
+                added += 1
+
+            self._logger.info(
+                f"RIG '{gateway.name}' contributed {added} facility client(s)."
+            )
 
     # -- Endpoint discovery ---------------------------------------------------
 

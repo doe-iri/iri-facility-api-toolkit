@@ -119,6 +119,15 @@ class Constants:
     # IRI API version cache file (relative to ~/.amscrot/)
     IRI_VERSION_CACHE_FILE = "metadata/iri_version_cache.json"
 
+    # AmSC RIG /ready cache file (relative to ~/.amscrot/)
+    RIG_READY_CACHE_FILE = "metadata/rig_ready_cache.json"
+
+    # Path segment under which the RIG proxies each facility's IRI API.
+    RIG_EXTERNAL_PATH = "/rig/external"
+
+    # Endpoint on the RIG that lists available IRI endpoints + versions.
+    RIG_READY_PATH = "/ready"
+
     CONFIG_SUPPORTED_TYPES = [NETWORK_STITCH_CONFIG, "layer3", "peering"]
     FACILITY_SHORTHANDS = {
         "national-energy-research-scientific-computing-center": "nersc",
@@ -133,6 +142,7 @@ class Constants:
     class ServiceType:
         IRI = "iri"
         AMSC_IRI = "amsc-iri"
+        AMSC_RIG = "amsc-rig"
         KUBE = "kube"
         AMSC_IRO = "amsc-iro"
         DUMMY = "dummy-sc"
@@ -152,6 +162,7 @@ class Constants:
     SERVICE_CLIENT_CLASSES = {
         ServiceType.IRI: "amscrot.serviceclient.amsc_iri.IriServiceClient",
         ServiceType.AMSC_IRI: "amscrot.serviceclient.amsc_iri.IriServiceClient",
+        ServiceType.AMSC_RIG: "amscrot.serviceclient.amsc_rig.RigServiceClient",
         ServiceType.KUBE: "amscrot.serviceclient.kube.kube_service_client.KubeServiceClient",
         ServiceType.AMSC_IRO: "amscrot.serviceclient.amsc_iro.amsc_iro_service_client.AmscIroServiceClient",
         ServiceType.DUMMY: "amscrot.serviceclient.dummy.dummy_service_client.DummyServiceClient",
