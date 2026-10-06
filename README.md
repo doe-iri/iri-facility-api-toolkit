@@ -54,7 +54,36 @@ amsc-iro:
   client_type: AMSC_IRO
   api_key: <token>
   api_endpoint: https://...
+
+amsc-rig:
+  client_type: AMSC_RIG
+  api_endpoint: https://rig.staging.american-science-cloud.org
+  pat_file: ~/.amsc_token.json
 ```
+
+The `client_type` determines what the entry becomes. `AMSC_IRI` and `AMSC_IRO`
+each describe one endpoint and yield one service client named after the YAML
+key. `AMSC_RIG` is different: it describes a *gateway* fronting many
+facilities, and expands into one client per facility it proxies — see
+[Auto-discovery via the AmSC RIG](#auto-discovery-via-the-amsc-rig).
+
+### Token forms
+
+`AMSC_IRI` and `AMSC_IRO` entries authenticate with an inline `api_key`.
+
+`AMSC_RIG` entries use an AmSC Personal Access Token, supplied either inline
+as `api_key` or, preferably, by pointing `pat_file` at a token file kept
+outside the credentials file. When both are present `api_key` wins. The path
+is tilde-expanded and may be either:
+
+* **JSON**, with the token under any of `AMSC_PAT`, `token`, `pat`,
+  `access_token`, or `api_key`; or
+* **plain text**, containing the raw token on its own.
+
+A missing or unreadable token file is not fatal at load time — the entry is
+simply left without a token, and the gateway is reported as unavailable with
+the missing field named, rather than failing every later call with an opaque
+error.
 
 An example credentials file is provided in [credentials-template.yml](examples/client/credentials-template.yml).
 
