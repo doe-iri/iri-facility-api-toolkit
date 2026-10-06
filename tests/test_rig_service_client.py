@@ -125,15 +125,21 @@ class TestRigFacility:
         assert fac.is_standard_path
 
     def test_bare_path_style_detected(self):
-        """pnnl advertises /v1/facility, incompatible with generated bindings."""
+        """pnnl advertises /v1/facility -- bare path without /api prefix."""
         fac = RigFacility.from_dict(READY_PAYLOAD["facilities"][1])
         assert fac.name == "pnnl"
         assert fac.path_style == "bare"
         assert not fac.is_standard_path
+        assert fac.api_prefix == ""
+
+    def test_standard_api_prefix(self):
+        fac = RigFacility.from_dict(READY_PAYLOAD["facilities"][0])
+        assert fac.api_prefix == "/api"
 
     def test_missing_metadata_path_assumed_standard(self):
         fac = RigFacility(name="x", api_version=2, metadata_path=None)
         assert fac.is_standard_path
+        assert fac.api_prefix == "/api"
 
     def test_from_dict_parses_all_fields(self):
         fac = RigFacility.from_dict(READY_PAYLOAD["facilities"][3])
@@ -309,9 +315,11 @@ class TestRigServiceClient:
         assert by_name["nersc"]["api_endpoint"] == f"{RIG_URL}/rig/external/nersc"
         assert by_name["nersc"]["api_version"] == 1
         assert by_name["esnet-east"]["api_version"] == 2
-        # pnnl is surfaced but flagged unsupported rather than hidden.
-        assert by_name["pnnl"]["supported"] is False
+        # All facilities are now supported; bare-path ones get path_prefix="".
+        assert by_name["pnnl"]["supported"] is True
         assert by_name["pnnl"]["path_style"] == "bare"
+        assert by_name["pnnl"]["path_prefix"] == ""
+        assert by_name["nersc"]["path_prefix"] == "/api"
 
     def test_discover_empty_when_unreachable(self, cache_file):
         sc = make_client()
@@ -320,7 +328,8 @@ class TestRigServiceClient:
 
     # -- child client expansion ----------------------------------------
 
-    def test_create_facility_clients_skips_bare_path(self, cache_file):
+    def test_create_facility_clients_includes_bare_path(self, cache_file):
+        """Bare-path facilities like pnnl are now included with path_prefix."""
         sc = make_client()
         with patch("requests.get", return_value=_mock_response(200, READY_PAYLOAD)):
             with patch(
@@ -329,9 +338,10 @@ class TestRigServiceClient:
                 create.side_effect = lambda **kw: MagicMock(name=kw["name"])
                 clients = sc.create_facility_clients()
 
-        assert "pnnl-rig" not in clients
+        assert "pnnl-rig" in clients
         assert set(clients) == {
-            "nersc-rig", "esnet-east-rig", "olcf-open-rig", "olcf-moderate-rig",
+            "nersc-rig", "pnnl-rig", "esnet-east-rig",
+            "olcf-open-rig", "olcf-moderate-rig",
         }
 
     def test_child_gets_explicit_api_version(self, cache_file):
@@ -352,6 +362,24 @@ class TestRigServiceClient:
             assert kwargs["type"] == Constants.ServiceType.AMSC_IRI
             assert kwargs["credential"]["api_key"] == "test-token"
             assert "/rig/external/" in kwargs["endpoint_uri"]
+
+    def test_child_gets_path_prefix(self, cache_file):
+        """Bare-path facilities get path_prefix=''; standard get '/api'."""
+        sc = make_client()
+        with patch("requests.get", return_value=_mock_response(200, READY_PAYLOAD)):
+            with patch(
+                "amscrot.serviceclient.serviceclient.ServiceClient.create"
+            ) as create:
+                create.side_effect = lambda **kw: MagicMock()
+                sc.create_facility_clients()
+
+        by_name = {c.kwargs["name"]: c.kwargs for c in create.call_args_list}
+
+        # Standard facilities get /api prefix
+        assert by_name["nersc-rig"]["credential"]["path_prefix"] == "/api"
+        assert by_name["esnet-east-rig"]["credential"]["path_prefix"] == "/api"
+        # Bare-path facility gets empty prefix
+        assert by_name["pnnl-rig"]["credential"]["path_prefix"] == ""
 
     def test_version_prober_not_invoked(self, cache_file):
         """Expanding N facilities must cost one request, not N probes."""
@@ -400,7 +428,7 @@ class TestRigServiceClient:
             ) as create:
                 create.side_effect = lambda **kw: MagicMock()
                 clients = sc.create_facility_clients()
-        assert set(clients) == {"esnet-east-rig"}
+        assert set(clients) == {"pnnl-rig", "esnet-east-rig"}
 
     def test_child_prefix(self, cache_file):
         sc = make_client(facilities=["nersc"], child_prefix="amsc-")

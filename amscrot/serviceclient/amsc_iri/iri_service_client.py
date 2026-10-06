@@ -96,6 +96,7 @@ class IriServiceClientBase(ServiceClient):
         # Load credentials
         self.api_key = None
         self.api_endpoint = None
+        self._path_prefix: Optional[str] = None  # None = use default /api
         self._load_credentials()
 
         # Override endpoint if provided via ServiceClient init
@@ -123,8 +124,12 @@ class IriServiceClientBase(ServiceClient):
         if self.api_key and self.api_endpoint:
             self._init_api_client()
             self._available = True
+            prefix_msg = ""
+            if self._path_prefix is not None:
+                prefix_msg = f", path_prefix={self._path_prefix!r}"
             self.logger.debug(
-                f"[{self.name}] Using IRI API v{self.API_VERSION} (native)"
+                f"[{self.name}] Using IRI API v{self.API_VERSION} "
+                f"(native{prefix_msg})"
             )
         else:
             self._available = False
@@ -135,6 +140,19 @@ class IriServiceClientBase(ServiceClient):
         self._default_resource_id = None
         # Lazily-created filesystem interface
         self._filesystem: Optional[FilesystemInterface] = None
+
+    @property
+    def path_prefix(self) -> str:
+        """Return the path prefix for API resource paths.
+
+        Defaults to ``"/api"`` (the prefix hardcoded in the generated
+        bindings).  Overridden to ``""`` for bare-path facilities like
+        PNNL, or set via ``path_prefix`` in credentials.
+        """
+        from amscrot.serviceclient.amsc_iri._path_rewriting import GENERATED_PREFIX
+        if self._path_prefix is not None:
+            return self._path_prefix
+        return GENERATED_PREFIX
 
     # ------------------------------------------------------------------
     # Abstract hooks for subclasses
@@ -202,6 +220,8 @@ class IriServiceClientBase(ServiceClient):
                     from amscrot.util import utils
                     self.api_key = utils.load_pat_from_file(creds.get('pat_file'))
                 self.api_endpoint = creds.get('api_endpoint')
+                if 'path_prefix' in creds:
+                    self._path_prefix = str(creds['path_prefix'])
                 return
             except Exception as e:
                 print(f"[{self.name}] Error loading from credential object: {e}")
@@ -248,6 +268,8 @@ class IriServiceClientBase(ServiceClient):
                     from amscrot.util import utils
                     self.api_key = utils.load_pat_from_file(section_creds.get('pat_file'))
                 self.api_endpoint = section_creds.get('api_endpoint')
+                if 'path_prefix' in section_creds:
+                    self._path_prefix = str(section_creds['path_prefix'])
 
                 if not self.api_key or not self.api_endpoint:
                     self.logger.warning(

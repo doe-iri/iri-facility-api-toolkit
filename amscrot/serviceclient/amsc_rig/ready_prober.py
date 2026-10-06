@@ -137,6 +137,19 @@ class RigFacility:
         """True when the facility uses the conventional ``/api/vN`` prefix."""
         return self.path_style == "standard"
 
+    @property
+    def api_prefix(self) -> str:
+        """Return the path prefix for this facility's API resource paths.
+
+        Standard facilities use ``"/api"``; bare-path facilities (like PNNL)
+        use ``""``.  This value is passed to the IRI service client as
+        ``path_prefix`` so the generated bindings' hardcoded ``/api`` segment
+        is rewritten transparently.
+        """
+        if self.is_standard_path:
+            return "/api"
+        return ""
+
     def to_dict(self) -> Dict[str, Any]:
         """Serialize to a plain dict for discovery payloads."""
         return {

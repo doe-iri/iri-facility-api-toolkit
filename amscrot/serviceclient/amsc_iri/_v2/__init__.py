@@ -60,13 +60,19 @@ class IriServiceClientV2(IriServiceClientBase):
 
     def _init_api_client(self) -> None:
         """Create the v2 API client and typed helpers."""
+        from amscrot.serviceclient.amsc_iri._path_rewriting import (
+            make_path_rewriting_client,
+        )
+
         configuration = IriConfiguration(
             host=self.api_endpoint,
             api_key={'APIKeyHeader': self.api_key},
             api_key_prefix={'APIKeyHeader': 'Bearer'},
             access_token=self.api_key,
         )
-        self._api_client = IriApiClient(configuration)
+        self._api_client = make_path_rewriting_client(
+            IriApiClient, configuration, path_prefix=self.path_prefix,
+        )
         if self.api_key:
             self._api_client.default_headers['Authorization'] = f'Bearer {self.api_key}'
         self._compute_api = ComputeApi(self._api_client)

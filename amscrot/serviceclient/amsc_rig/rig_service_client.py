@@ -249,7 +249,8 @@ class RigServiceClient(ServiceClient):
             data = fac.to_dict()
             data["id"] = fac.name
             data["api_endpoint"] = fac.base_url(doc.base_url)
-            data["supported"] = fac.is_standard_path
+            data["supported"] = True
+            data["path_prefix"] = fac.api_prefix
             items.append(
                 DiscoveredResource(
                     type=Constants.RES_FACILITY,
@@ -287,13 +288,12 @@ class RigServiceClient(ServiceClient):
                 )
                 continue
             if not fac.is_standard_path:
-                self.logger.warning(
-                    f"[{self.name}] Skipping facility '{fac.name}': advertises "
-                    f"non-standard metadata_path '{fac.metadata_path}' which is "
-                    f"incompatible with the generated /api/v{fac.api_version} "
-                    f"bindings."
+                self.logger.info(
+                    f"[{self.name}] Facility '{fac.name}' advertises "
+                    f"non-standard metadata_path '{fac.metadata_path}'; "
+                    f"will use path_prefix={fac.api_prefix!r} for its "
+                    f"IRI client."
                 )
-                continue
             selected.append(fac)
         return selected
 
@@ -376,6 +376,7 @@ class RigServiceClient(ServiceClient):
                         "api_key": self.api_key,
                         "api_endpoint": endpoint,
                         "api_version": fac.api_version,
+                        "path_prefix": fac.api_prefix,
                     },
                 )
             except Exception as exc:
