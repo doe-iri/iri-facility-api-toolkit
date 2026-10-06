@@ -23,6 +23,8 @@ Usage:
   python discover_and_submit_iri.py --site nersc-iri-rig --new-session
   python discover_and_submit_iri.py --list-sites
   python discover_and_submit_iri.py --directory /my/working/dir --account my-project
+  python discover_and_submit_iri.py --site alcf-rig --filesystems home:flare
+  python discover_and_submit_iri.py --custom-attribute filesystems=home --custom-attribute constraint=gpu
   python discover_and_submit_iri.py --refresh-discovery
 
 Requires ~/.amscrot/credentials.yml with valid client profiles.
@@ -31,6 +33,7 @@ Requires ~/.amscrot/credentials.yml with valid client profiles.
 import argparse
 import getpass
 import os
+import re
 import sys
 from typing import List, Optional
 
@@ -39,6 +42,18 @@ from amscrot.client.job import Job, JobType, JobServiceType, JobSpec
 from amscrot.serviceclient import PlanError, CreateError, ServiceClient
 from amscrot.util.constants import Constants
 from amscrot.util import state as sutil
+
+
+class KeyValueAction(argparse.Action):
+    """Collect repeated ``--custom-attribute KEY=VALUE`` flags into a dict."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if "=" not in values:
+            parser.error(f"{option_string} expects KEY=VALUE, got '{values}'")
+        key, value = values.split("=", 1)
+        current = getattr(namespace, self.dest, None) or {}
+        current[key.strip()] = value.strip()
+        setattr(namespace, self.dest, current)
 
 
 def resolve_sites(client: Client, requested_sites: List[str]) -> List[ServiceClient]:
@@ -56,6 +71,17 @@ def resolve_sites(client: Client, requested_sites: List[str]) -> List[ServiceCli
             sys.exit(1)
 
     return target_clients
+
+
+def storage_names(fac) -> List[str]:
+    """Return the names of storage resources the facility advertises.
+
+    Every IRI facility exposes a ``storage`` list in normalized discovery, so
+    this is safe to call anywhere. Note that the names are *human-readable
+    labels* ('Home', 'Eagle'), which are not guaranteed to be the tokens a
+    site's scheduler expects, so treat them as a hint rather than a contract.
+    """
+    return [s.name for s in (fac.storage or []) if s.name]
 
 
 def setup_and_submit(client: Client, session, target_clients: List[ServiceClient], args):
@@ -106,6 +132,14 @@ def setup_and_submit(client: Client, session, target_clients: List[ServiceClient
             print(f"\nWARNING: No compute resources found for any project allocation at {fac.name}, skipping.")
             continue
 
+        # Storage is listed separately from the project/capability mapping
+        # above: facilities frequently advertise filesystems without linking
+        # them to a project capability (ALCF reports Home and Eagle with no
+        # capability ids at all), so they never appear in resources_for_project.
+        advertised_storage = storage_names(fac)
+        if advertised_storage:
+            print(f"\n  Facility storage resources: {', '.join(advertised_storage)}")
+
         # Set up default directory
         username = args.user or os.environ.get("USER")
         if not username:
@@ -116,7 +150,12 @@ def setup_and_submit(client: Client, session, target_clients: List[ServiceClient
 
         ident = f"{target_client.name} {fac.name}".lower()
         is_esnet = "esnet" in ident
+        is_alcf = "alcf" in ident or "argonne" in ident
 
+        # Home-directory layout is facility-specific and not advertised via
+        # discovery, so fall back to a conventional path when the layout is
+        # unknown. Pass --directory to override anywhere.
+        default_dir = f"/home/{username}" if username else "."
         if username:
             if "nersc" in ident:
                 default_dir = f"/global/homes/{username[0].lower()}/{username}"
@@ -135,6 +174,18 @@ def setup_and_submit(client: Client, session, target_clients: List[ServiceClient
         stderr_path = f"{dir_path}/stderr.log" if is_esnet else "stderr.log"
         container_image = args.image or ("debian:latest" if is_esnet else None)
 
+        # Scheduler-specific attributes that have no IRI-standard field are
+        # passed through ``custom_attributes``.  ALCF's PBS scheduler rejects
+        # jobs that do not declare which filesystems they need
+        # ("Resource: filesystems is required to be set."), so default it here.
+        custom_attributes = dict(args.custom_attributes or {})
+        if is_alcf and "filesystems" not in custom_attributes:
+            custom_attributes["filesystems"] = args.filesystems or "home"
+        elif args.filesystems and "filesystems" not in custom_attributes:
+            custom_attributes["filesystems"] = args.filesystems
+
+        selected_filesystems = custom_attributes.get("filesystems")
+
         print(f"\nAdding Job for {fac.name} to Session:")
         print(f"  Resource:  {res_name} (ID: {res_id})")
         print(f"  Account:   {account_name}")
@@ -144,18 +195,50 @@ def setup_and_submit(client: Client, session, target_clients: List[ServiceClient
         print(f"  Exclusive: {exclusive_node_use}")
         if container_image:
             print(f"  Container: {container_image}")
+        if selected_filesystems:
+            source = "default" if not (args.filesystems or
+                                       (args.custom_attributes or {}).get("filesystems")) else "requested"
+            print(f"  Filesystems: {selected_filesystems} ({source})")
+            # Cross-check against what the facility advertises. Scoped to ALCF
+            # because that is the only site where the advertised labels ('Home',
+            # 'Eagle') line up with the scheduler's tokens. NERSC advertises
+            # 'homes' and ESnet 'Home Filesystem', neither of which is what their
+            # schedulers expect, so the same check elsewhere is just noise.
+            # Advisory only: the facility remains the authority.
+            if is_alcf and advertised_storage:
+                known = {n.lower() for n in advertised_storage}
+                unknown = [
+                    tok for tok in re.split(r"[:,\s]+", selected_filesystems)
+                    if tok and tok.lower() not in known
+                ]
+                if unknown:
+                    print(f"    NOTE: {', '.join(unknown)} not in advertised "
+                          f"storage ({', '.join(advertised_storage)}); "
+                          f"submitting anyway.")
+        if custom_attributes:
+            print(f"  Custom:    {custom_attributes}")
 
         selected_resources.append((fac.name, res_name, res_id))
 
-        # Standard resources block
-        resources = {
-            "node_count": 1,
-            "process_count": 1,
-            "processes_per_node": 1,
-            "cpu_cores_per_process": 1,
-            "exclusive_node_use": exclusive_node_use,
-            "memory": 268435456,
-        }
+        # Standard resources block.
+        #
+        # ALCF is skipped: its PBS integration derives the node/process layout
+        # from the queue and the filesystems attribute, and an explicit
+        # ResourceSpec here is at best redundant. An empty dict is falsy, so
+        # _convert_to_iri_job_spec omits the 'resources' field entirely rather
+        # than sending an empty object.
+        if is_alcf:
+            resources = {}
+            print("  Resources: omitted (ALCF derives layout from queue)")
+        else:
+            resources = {
+                "node_count": 1,
+                "process_count": 1,
+                "processes_per_node": 1,
+                "cpu_cores_per_process": 1,
+                "exclusive_node_use": exclusive_node_use,
+                "memory": 268435456,
+            }
 
         # Build Job attributes
         attributes = {
@@ -168,6 +251,8 @@ def setup_and_submit(client: Client, session, target_clients: List[ServiceClient
         }
         if container_image:
             attributes["container"] = {"image": container_image}
+        if custom_attributes:
+            attributes["custom_attributes"] = custom_attributes
 
         # Build JobSpec
         exec_args = args.arguments if args.arguments is not None else [f"Hello from {fac.name}"]
@@ -273,6 +358,22 @@ def main():
     parser.add_argument("--executable", default="/bin/echo", help="Executable to run (default: /bin/echo)")
     parser.add_argument("--arguments", nargs="*", default=None, help="Arguments for executable (default: Hello from <facility>)")
     parser.add_argument("--image", default=None, help="Container image to use (default: debian:latest for ESnet)")
+    parser.add_argument(
+        "--filesystems",
+        default=None,
+        help="Filesystems the job needs, passed through verbatim as "
+             "custom_attributes.filesystems. Separator is scheduler-specific "
+             "(ALCF PBS uses colons, e.g. 'home:flare'). Required by ALCF; "
+             "defaults to 'home' there."
+    )
+    parser.add_argument(
+        "--custom-attribute",
+        dest="custom_attributes",
+        metavar="KEY=VALUE",
+        action=KeyValueAction,
+        default=None,
+        help="Scheduler-specific attribute passed through as custom_attributes. Repeatable."
+    )
     parser.add_argument("--duration", type=int, default=None, help="Job duration limit in seconds (default: 600 for ESnet, 300 for others)")
     parser.add_argument("--timeout", type=float, default=300.0, help="Wait timeout in seconds (default: 300.0)")
     parser.add_argument("--interval", type=float, default=5.0, help="Wait polling interval in seconds (default: 5.0)")

@@ -143,6 +143,53 @@ east  = client.get_service_client("esnet-iri-east")
 
 This mode does **not** contact any external registry — it works entirely from your local credentials file. Entries without `client_type` are skipped with a warning.
 
+#### Auto-discovery via the AmSC RIG
+
+One entry type is an exception to "no external calls": `AMSC_RIG`. The AmSC
+Resource Interface Gateway fronts many IRI facilities behind
+`/rig/external/<site>` and publishes the full list from a single authenticated
+`/ready` endpoint. A single gateway entry therefore replaces a whole block of
+hand-written per-facility sections:
+
+```yaml
+amsc-rig:
+  client_type: AMSC_RIG
+  api_endpoint: https://rig.staging.american-science-cloud.org
+  pat_file: ~/.amsc_token.json     # JSON with AMSC_PAT, or a plain-text token file
+```
+
+```python
+client = Client(create_service_clients=True)
+
+client.get_service_client("nersc-rig")        # IriServiceClientV1
+client.get_service_client("esnet-east-rig")   # IriServiceClientV2
+```
+
+The toolkit calls `/ready` once, then registers an `IriServiceClient` for every
+facility the gateway advertises, named `<shorthand>-rig`. Because each
+facility's API version comes from the gateway, it never has to be pinned by
+hand and never drifts — and expanding *N* facilities costs one HTTP request
+rather than *N* version probes.
+
+The `-rig` suffix keeps these distinct from directly-configured clients, and an
+existing entry of the same name always wins, so a hand-tuned `nersc-rig` is
+never overwritten. Facilities advertising a non-standard API path prefix are
+reported by `discover()` with `supported: false` and skipped during expansion
+rather than producing a client that fails on every call.
+
+Optional filters: `facilities` (allow-list), `exclude_facilities` (deny-list),
+`skip_unhealthy`, and `child_prefix`.
+
+The gateway client is for discovery only — submit jobs through the facility
+clients it produces:
+
+```python
+rig = client.get_service_client("amsc-rig")
+
+for fac in rig.discover().facility:
+    print(fac.data["name"], fac.data["api_version"], fac.data["api_endpoint"])
+```
+
 ### Option C: Manual ServiceClient Definition
 
 Use a credential profile from `credentials.yml`:
@@ -187,14 +234,15 @@ With manual setup, you control exactly which service clients exist, their names,
 
 ### When to Use Each
 
-| | `discover_endpoints` | `create_service_clients` | Manual `ServiceClient.create()` |
-|---|---|---|---|
-| **Setup** | One line | One line | Explicit per-client |
-| **Source** | IRO facility registry (remote) | `credentials.yml` (local) | Code |
-| **Naming** | Auto-slugified from registry | YAML key names | You choose |
-| **Credentials** | Matched by `api_endpoint` | Direct from each entry | Explicit `profile=` |
-| **Best for** | Multi-site, dynamic environments | Stable multi-facility setups | Testing, custom configs |
-| **Requires** | IRO registry reachable | `client_type` in credentials | Only the credential profile |
+| | `discover_endpoints` | `create_service_clients` | `AMSC_RIG` entry | Manual `ServiceClient.create()` |
+|---|---|---|---|---|
+| **Setup** | One line | One line | One credential entry | Explicit per-client |
+| **Source** | IRO facility registry (remote) | `credentials.yml` (local) | RIG `/ready` (remote) | Code |
+| **Naming** | Auto-slugified from registry | YAML key names | `<shorthand>-rig` | You choose |
+| **Credentials** | Matched by `api_endpoint` | Direct from each entry | One AmSC PAT for all | Explicit `profile=` |
+| **API version** | Probed per endpoint | Pinned by hand | Reported by the gateway | Explicit or probed |
+| **Best for** | Multi-site, dynamic environments | Stable multi-facility setups | AmSC facilities behind the gateway | Testing, custom configs |
+| **Requires** | IRO registry reachable | `client_type` in credentials | RIG reachable + valid PAT | Only the credential profile |
 
 ### 2. Discover Available Resources
 

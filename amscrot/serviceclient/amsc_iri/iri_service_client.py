@@ -26,6 +26,42 @@ if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
 
 
+def _urn_tail(value: Any) -> Optional[str]:
+    """Reduce an IRI identifier to its final segment.
+
+    Facilities express the same concept either as a bare token
+    (``node_hours``) or as a namespaced URN
+    (``urn:doe-iri:allocation:compute:node-hours``). Both also appear as full
+    URLs in ``*_uri`` fields. Taking the last segment of whichever separator
+    is present yields a token that can be compared across facilities.
+
+    Returns ``None`` for empty input so callers can skip missing fields.
+    """
+    if value is None:
+        return None
+    text = getattr(value, 'value', value)  # unwrap enums
+    text = str(text).strip().rstrip('/')
+    if not text:
+        return None
+    for sep in ('/', ':'):
+        if sep in text:
+            text = text.rsplit(sep, 1)[-1]
+    return text or None
+
+
+def _fold_token(value: Any) -> Optional[str]:
+    """Normalise a token for equality comparison.
+
+    Strips any URN/URL namespace, casefolds, and unifies hyphen and
+    underscore spelling, so ``'Aurora'``, ``'aurora'`` and
+    ``'urn:...:node-hours'`` vs ``'node_hours'`` compare equal.
+    """
+    tail = _urn_tail(value)
+    if tail is None:
+        return None
+    return tail.casefold().replace('-', '_')
+
+
 class IriServiceClientBase(ServiceClient):
     """Version-agnostic base for IRI service clients.
 
@@ -119,6 +155,29 @@ class IriServiceClientBase(ServiceClient):
         Args:
             kind: One of ``"compute"``, ``"storage"``, ``"network"``.
         """
+
+    #: Order in which capability-resolution strategies are attempted when
+    #: linking a resource to the capabilities an allocation is granted
+    #: against. Earlier entries are higher confidence. Subclasses (or
+    #: deployment config) may reorder or trim this; only ``"declared"``
+    #: represents an explicit statement by the facility.
+    CAPABILITY_RESOLUTION_ORDER: tuple = (
+        "declared",
+        "resource_name",
+        "resource_group",
+    )
+
+    def _capability_resolution_order(self) -> tuple:
+        """Return the capability-resolution strategies to attempt, in order.
+
+        Overridable so a facility whose metadata is known to be strict can
+        restrict resolution to ``("declared",)``, or so a deployment can
+        enable additional inference. The default order is deliberately
+        facility-agnostic: it encodes only *structural* fallbacks that hold
+        for any IRI provider, never a facility or client name.
+        """
+        configured = getattr(self, 'capability_resolution_order', None)
+        return tuple(configured) if configured else self.CAPABILITY_RESOLUTION_ORDER
 
     # ------------------------------------------------------------------
     # Credential loading
@@ -321,6 +380,100 @@ class IriServiceClientBase(ServiceClient):
         self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
 
+    # ------------------------------------------------------------------
+    # Capability resolution
+    # ------------------------------------------------------------------
+
+    def _build_capability_index(self, native_result: DiscoveryResult) -> Dict[str, Any]:
+        """Index the facility's declared capabilities under every alias form.
+
+        Facilities reference the same capability by different identifiers:
+        some resources carry capability UUIDs, some carry short names, and
+        allocations point at a ``capability_uri`` whose tail may be either.
+        Indexing all of those forms against one canonical name lets the rest
+        of normalization compare them without caring which form it was given.
+
+        Returns a dict with:
+            ``alias``  -- folded alias -> canonical capability name
+            ``names``  -- folded canonical name -> canonical capability name
+        """
+        alias: Dict[str, str] = {}
+        names: Dict[str, str] = {}
+
+        for cap_item in native_result.by_type("capability"):
+            cap_d = cap_item.data
+            cap_name = cap_d.get("name")
+            if not cap_name:
+                continue
+            canonical = str(cap_name)
+            names[_fold_token(canonical)] = canonical
+            # Every form this capability may be referenced by elsewhere.
+            for raw in (cap_d.get("id"), canonical, cap_d.get("uri")):
+                folded = _fold_token(raw)
+                if folded:
+                    alias.setdefault(folded, canonical)
+
+        return {"alias": alias, "names": names}
+
+    def _canonical_capability(self, raw: Any, cap_index: Dict[str, Any]) -> Optional[str]:
+        """Resolve *raw* (an id, name, or URI) to a canonical capability name."""
+        folded = _fold_token(raw)
+        if not folded:
+            return None
+        # Fall back to the stripped token so an unknown-but-present reference
+        # is still usable rather than being silently dropped.
+        return cap_index["alias"].get(folded, _urn_tail(raw))
+
+    def _resolve_capabilities(
+        self,
+        d: dict,
+        cap_index: Dict[str, Any],
+    ) -> tuple:
+        """Determine which capabilities a resource provides.
+
+        Tries each strategy in :meth:`_capability_resolution_order` and stops
+        at the first that yields a match, returning the capability names and
+        the strategy that produced them so callers can judge confidence.
+
+        The strategies are structural, not facility-specific:
+
+        ``declared``
+            The resource explicitly lists capability references. Always
+            correct when present; the only strategy that is not an inference.
+        ``resource_name``
+            The resource's own name matches a declared capability name. This
+            holds for facilities that model capabilities as machine names
+            rather than as abstract classes like cpu/gpu.
+        ``resource_group``
+            The resource's group matches a declared capability name, for
+            facilities that group resources by the capability they serve.
+
+        Returns:
+            ``(capability_names, strategy)``; ``(None, None)`` if unresolved.
+        """
+        for strategy in self._capability_resolution_order():
+            if strategy == "declared":
+                refs = d.get("_capability_ids") or []
+                resolved = [
+                    c for c in (
+                        self._canonical_capability(r, cap_index) for r in refs
+                    ) if c
+                ]
+                if resolved:
+                    return resolved, "declared"
+
+            elif strategy == "resource_name":
+                canonical = cap_index["names"].get(_fold_token(d.get("name")))
+                if canonical:
+                    return [canonical], "resource_name"
+
+            elif strategy == "resource_group":
+                canonical = cap_index["names"].get(_fold_token(d.get("group")))
+                if canonical:
+                    return [canonical], "resource_group"
+
+        return None, None
+
     def normalize_discovery(self, native_result: DiscoveryResult) -> DiscoveryResult:
         """Aggregate raw API resources into a single typed Facility object.
 
@@ -344,20 +497,21 @@ class IriServiceClientBase(ServiceClient):
             )
             return DiscoveryResult()
 
-        # Build map from capability ID (UUID) to name
-        cap_id_to_name = {}
-        for cap_item in native_result.by_type("capability"):
-            cap_d = cap_item.data
-            cap_id = cap_d.get("id")
-            cap_name = cap_d.get("name")
-            if cap_id and cap_name:
-                cap_id_to_name[cap_id] = cap_name
+        # Index every alias form the facility uses for its capabilities.
+        cap_index = self._build_capability_index(native_result)
+        # Tally which strategy resolved each resource, for the summary log.
+        strategy_tally: Dict[str, int] = {}
+
+        def _resolve(d: dict) -> Optional[List[str]]:
+            names, strategy = self._resolve_capabilities(d, cap_index)
+            if strategy:
+                strategy_tally[strategy] = strategy_tally.get(strategy, 0) + 1
+            else:
+                strategy_tally["unresolved"] = strategy_tally.get("unresolved", 0) + 1
+            return names, strategy
 
         def _build_compute(d: dict) -> Compute:
-            cap_ids = d.get("_capability_ids") or None
-            cap_names = None
-            if cap_ids:
-                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
+            cap_names, cap_source = _resolve(d)
             return Compute(
                 id=d.get("id"),
                 name=d.get("name") or d.get("node_name"),
@@ -370,14 +524,12 @@ class IriServiceClientBase(ServiceClient):
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
                 capabilities=cap_names,
+                capability_source=cap_source,
                 attributes=d.get("attributes"),
             )
 
         def _build_storage(d: dict) -> Storage:
-            cap_ids = d.get("_capability_ids") or None
-            cap_names = None
-            if cap_ids:
-                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
+            cap_names, cap_source = _resolve(d)
             return Storage(
                 id=d.get("id"),
                 name=d.get("name"),
@@ -386,6 +538,7 @@ class IriServiceClientBase(ServiceClient):
                 quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
                 performance_tier=d.get("performance_tier"),
                 capabilities=cap_names,
+                capability_source=cap_source,
                 attributes=d.get("attributes"),
             )
 
@@ -439,14 +592,22 @@ class IriServiceClientBase(ServiceClient):
 
         # -- Build Project hierarchy from native project items ----------------
         def _build_entry(e: dict) -> AllocationEntry:
-            """Build an AllocationEntry, coercing enum unit values to str."""
+            """Build an AllocationEntry with a facility-agnostic unit token.
+
+            Units arrive either bare (``node_hours``) or URN-namespaced
+            (``urn:doe-iri:allocation:compute:node-hours``). Reducing both to
+            the final segment and unifying the word separator keeps allocation
+            units comparable across facilities, so callers can aggregate usage
+            without special-casing each provider's spelling.
+            """
             unit = e.get("unit")
             if hasattr(unit, "value"):
                 unit = unit.value
+            tail = _urn_tail(unit)
             return AllocationEntry(
                 allocation=e.get("allocation"),
                 usage=e.get("usage"),
-                unit=str(unit) if unit is not None else None,
+                unit=tail.replace('-', '_') if tail else None,
             )
 
         projects_typed: list[Project] = []
@@ -454,12 +615,11 @@ class IriServiceClientBase(ServiceClient):
             d = item.data
             proj_allocs: list[ProjectAllocation] = []
             for pa_data in d.get("_allocations", []):
-                # Extract capability id from capability_uri
-                cap_uri = pa_data.get("capability_uri", "")
-                capability_id = (
-                    cap_uri.rstrip("/").rsplit("/", 1)[-1] if cap_uri else None
+                # The capability_uri tail may be an id or a name depending on
+                # the facility; the shared index resolves either form.
+                capability_name = self._canonical_capability(
+                    pa_data.get("capability_uri"), cap_index
                 )
-                capability_name = cap_id_to_name.get(capability_id, capability_id)
 
                 # Build user allocations
                 user_allocs: list[UserAllocation] = []
@@ -528,6 +688,44 @@ class IriServiceClientBase(ServiceClient):
             f"{len(storage_resources)} storage, {len(network_resources)} network resources, "
             f"{len(allocations)} allocations, and {len(projects_typed)} projects."
         )
+
+        # Surface how capability linkage was established. Inferred linkage is
+        # a heuristic, so it is reported rather than applied silently.
+        if strategy_tally:
+            summary = ", ".join(
+                f"{count} {strategy}"
+                for strategy, count in sorted(strategy_tally.items())
+            )
+            inferred = {
+                s: c for s, c in strategy_tally.items()
+                if s not in ("declared", "unresolved")
+            }
+            if inferred:
+                detail = ", ".join(
+                    f"{count} via {strategy}"
+                    for strategy, count in sorted(inferred.items())
+                )
+                self.logger.warning(
+                    f"[{self.name}] Capability linkage inferred for "
+                    f"{sum(inferred.values())} resource(s) ({detail}). The "
+                    f"facility did not declare these links; verify the "
+                    f"resource before relying on the match. "
+                    f"Full breakdown: {summary}."
+                )
+            else:
+                self.logger.debug(
+                    f"[{self.name}] Capability resolution: {summary}."
+                )
+
+            if strategy_tally.get("unresolved") and not any(
+                r.capabilities for r in compute_resources
+            ):
+                self.logger.warning(
+                    f"[{self.name}] No compute resource could be linked to a "
+                    f"capability. Allocation-to-resource mapping will be empty; "
+                    f"target a resource id directly or extend "
+                    f"CAPABILITY_RESOLUTION_ORDER for this client."
+                )
         return DiscoveryResult(items=result_items)
 
     # ------------------------------------------------------------------
@@ -1004,25 +1202,35 @@ class IriServiceClientBase(ServiceClient):
           2. Prefer one with ``home`` in its name.
           3. Fall back to any available storage resource.
 
-        A resource is considered available when its ``current_status`` is ``up``.
-        Returns ``None`` if no suitable storage resource is found.
+        A resource is treated as available unless the facility explicitly
+        reports it ``down``. Facilities are inconsistent about status
+        reporting -- ALCF returns ``unknown`` for every filesystem it
+        advertises -- so requiring ``up`` would discard perfectly usable
+        storage and leave us unable to fetch job output. ``degraded`` is
+        likewise accepted: slow is better than unavailable for a log download.
         """
         try:
             storage_resources = self._status_api.get_resources(
                 resource_type=self._resource_type("storage")
             ) or []
 
-            def _is_available(res) -> bool:
+            def _status_of(res) -> Optional[str]:
                 if res.current_status is None:
-                    return True  # assume available if status unknown
-                status_val = (
+                    return None
+                return (
                     res.current_status.value
                     if hasattr(res.current_status, 'value')
                     else str(res.current_status)
-                )
-                return status_val == 'up'
+                ).lower()
+
+            def _is_available(res) -> bool:
+                return _status_of(res) != 'down'
 
             available = [res for res in storage_resources if _is_available(res)]
+
+            # Prefer resources the facility actively reports as healthy, but
+            # keep the rest as fallbacks rather than discarding them.
+            available.sort(key=lambda r: 0 if _status_of(r) == 'up' else 1)
 
             # Prefer a storage resource with "home" in the name
             for res in available:
@@ -1043,9 +1251,18 @@ class IriServiceClientBase(ServiceClient):
                 )
                 return res.id
 
-            self.logger.warning(
-                f"[{self.name}] No available storage resource found."
-            )
+            if storage_resources:
+                self.logger.warning(
+                    f"[{self.name}] No usable storage resource found: all "
+                    f"{len(storage_resources)} advertised resource(s) report "
+                    f"status 'down'."
+                )
+            else:
+                self.logger.warning(
+                    f"[{self.name}] No storage resources are advertised by this "
+                    f"facility; cannot resolve one for filesystem operations. "
+                    f"Pass storage_resource_id explicitly."
+                )
         except Exception as e:
             self.logger.error(
                 f"[{self.name}] Error resolving storage resource: {e}"

@@ -12,7 +12,22 @@ class ResourceBase(BaseModel):
     group: Optional[str] = None
     description: Optional[str] = None
     capabilities: Optional[List[str]] = None
+    capability_source: Optional[str] = Field(
+        default=None,
+        description=(
+            "How ``capabilities`` was resolved. ``'declared'`` means the "
+            "facility explicitly linked this resource to its capabilities. "
+            "Any other value is an inferred fallback (see "
+            "``IriServiceClientBase._resolve_capabilities``) and should be "
+            "treated as a lower-confidence hint."
+        ),
+    )
     attributes: Optional[Dict[str, Any]] = Field(default=None, description="Optional type-specific metadata from the facility API.")
+
+    @property
+    def capabilities_are_declared(self) -> bool:
+        """True when the facility itself declared the capability linkage."""
+        return self.capability_source == "declared"
 
 
 # -- Resource Models ----------------------------------------------------------
@@ -253,6 +268,18 @@ class Facility(ResourceBase):
             proj = self.get_project(project_name)
             projects = [proj] if proj else []
 
+        def _fold(value: Optional[str]) -> Optional[str]:
+            """Casefold a capability token so cosmetic differences don't block a match.
+
+            Facilities disagree on capitalisation and on hyphen/underscore
+            spelling for otherwise identical capability names. Comparing on a
+            folded form keeps the join working across those variations without
+            encoding any facility-specific knowledge.
+            """
+            if not value:
+                return None
+            return value.strip().casefold().replace('-', '_')
+
         output: Dict[str, Dict[str, List[ResourceBase]]] = {}
         for proj in projects:
             proj_key = proj.name or proj.id or "unknown"
@@ -260,13 +287,18 @@ class Facility(ResourceBase):
             for pa in (proj.allocations or []):
                 cap = pa.capability
                 if cap and cap not in cap_map:
+                    target = _fold(cap)
+
+                    def _matches(res: "ResourceBase") -> bool:
+                        return any(
+                            _fold(c) == target for c in (res.capabilities or [])
+                        )
+
                     res_map: Dict[str, List[ResourceBase]] = {}
-                    compute = [c for c in (self.compute or [])
-                               if c.capabilities and cap in c.capabilities]
+                    compute = [c for c in (self.compute or []) if _matches(c)]
                     if compute:
                         res_map['compute'] = compute
-                    storage = [s for s in (self.storage or [])
-                               if s.capabilities and cap in s.capabilities]
+                    storage = [s for s in (self.storage or []) if _matches(s)]
                     if storage:
                         res_map['storage'] = storage
 
@@ -276,6 +308,99 @@ class Facility(ResourceBase):
                 output[proj_key] = cap_map
 
         return output
+
+    def explain_project_resources(
+        self,
+        project_name: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Diagnose *why* :meth:`resources_for_project` returned what it did.
+
+        ``resources_for_project`` collapses several distinct situations into
+        the same empty dict: the project may not exist, it may hold no
+        allocations, the facility may expose no compute at all, or the
+        capability linkage may simply be absent. Those require very different
+        responses, so this method reports which one occurred.
+
+        Returns:
+            Dict with ``status`` (one of ``'ok'``, ``'unknown_project'``,
+            ``'no_allocations'``, ``'no_resources'``, ``'unresolved'``),
+            a human-readable ``detail``, and ``matches`` mirroring
+            ``resources_for_project`` output.
+        """
+        if project_name is not None and self.get_project(project_name) is None:
+            return {
+                "status": "unknown_project",
+                "detail": f"No project named {project_name!r} at {self.name}.",
+                "matches": {},
+            }
+
+        matches = self.resources_for_project(project_name)
+        if matches:
+            inferred = sorted({
+                res.capability_source
+                for cap_map in matches.values()
+                for res_map in cap_map.values()
+                for resources in res_map.values()
+                for res in resources
+                if res.capability_source and res.capability_source != "declared"
+            })
+            return {
+                "status": "ok",
+                "detail": (
+                    "Capability linkage was inferred via: "
+                    + ", ".join(inferred)
+                    + ". Treat these matches as lower confidence."
+                ) if inferred else "Facility declared the capability linkage.",
+                "inferred_strategies": inferred,
+                "matches": matches,
+            }
+
+        projects = self.projects or []
+        if project_name is not None:
+            proj = self.get_project(project_name)
+            projects = [proj] if proj else []
+
+        allocated_caps = sorted({
+            pa.capability
+            for proj in projects
+            for pa in (proj.allocations or [])
+            if pa.capability
+        })
+        if not allocated_caps:
+            return {
+                "status": "no_allocations",
+                "detail": "Project holds no allocations with a capability.",
+                "matches": {},
+            }
+
+        if not (self.compute or self.storage):
+            return {
+                "status": "no_resources",
+                "detail": (
+                    f"{self.name} advertised no compute or storage resources. "
+                    "This usually indicates a discovery or permissions problem "
+                    "rather than an exhausted allocation."
+                ),
+                "matches": {},
+            }
+
+        resource_caps = sorted({
+            c
+            for res in [*(self.compute or []), *(self.storage or [])]
+            for c in (res.capabilities or [])
+        })
+        return {
+            "status": "unresolved",
+            "detail": (
+                f"{self.name} has allocations for {allocated_caps} and "
+                f"resources advertising {resource_caps or '[]'}, but nothing "
+                "links them. Target a resource id directly, or extend the "
+                "capability resolution order for this client."
+            ),
+            "allocated_capabilities": allocated_caps,
+            "resource_capabilities": resource_caps,
+            "matches": {},
+        }
 
 
 # Service Models
