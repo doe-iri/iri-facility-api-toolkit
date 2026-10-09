@@ -30,10 +30,26 @@ wheels = [
 ]
 
 [[package]]
+name = "amsc-iri-v2"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "python-dateutil" },
+    { name = "typing-extensions" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/01/61/cf98259a5417af153856cb691d7972c2f6dcddcc802b0e438cf7363ea7b7/amsc_iri_v2-1.0.0.tar.gz", hash = "sha256:6e3e1dc20a94cf6b98c11881aab1f27c158178a69bcd295d6034602bf0ce156a", size = 73395, upload-time = "2026-09-29T20:07:06.508Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/14/3b4f055dba9265652742bdec701f96f879da6e6113ce81a416273b68720e/amsc_iri_v2-1.0.0-py3-none-any.whl", hash = "sha256:5be413fa8cfe34d46a81829d979131c4deabf59b736ef9bf26c4d9cb697d256c", size = 135192, upload-time = "2026-09-29T20:07:05.347Z" },
+]
+
+[[package]]
 name = "amscrot-py"
 source = { editable = "." }
 dependencies = [
     { name = "amsc-iri" },
+    { name = "amsc-iri-v2" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -83,6 +99,7 @@ sense = [
 [package.metadata]
 requires-dist = [
     { name = "amsc-iri", specifier = "==1.2.0" },
+    { name = "amsc-iri-v2", specifier = "==1.0.0" },
     { name = "amscrot-py", extras = ["aws", "chi", "cloudlab", "fabric", "gcp", "janus", "kube", "sense"], marker = "extra == 'all'" },
     { name = "amscrot-py", extras = ["janus"], marker = "extra == 'kube'" },
     { name = "ansible", marker = "extra == 'janus'", specifier = "==9.5.1" },

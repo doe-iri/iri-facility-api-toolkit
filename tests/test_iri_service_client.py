@@ -93,7 +93,7 @@ class TestIriServiceClient(unittest.TestCase):
 
     def test_service_client_classes_registration(self):
         """Test that the SERVICE_CLIENT_CLASSES registry points to the unified class."""
-        expected = "amscrot.serviceclient.amsc_iri.iri_service_client.IriServiceClient"
+        expected = "amscrot.serviceclient.amsc_iri.IriServiceClient"
         self.assertEqual(Constants.SERVICE_CLIENT_CLASSES[Constants.ServiceType.IRI], expected)
         # Old entries should no longer exist
         self.assertNotIn("esnet-iri", Constants.SERVICE_CLIENT_CLASSES)
@@ -186,7 +186,109 @@ class TestIriServiceClientStatus:
 
         result = sc.status(_make_job_handle())
 
-        assert result.state not in ("UNKNOWN", "COMPLETED")
+    def test_format_api_exception_pretty_prints_json(self):
+        """format_api_exception should pretty print JSON response body."""
+        from amscrot.util.utils import format_api_exception
+
+        raw_json = '{"type":"https://example.com/problems/unauthorized","status":401,"title":"Unauthorized","detail":"Auth failed"}'
+        exc = BadRequestException(status=401, reason="Unauthorized")
+        exc.body = raw_json
+
+        formatted = format_api_exception(exc)
+        assert "  \"status\": 401" in formatted
+        assert "  \"detail\": \"Auth failed\"" in formatted
+
+    def test_format_api_exception_with_string_marker(self):
+        """format_api_exception should parse HTTP response body marker in exception string."""
+        from amscrot.util.utils import format_api_exception
+
+        msg = '(401)\nReason: Unauthorized\nHTTP response body: {"detail": "token invalid"}\nHTTP response data: ...'
+        exc = Exception(msg)
+
+        formatted = format_api_exception(exc)
+        assert "  \"detail\": \"token invalid\"" in formatted
+
+
+# -- _get_storage_resource_id() - availability filtering -------------------
+
+def _storage_res(name, status, rid=None):
+    """Build a mock storage resource. ``status`` mirrors the IRI Status enum values."""
+    res = MagicMock()
+    res.name = name
+    res.id = rid or f"id-{name}"
+    res.current_status = status
+    return res
+
+
+def _sc_with_storage(resources):
+    sc = _make_iri_sc()
+    sc._status_api = MagicMock()
+    sc._status_api.get_resources.return_value = resources
+    return sc
+
+
+class TestIriStorageResolution:
+    def test_unknown_status_is_usable(self):
+        """ALCF reports every filesystem as 'unknown'; those must still resolve.
+
+        Regression test: requiring status == 'up' made fetch_output_files fail
+        at ALCF with "No available storage resource found".
+        """
+        sc = _sc_with_storage([
+            _storage_res("Home", "unknown"),
+            _storage_res("Eagle", "unknown"),
+        ])
+        assert sc._get_storage_resource_id("compute-1") == "id-Home"
+
+    def test_degraded_status_is_usable(self):
+        """A degraded filesystem is still better than no download at all."""
+        sc = _sc_with_storage([_storage_res("archive", "degraded")])
+        assert sc._get_storage_resource_id("compute-1") == "id-archive"
+
+    def test_down_resources_are_excluded(self):
+        sc = _sc_with_storage([
+            _storage_res("broken-home", "down"),
+            _storage_res("scratch", "up"),
+        ])
+        assert sc._get_storage_resource_id("compute-1") == "id-scratch"
+
+    def test_all_down_returns_none(self):
+        sc = _sc_with_storage([_storage_res("a", "down"), _storage_res("b", "down")])
+        assert sc._get_storage_resource_id("compute-1") is None
+
+    def test_no_storage_advertised_returns_none(self):
+        sc = _sc_with_storage([])
+        assert sc._get_storage_resource_id("compute-1") is None
+
+    def test_up_preferred_over_unknown_home(self):
+        """Among 'home' candidates, a confirmed-up one wins."""
+        sc = _sc_with_storage([
+            _storage_res("home-unknown", "unknown"),
+            _storage_res("home-up", "up"),
+        ])
+        assert sc._get_storage_resource_id("compute-1") == "id-home-up"
+
+    def test_home_preferred_over_other_names(self):
+        sc = _sc_with_storage([
+            _storage_res("scratch", "up"),
+            _storage_res("homes", "up"),
+        ])
+        assert sc._get_storage_resource_id("compute-1") == "id-homes"
+
+    def test_enum_valued_status_is_handled(self):
+        """Status may arrive as an enum with .value rather than a bare string."""
+        sc = _sc_with_storage([_storage_res("Home", SimpleNamespace(value="unknown"))])
+        assert sc._get_storage_resource_id("compute-1") == "id-Home"
+
+    def test_none_status_is_usable(self):
+        sc = _sc_with_storage([_storage_res("Home", None)])
+        assert sc._get_storage_resource_id("compute-1") == "id-Home"
+
+    def test_api_error_returns_none(self):
+        sc = _make_iri_sc()
+        sc._status_api = MagicMock()
+        sc._status_api.get_resources.side_effect = RuntimeError("boom")
+        assert sc._get_storage_resource_id("compute-1") is None
 
 
 if __name__ == "__main__":

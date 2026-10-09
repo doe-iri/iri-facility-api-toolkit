@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
 from amscrot.serviceclient import ServiceClient
 
 if TYPE_CHECKING:
-    from amsc_iri.models.job_spec_input import JobSpecInput as IriJobSpec
+    from amsc_iri.models.job_spec import JobSpec as IriJobSpec
 
 class JobServiceType(str, Enum):
     REALTIME = "REALTIME"

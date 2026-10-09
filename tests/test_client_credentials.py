@@ -98,3 +98,52 @@ def test_load_credentials_default_missing():
     client = Client()
     with pytest.raises(FileNotFoundError):
         client.load_credentials(file_path='/non/existent/path/cred.yml')
+
+
+def test_pat_file_resolution_json(tmp_path):
+    import json
+    token_file = tmp_path / "amsc_token.json"
+    token_file.write_text(json.dumps({"AMSC_PAT": "jwt-test-token-123", "sub": "test-user"}))
+
+    cred_content = {
+        "esnet-iri-east-rig": {
+            "client_type": "AMSC_IRI",
+            "api_endpoint": "https://rig.example.com/esnet-east/",
+            "pat_file": str(token_file),
+            "api_version": 2,
+        }
+    }
+    cred_file = tmp_path / "credentials.yml"
+    with open(cred_file, "w") as f:
+        yaml.dump(cred_content, f)
+
+    client = Client()
+    client.load_credentials(file_path=str(cred_file))
+    cred = client.get_credential("esnet-iri-east-rig")
+    assert cred is not None
+    assert cred.api_key == "jwt-test-token-123"
+    assert cred.to_dict()["api_key"] == "jwt-test-token-123"
+
+
+def test_pat_file_resolution_plain_text(tmp_path):
+    token_file = tmp_path / "amsc_pat"
+    token_file.write_text("plain-text-token-456\n")
+
+    cred_content = {
+        "nersc-iri-rig": {
+            "client_type": "AMSC_IRI",
+            "api_endpoint": "https://rig.example.com/nersc/",
+            "pat_file": str(token_file),
+            "api_version": 2,
+        }
+    }
+    cred_file = tmp_path / "credentials.yml"
+    with open(cred_file, "w") as f:
+        yaml.dump(cred_content, f)
+
+    client = Client()
+    client.load_credentials(file_path=str(cred_file))
+    cred = client.get_credential("nersc-iri-rig")
+    assert cred is not None
+    assert cred.api_key == "plain-text-token-456"
+

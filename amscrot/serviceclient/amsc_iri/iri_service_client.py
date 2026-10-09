@@ -1,93 +1,295 @@
+"""Shared base class for versioned IRI service clients.
+
+Contains all version-agnostic logic: credential loading, discovery
+normalization, job spec conversion, status polling, filesystem/output
+file helpers, and incident/event/facility queries.
+
+Subclasses (:class:`IriServiceClientV1`, :class:`IriServiceClientV2`, ...)
+implement :meth:`_init_api_client`, :meth:`_resource_type`, and any
+version-exclusive methods.
+"""
+
 import os
 import yaml
+from abc import abstractmethod
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Union, TYPE_CHECKING
-from ..serviceclient import ServiceClient, PlanError, CreateError, DestroyError
-from ..filesystem import IriFilesystem, FilesystemError
-from ...util.constants import Constants
-from ...model.discovery import DiscoveryResult, DiscoveredResource
-from ...client.job import JobStatus, JobState as AmscrotJobState
 
-from amsc_iri.configuration import Configuration as IriConfiguration
-from amsc_iri.api_client import ApiClient as IriApiClient
-from amsc_iri.api.compute_api import ComputeApi
-from amsc_iri.api.status_api import StatusApi
-from amsc_iri.api.facility_api import FacilityApi
-from amsc_iri.api.account_api import AccountApi
-from amsc_iri.api.filesystem_api import FilesystemApi
-from amsc_iri.api.task_api import TaskApi
-from amsc_iri.models.job_spec import JobSpec as IriJobSpec
-from amsc_iri.models.resource_type import ResourceType
-from amsc_iri.models.job_state import JobState as IriJobState
-from amsc_iri.models.job import Job as IriJob
-from amsc_iri.models.status import Status
-from amsc_iri.exceptions import NotFoundException, BadRequestException
+from amscrot.serviceclient.serviceclient import ServiceClient, PlanError, CreateError, DestroyError
+from amscrot.serviceclient.filesystem import FilesystemError, FilesystemInterface
+from amscrot.util.constants import Constants
+from amscrot.util import utils
+from amscrot.model.discovery import DiscoveryResult, DiscoveredResource
+from amscrot.client.job import JobStatus, JobState as AmscrotJobState
 
 if TYPE_CHECKING:
     from amscrot.client.job import Job, JobSpec
 
-class IriServiceClient(ServiceClient):
-    """Unified ServiceClient implementation for IRI compute jobs.
+
+def _urn_tail(value: Any) -> Optional[str]:
+    """Reduce an IRI identifier to its final segment.
+
+    Facilities express the same concept either as a bare token
+    (``node_hours``) or as a namespaced URN
+    (``urn:doe-iri:allocation:compute:node-hours``). Both also appear as full
+    URLs in ``*_uri`` fields. Taking the last segment of whichever separator
+    is present yields a token that can be compared across facilities.
+
+    Returns ``None`` for empty input so callers can skip missing fields.
+    """
+    if value is None:
+        return None
+    text = getattr(value, 'value', value)  # unwrap enums
+    text = str(text).strip().rstrip('/')
+    if not text:
+        return None
+    for sep in ('/', ':'):
+        if sep in text:
+            text = text.rsplit(sep, 1)[-1]
+    return text or None
+
+
+def _fold_token(value: Any) -> Optional[str]:
+    """Normalise a token for equality comparison.
+
+    Strips any URN/URL namespace, casefolds, and unifies hyphen and
+    underscore spelling, so ``'Aurora'``, ``'aurora'`` and
+    ``'urn:...:node-hours'`` vs ``'node_hours'`` compare equal.
+    """
+    tail = _urn_tail(value)
+    if tail is None:
+        return None
+    return tail.casefold().replace('-', '_')
+
+
+class IriServiceClientBase(ServiceClient):
+    """Version-agnostic base for IRI service clients.
 
     Works with any IRI-compliant facility (ESnet, NERSC, etc.).  The target
     facility is determined by the ``profile`` parameter, which selects the
     appropriate credentials section in ``~/.amscrot/credentials.yml``.
+
+    Subclasses must implement:
+
+    * :meth:`_init_api_client` -- configure the generated API client and
+      typed API helpers for their specific ``amsc_iri`` / ``amsc_iri_v2``
+      package.
+    * :meth:`_resource_type` -- return the correct resource-type filter
+      value for the API version.
     """
 
-    # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
-    _IRI_TO_AMSCROT = {
-        IriJobState.NEW:       AmscrotJobState.NEW,
-        IriJobState.QUEUED:    AmscrotJobState.QUEUED,
-        IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
-        IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
-        IriJobState.FAILED:    AmscrotJobState.FAILED,
-        IriJobState.CANCELED:  AmscrotJobState.CANCELED,
-    }
+    #: The integer API version this client class targets.
+    #: Overridden in each subclass.
+    API_VERSION: int = 0
+
+    @property
+    def api_version(self) -> int:
+        """Return the integer API version targeted by this client."""
+        return self.API_VERSION
 
     def __init__(self, **kwargs):
+        kwargs.pop('api_version', None)
+        if not kwargs.get('name'):
+            kwargs['name'] = kwargs.get('profile') or 'iri'
         super().__init__(type=Constants.ServiceType.IRI, **kwargs)
-        
+
         # Load credentials
         self.api_key = None
         self.api_endpoint = None
+        self._path_prefix: Optional[str] = None  # None = use default /api
         self._load_credentials()
-        
+
         # Override endpoint if provided via ServiceClient init
         if self.endpoint_uri:
             self.api_endpoint = self.endpoint_uri
         else:
             self.endpoint_uri = self.api_endpoint
-        
+
         # Normalize endpoint: strip trailing slashes to avoid double-slash URLs
         if self.api_endpoint:
             self.api_endpoint = self.api_endpoint.rstrip('/')
             self.endpoint_uri = self.api_endpoint
 
-        # Initialize the API client
+        # Typed API accessors (populated by subclass _init_api_client)
         self._api_client = None
+        self._compute_api = None
+        self._status_api = None
+        self._facility_api = None
+        self._account_api = None
+        self._filesystem_api = None
+        self._storage_api = None
+        self._task_api = None
+
+        # Initialize the version-specific API client
         if self.api_key and self.api_endpoint:
-            configuration = IriConfiguration(
-                host=self.api_endpoint,
-                api_key={'APIKeyHeader': self.api_key},
-                api_key_prefix={'APIKeyHeader': 'Bearer'},
-                access_token=self.api_key
-            )
-            self._api_client = IriApiClient(configuration)
-            self._compute_api = ComputeApi(self._api_client)
-            self._status_api = StatusApi(self._api_client)
-            self._facility_api = FacilityApi(self._api_client)
-            self._account_api = AccountApi(self._api_client)
-            self._filesystem_api = FilesystemApi(self._api_client)
-            self._task_api = TaskApi(self._api_client)
+            self._init_api_client()
             self._available = True
+            prefix_msg = ""
+            if self._path_prefix is not None:
+                prefix_msg = f", path_prefix={self._path_prefix!r}"
+            self.logger.debug(
+                f"[{self.name}] Using IRI API v{self.API_VERSION} "
+                f"(native{prefix_msg})"
+            )
         else:
             self._available = False
-            self.logger.warning(f"[{self.name}] Warning: Could not load IRI credentials.")
-        
+            self.logger.warning(
+                f"[{self.name}] Warning: Could not load IRI credentials."
+            )
+
         self._default_resource_id = None
         # Lazily-created filesystem interface
-        self._filesystem: Optional[IriFilesystem] = None
-    
+        self._filesystem: Optional[FilesystemInterface] = None
+
+    @property
+    def path_prefix(self) -> str:
+        """Return the path prefix for API resource paths.
+
+        Defaults to ``"/api"`` (the prefix hardcoded in the generated
+        bindings).  Overridden to ``""`` for bare-path facilities like
+        PNNL, or set via ``path_prefix`` in credentials.
+        """
+        from amscrot.serviceclient.amsc_iri._path_rewriting import GENERATED_PREFIX
+        if self._path_prefix is not None:
+            return self._path_prefix
+        return GENERATED_PREFIX
+
+    # ------------------------------------------------------------------
+    # Abstract hooks for subclasses
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def _init_api_client(self) -> None:
+        """Create the generated API client and typed API helpers.
+
+        Implementations should set ``self._api_client`` and all the
+        ``self._*_api`` attributes using their version-specific package.
+        """
+
+    @abstractmethod
+    def _resource_type(self, kind: str) -> str:
+        """Return the correct resource_type filter value for the API version.
+
+        Args:
+            kind: One of ``"compute"``, ``"storage"``, ``"network"``.
+        """
+
+    #: Order in which capability-resolution strategies are attempted when
+    #: linking a resource to the capabilities an allocation is granted
+    #: against. Earlier entries are higher confidence. Subclasses (or
+    #: deployment config) may reorder or trim this; only ``"declared"``
+    #: represents an explicit statement by the facility.
+    CAPABILITY_RESOLUTION_ORDER: tuple = (
+        "declared",
+        "resource_name",
+        "resource_group",
+    )
+
+    def _capability_resolution_order(self) -> tuple:
+        """Return the capability-resolution strategies to attempt, in order.
+
+        Overridable so a facility whose metadata is known to be strict can
+        restrict resolution to ``("declared",)``, or so a deployment can
+        enable additional inference. The default order is deliberately
+        facility-agnostic: it encodes only *structural* fallbacks that hold
+        for any IRI provider, never a facility or client name.
+        """
+        configured = getattr(self, 'capability_resolution_order', None)
+        return tuple(configured) if configured else self.CAPABILITY_RESOLUTION_ORDER
+
+    # ------------------------------------------------------------------
+    # Credential loading
+    # ------------------------------------------------------------------
+
+    def _load_credentials(self):
+        """Load IRI credentials from ProviderCredential object or
+        ``~/.amscrot/credentials.yml``.
+        """
+        # 1. Use provided ProviderCredential object if available
+        if self.credential:
+            try:
+                if hasattr(self.credential, 'to_dict'):
+                    creds = self.credential.to_dict()
+                elif isinstance(self.credential, dict):
+                    creds = self.credential
+                else:
+                    creds = {}
+
+                self.api_key = creds.get('api_key')
+                if not self.api_key and creds.get('pat_file'):
+                    from amscrot.util import utils
+                    self.api_key = utils.load_pat_from_file(creds.get('pat_file'))
+                self.api_endpoint = creds.get('api_endpoint')
+                if 'path_prefix' in creds:
+                    self._path_prefix = str(creds['path_prefix'])
+                return
+            except Exception as e:
+                print(f"[{self.name}] Error loading from credential object: {e}")
+
+        # 2. Load from file
+        default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
+        cred_file = self.credential_file or default_file
+        cred_file = os.path.expanduser(cred_file)
+
+        if not os.path.exists(cred_file):
+            if self.credential_file:
+                self.logger.warning(
+                    f"[{self.name}] Warning: Custom credentials file not found at {cred_file}"
+                )
+            if not self.credential_file and cred_file == default_file:
+                self.logger.warning(
+                    f"[{self.name}] Warning: Credentials file not found at {cred_file}"
+                )
+            return
+
+        try:
+            with open(cred_file, 'r') as f:
+                credentials = yaml.safe_load(f) or {}
+
+            lookups = []
+            if self.profile:
+                lookups.append(self.profile)
+            if self.name and self.name not in lookups:
+                lookups.append(self.name)
+            lookups.append(Constants.ServiceType.IRI)
+
+            section_creds = None
+            used_key = None
+
+            for key in lookups:
+                if key in credentials:
+                    section_creds = credentials[key]
+                    used_key = key
+                    break
+
+            if section_creds:
+                self.api_key = section_creds.get('api_key')
+                if not self.api_key and section_creds.get('pat_file'):
+                    from amscrot.util import utils
+                    self.api_key = utils.load_pat_from_file(section_creds.get('pat_file'))
+                self.api_endpoint = section_creds.get('api_endpoint')
+                if 'path_prefix' in section_creds:
+                    self._path_prefix = str(section_creds['path_prefix'])
+
+                if not self.api_key or not self.api_endpoint:
+                    self.logger.warning(
+                        f"[{self.name}] Warning: Missing api_key or api_endpoint "
+                        f"in credentials (section: {used_key})"
+                    )
+            else:
+                searched = f"'{self.profile}' or " if self.profile else ""
+                self.logger.warning(
+                    f"[{self.name}] Warning: Section {searched}"
+                    f"'{Constants.ServiceType.IRI}' not found in credentials"
+                )
+
+        except Exception as e:
+            self.logger.error(f"[{self.name}] Error loading credentials: {e}")
+
+    # ------------------------------------------------------------------
+    # Discovery
+    # ------------------------------------------------------------------
+
     def discover(self, native: bool = True) -> DiscoveryResult:
         """Discover resources. native=True returns raw DiscoveredResource items;
         native=False returns normalized Facility objects.
@@ -97,25 +299,30 @@ class IriServiceClient(ServiceClient):
         return self.normalize_discovery(self._discover_native())
 
     def _discover_native(self) -> DiscoveryResult:
-        """Return raw API resources (compute, storage, network, facilities, capabilities, allocations)."""
+        """Return raw API resources (compute, storage, network, facilities,
+        capabilities, allocations).
+        """
         if not self._api_client:
-            self.logger.warning(f"[{self.name}] Warning: Client not initialized, returning empty discovery.")
+            self.logger.warning(
+                f"[{self.name}] Warning: Client not initialized, "
+                "returning empty discovery."
+            )
             return DiscoveryResult()
 
         items = []
         try:
             # 1. Discover typed resources (compute, storage, network)
             for res_type, item_type in [
-                (ResourceType.COMPUTE,  "compute"),
-                (ResourceType.STORAGE,  "storage"),
-                (ResourceType.NETWORK,  "network"),
+                (self._resource_type("compute"),  "compute"),
+                (self._resource_type("storage"),  "storage"),
+                (self._resource_type("network"),  "network"),
             ]:
                 self.logger.debug(f"[{self.name}] Discovering {item_type} resources...")
                 resources = self._status_api.get_resources(resource_type=res_type)
                 if resources:
                     for res in resources:
                         res_data = res.to_dict()
-                        # to_dict() omits capability_uris — stash them explicitly
+                        # to_dict() omits capability_uris -- stash them explicitly
                         cap_uris = getattr(res, 'capability_uris', None) or []
                         res_data['_capability_ids'] = [
                             uri.rstrip('/').rsplit('/', 1)[-1] for uri in cap_uris
@@ -149,7 +356,7 @@ class IriServiceClient(ServiceClient):
                         for pa in project_allocs:
                             pa_data = pa.to_dict()
                             pa_data['_project_name'] = project.name
-                            # to_dict() omits URI fields — stash them explicitly
+                            # to_dict() omits URI fields -- stash them explicitly
                             pa_data['capability_uri'] = getattr(pa, 'capability_uri', None)
                             pa_data['project_uri'] = getattr(pa, 'project_uri', None)
 
@@ -190,10 +397,104 @@ class IriServiceClient(ServiceClient):
                 self.logger.warning(f"[{self.name}] Could not fetch incidents: {inc_exc}")
 
         except Exception as e:
-            self.logger.error(f"[{self.name}] Error during discovery: {e}")
+            self.logger.error(f"[{self.name}] Error during discovery: {utils.format_api_exception(e)}")
 
         self.logger.debug(f"[{self.name}] Discovery complete. Found {len(items)} items.")
         return DiscoveryResult(items=items)
+
+    # ------------------------------------------------------------------
+    # Capability resolution
+    # ------------------------------------------------------------------
+
+    def _build_capability_index(self, native_result: DiscoveryResult) -> Dict[str, Any]:
+        """Index the facility's declared capabilities under every alias form.
+
+        Facilities reference the same capability by different identifiers:
+        some resources carry capability UUIDs, some carry short names, and
+        allocations point at a ``capability_uri`` whose tail may be either.
+        Indexing all of those forms against one canonical name lets the rest
+        of normalization compare them without caring which form it was given.
+
+        Returns a dict with:
+            ``alias``  -- folded alias -> canonical capability name
+            ``names``  -- folded canonical name -> canonical capability name
+        """
+        alias: Dict[str, str] = {}
+        names: Dict[str, str] = {}
+
+        for cap_item in native_result.by_type("capability"):
+            cap_d = cap_item.data
+            cap_name = cap_d.get("name")
+            if not cap_name:
+                continue
+            canonical = str(cap_name)
+            names[_fold_token(canonical)] = canonical
+            # Every form this capability may be referenced by elsewhere.
+            for raw in (cap_d.get("id"), canonical, cap_d.get("uri")):
+                folded = _fold_token(raw)
+                if folded:
+                    alias.setdefault(folded, canonical)
+
+        return {"alias": alias, "names": names}
+
+    def _canonical_capability(self, raw: Any, cap_index: Dict[str, Any]) -> Optional[str]:
+        """Resolve *raw* (an id, name, or URI) to a canonical capability name."""
+        folded = _fold_token(raw)
+        if not folded:
+            return None
+        # Fall back to the stripped token so an unknown-but-present reference
+        # is still usable rather than being silently dropped.
+        return cap_index["alias"].get(folded, _urn_tail(raw))
+
+    def _resolve_capabilities(
+        self,
+        d: dict,
+        cap_index: Dict[str, Any],
+    ) -> tuple:
+        """Determine which capabilities a resource provides.
+
+        Tries each strategy in :meth:`_capability_resolution_order` and stops
+        at the first that yields a match, returning the capability names and
+        the strategy that produced them so callers can judge confidence.
+
+        The strategies are structural, not facility-specific:
+
+        ``declared``
+            The resource explicitly lists capability references. Always
+            correct when present; the only strategy that is not an inference.
+        ``resource_name``
+            The resource's own name matches a declared capability name. This
+            holds for facilities that model capabilities as machine names
+            rather than as abstract classes like cpu/gpu.
+        ``resource_group``
+            The resource's group matches a declared capability name, for
+            facilities that group resources by the capability they serve.
+
+        Returns:
+            ``(capability_names, strategy)``; ``(None, None)`` if unresolved.
+        """
+        for strategy in self._capability_resolution_order():
+            if strategy == "declared":
+                refs = d.get("_capability_ids") or []
+                resolved = [
+                    c for c in (
+                        self._canonical_capability(r, cap_index) for r in refs
+                    ) if c
+                ]
+                if resolved:
+                    return resolved, "declared"
+
+            elif strategy == "resource_name":
+                canonical = cap_index["names"].get(_fold_token(d.get("name")))
+                if canonical:
+                    return [canonical], "resource_name"
+
+            elif strategy == "resource_group":
+                canonical = cap_index["names"].get(_fold_token(d.get("group")))
+                if canonical:
+                    return [canonical], "resource_group"
+
+        return None, None
 
     def normalize_discovery(self, native_result: DiscoveryResult) -> DiscoveryResult:
         """Aggregate raw API resources into a single typed Facility object.
@@ -206,29 +507,33 @@ class IriServiceClient(ServiceClient):
             native_result: A DiscoveryResult from either a live _discover_native()
                 call or a cached discovery load.
         """
-        from ...model.metadata import (
+        from amscrot.model.metadata import (
             Compute, Storage, Network, Allocation, Facility,
             Project, ProjectAllocation, UserAllocation, AllocationEntry,
         )
 
         if not native_result:
-            self.logger.warning(f"[{self.name}] Warning: No native results to normalize, returning empty discovery.")
+            self.logger.warning(
+                f"[{self.name}] Warning: No native results to normalize, "
+                "returning empty discovery."
+            )
             return DiscoveryResult()
 
-        # Build map from capability ID (UUID) to name
-        cap_id_to_name = {}
-        for cap_item in native_result.by_type("capability"):
-            cap_d = cap_item.data
-            cap_id = cap_d.get("id")
-            cap_name = cap_d.get("name")
-            if cap_id and cap_name:
-                cap_id_to_name[cap_id] = cap_name
+        # Index every alias form the facility uses for its capabilities.
+        cap_index = self._build_capability_index(native_result)
+        # Tally which strategy resolved each resource, for the summary log.
+        strategy_tally: Dict[str, int] = {}
+
+        def _resolve(d: dict) -> Optional[List[str]]:
+            names, strategy = self._resolve_capabilities(d, cap_index)
+            if strategy:
+                strategy_tally[strategy] = strategy_tally.get(strategy, 0) + 1
+            else:
+                strategy_tally["unresolved"] = strategy_tally.get("unresolved", 0) + 1
+            return names, strategy
 
         def _build_compute(d: dict) -> Compute:
-            cap_ids = d.get("_capability_ids") or None
-            cap_names = None
-            if cap_ids:
-                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
+            cap_names, cap_source = _resolve(d)
             return Compute(
                 id=d.get("id"),
                 name=d.get("name") or d.get("node_name"),
@@ -241,13 +546,12 @@ class IriServiceClient(ServiceClient):
                 gpus_per_node=d.get("gpus_per_node") or d.get("gpu_count"),
                 gpu_type=d.get("gpu_type"),
                 capabilities=cap_names,
+                capability_source=cap_source,
+                attributes=d.get("attributes"),
             )
 
         def _build_storage(d: dict) -> Storage:
-            cap_ids = d.get("_capability_ids") or None
-            cap_names = None
-            if cap_ids:
-                cap_names = [cap_id_to_name.get(cid, cid) for cid in cap_ids]
+            cap_names, cap_source = _resolve(d)
             return Storage(
                 id=d.get("id"),
                 name=d.get("name"),
@@ -256,6 +560,8 @@ class IriServiceClient(ServiceClient):
                 quota=str(d.get("capacity_bytes")) if d.get("capacity_bytes") else d.get("quota"),
                 performance_tier=d.get("performance_tier"),
                 capabilities=cap_names,
+                capability_source=cap_source,
+                attributes=d.get("attributes"),
             )
 
         def _build_network(d: dict) -> Network:
@@ -266,6 +572,7 @@ class IriServiceClient(ServiceClient):
                 fabric=d.get("fabric") or d.get("network_type"),
                 bandwidth_limit=d.get("bandwidth_limit"),
                 external_connectivity=d.get("external_connectivity"),
+                attributes=d.get("attributes"),
             )
 
         compute_resources = []
@@ -307,14 +614,22 @@ class IriServiceClient(ServiceClient):
 
         # -- Build Project hierarchy from native project items ----------------
         def _build_entry(e: dict) -> AllocationEntry:
-            """Build an AllocationEntry, coercing enum unit values to str."""
+            """Build an AllocationEntry with a facility-agnostic unit token.
+
+            Units arrive either bare (``node_hours``) or URN-namespaced
+            (``urn:doe-iri:allocation:compute:node-hours``). Reducing both to
+            the final segment and unifying the word separator keeps allocation
+            units comparable across facilities, so callers can aggregate usage
+            without special-casing each provider's spelling.
+            """
             unit = e.get("unit")
             if hasattr(unit, "value"):
                 unit = unit.value
+            tail = _urn_tail(unit)
             return AllocationEntry(
                 allocation=e.get("allocation"),
                 usage=e.get("usage"),
-                unit=str(unit) if unit is not None else None,
+                unit=tail.replace('-', '_') if tail else None,
             )
 
         projects_typed: list[Project] = []
@@ -322,12 +637,11 @@ class IriServiceClient(ServiceClient):
             d = item.data
             proj_allocs: list[ProjectAllocation] = []
             for pa_data in d.get("_allocations", []):
-                # Extract capability id from capability_uri
-                cap_uri = pa_data.get("capability_uri", "")
-                capability_id = (
-                    cap_uri.rstrip("/").rsplit("/", 1)[-1] if cap_uri else None
+                # The capability_uri tail may be an id or a name depending on
+                # the facility; the shared index resolves either form.
+                capability_name = self._canonical_capability(
+                    pa_data.get("capability_uri"), cap_index
                 )
-                capability_name = cap_id_to_name.get(capability_id, capability_id)
 
                 # Build user allocations
                 user_allocs: list[UserAllocation] = []
@@ -396,87 +710,64 @@ class IriServiceClient(ServiceClient):
             f"{len(storage_resources)} storage, {len(network_resources)} network resources, "
             f"{len(allocations)} allocations, and {len(projects_typed)} projects."
         )
+
+        # Surface how capability linkage was established. Inferred linkage is
+        # a heuristic, so it is reported rather than applied silently.
+        if strategy_tally:
+            summary = ", ".join(
+                f"{count} {strategy}"
+                for strategy, count in sorted(strategy_tally.items())
+            )
+            inferred = {
+                s: c for s, c in strategy_tally.items()
+                if s not in ("declared", "unresolved")
+            }
+            if inferred:
+                detail = ", ".join(
+                    f"{count} via {strategy}"
+                    for strategy, count in sorted(inferred.items())
+                )
+                self.logger.warning(
+                    f"[{self.name}] Capability linkage inferred for "
+                    f"{sum(inferred.values())} resource(s) ({detail}). The "
+                    f"facility did not declare these links; verify the "
+                    f"resource before relying on the match. "
+                    f"Full breakdown: {summary}."
+                )
+            else:
+                self.logger.debug(
+                    f"[{self.name}] Capability resolution: {summary}."
+                )
+
+            if strategy_tally.get("unresolved") and not any(
+                r.capabilities for r in compute_resources
+            ):
+                self.logger.warning(
+                    f"[{self.name}] No compute resource could be linked to a "
+                    f"capability. Allocation-to-resource mapping will be empty; "
+                    f"target a resource id directly or extend "
+                    f"CAPABILITY_RESOLUTION_ORDER for this client."
+                )
         return DiscoveryResult(items=result_items)
 
-    def _load_credentials(self):
-        """Load IRI credentials."""
-        # 1. Use provided ProviderCredential object if available
-        # self.credential is populated by ServiceClient.__init__
-        if self.credential:
-            try:
-                # Handle ProviderCredential object (duck typing or to_dict)
-                if hasattr(self.credential, 'to_dict'):
-                    creds = self.credential.to_dict()
-                elif isinstance(self.credential, dict):
-                    creds = self.credential
-                else:
-                    creds = {}
+    # ------------------------------------------------------------------
+    # Job lifecycle
+    # ------------------------------------------------------------------
 
-                self.api_key = creds.get('api_key')
-                self.api_endpoint = creds.get('api_endpoint')
-                return
-            except Exception as e:
-                print(f"[{self.name}] Error loading from credential object: {e}")
+    def _convert_to_iri_job_spec(self, job_spec, name: str = None):
+        """Convert AmSCROT JobSpec to IRI JobSpec format.
 
-        # 2. Load from file
-        default_file = os.path.join(str(Path.home()), '.amscrot', 'credentials.yml')
-        # self.credential_file is populated by ServiceClient.__init__
-        cred_file = self.credential_file or default_file
-        cred_file = os.path.expanduser(cred_file)
-        
-        if not os.path.exists(cred_file):
-            if self.credential_file:
-                 self.logger.warning(f"[{self.name}] Warning: Custom credentials file not found at {cred_file}")
-            # If default file is missing and no explicit file given, just return silent warning if desired
-            if not self.credential_file and cred_file == default_file:
-                 self.logger.warning(f"[{self.name}] Warning: Credentials file not found at {cred_file}")
-            return
+        Subclasses import the correct model types from their version-specific
+        package.  This base implementation handles the field mapping logic.
 
-        try:
-            with open(cred_file, 'r') as f:
-                credentials = yaml.safe_load(f) or {}
-
-            # 3. Look up profile or default type
-            lookups = []
-            if self.profile:
-                lookups.append(self.profile)
-            lookups.append(Constants.ServiceType.IRI)
-
-            section_creds = None
-            used_key = None
-
-            for key in lookups:
-                if key in credentials:
-                    section_creds = credentials[key]
-                    used_key = key
-                    break
-
-            if section_creds:
-                self.api_key = section_creds.get('api_key')
-                self.api_endpoint = section_creds.get('api_endpoint')
-
-                if not self.api_key or not self.api_endpoint:
-                    self.logger.warning(f"[{self.name}] Warning: Missing api_key or api_endpoint in credentials (section: {used_key})")
-            else:
-                 searched = f"'{self.profile}' or " if self.profile else ""
-                 self.logger.warning(f"[{self.name}] Warning: Section {searched}'{Constants.ServiceType.IRI}' not found in credentials")
-
-        except Exception as e:
-            self.logger.error(f"[{self.name}] Error loading credentials: {e}")
-    
-    def _convert_to_iri_job_spec(self, job_spec: Union["JobSpec", IriJobSpec], name: str = None) -> IriJobSpec:
-        """Convert AmSCROT JobSpec to IRI JobSpecInput format.
-
-        Constructs IriJobSpec using direct keyword arguments rather than from_dict()
-        to avoid pydantic setting None for absent fields in model_fields_set, which
-        would cause those fields to be serialized as null and rejected by the API's
-        min_length=1 constraints.
-
-        Callers that already hold a typed ``IriJobSpec`` may pass it straight through.
+        The method is defined here so both V1 and V2 share the same conversion
+        logic.  Subclasses must set ``self._iri_models`` dict with keys:
+        ``JobSpec``, ``ResourceSpec``, ``JobAttributes``, ``Container``.
         """
-        from amsc_iri.models.resource_spec import ResourceSpec as IriResourceSpec
-        from amsc_iri.models.job_attributes import JobAttributes as IriJobAttributes
-        from amsc_iri.models.container import Container as IriContainer
+        IriJobSpec = self._iri_models['JobSpec']
+        IriResourceSpec = self._iri_models['ResourceSpec']
+        IriJobAttributes = self._iri_models['JobAttributes']
+        IriContainer = self._iri_models['Container']
 
         if isinstance(job_spec, IriJobSpec):
             if name and not job_spec.name:
@@ -554,7 +845,7 @@ class IriServiceClient(ServiceClient):
                 kwargs["attributes"] = IriJobAttributes(**attrs_kwargs)
 
         return IriJobSpec(**kwargs)
-    
+
     def plan(self, job: "Job", skip_checks: bool = False) -> Dict:
         """Validate the job specification.
 
@@ -563,12 +854,15 @@ class IriServiceClient(ServiceClient):
             skip_checks: If True, all validation errors are downgraded
                 to warnings and PlanError is never raised.
         """
+        IriJobState = self._iri_models['JobState']
+        Status = self._iri_models['Status']
+
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Planning IRI job for '{name}'...")
-        
+
         errors = []
         warnings = []
-        
+
         # Check if client is available
         if not self._available:
             msg = "IRI client not available - check credentials"
@@ -576,7 +870,7 @@ class IriServiceClient(ServiceClient):
                 warnings.append(msg)
             else:
                 raise PlanError(errors=[msg])
-        
+
         resource_id = job.resource_id
         if not resource_id:
             errors.append("Job must have a resource_id")
@@ -584,7 +878,7 @@ class IriServiceClient(ServiceClient):
         # Validate executable is present
         if not job.job_spec.executable:
             errors.append("Job spec must have an executable")
-        
+
         # Try to convert to IRI format
         try:
             iri_spec = self._convert_to_iri_job_spec(job.job_spec)
@@ -623,82 +917,95 @@ class IriServiceClient(ServiceClient):
             "status": AmscrotJobState.PLANNED.value,
             "warnings": warnings,
         }
-    
+
     def create(self, job: "Job"):
         """Submit a job to the IRI facility."""
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Creating IRI job for '{name}'...")
-        
+
         if not self._available:
             raise CreateError(errors=["IRI client not available - check credentials"])
-        
+
         try:
             resource_id = job.resource_id
             if not resource_id:
                 raise CreateError(errors=[f"Job '{name}' has no resource_id"])
-            
+
             iri_spec = self._convert_to_iri_job_spec(job.job_spec, name=name)
-            
+
             # Submit the job via the typed API (returns an IriJob model)
-            iri_job: IriJob = self._compute_api.launch_job(
+            iri_job = self._compute_api.launch_job(
                 resource_id=resource_id,
                 job_spec=iri_spec
             )
-            
+
             # Set job ID
             job.id = iri_job.id
             self._status = AmscrotJobState.PENDING.value
-            self.logger.debug(f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}")
-                
+            self.logger.debug(
+                f"[{self.name}] Job '{name}' submitted successfully. Job ID: {iri_job.id}"
+            )
+
         except CreateError:
             raise
         except Exception as e:
-            raise CreateError(errors=[f"Error submitting job '{name}': {e}"]) from e
-    
+            raise CreateError(errors=[f"Error submitting job '{name}': {utils.format_api_exception(e)}"]) from e
+
     def destroy(self, job: "Job"):
         """Cancel a job on the IRI facility."""
         name = job.name or self.name
         self.logger.debug(f"[{self.name}] Destroying IRI job for '{name}'...")
-        
+
         if not self._available:
             raise DestroyError(errors=["IRI client not available - check credentials"])
-        
-        # Check if we have a job ID for this job
+
         if not job.id or not job.resource_id:
-            raise DestroyError(errors=[f"Job ID or Resource ID missing for '{name}'. Cannot cancel."])
-        
+            raise DestroyError(
+                errors=[f"Job ID or Resource ID missing for '{name}'. Cannot cancel."]
+            )
+
         try:
-            # Cancel the job
             self._compute_api.cancel_job(
                 resource_id=job.resource_id,
                 job_id=job.id
             )
-            
             self.logger.debug(f"[{self.name}] Job '{name}' (ID: {job.id}) cancelled.")
             self._status = AmscrotJobState.CANCELED.value
-            
+
         except DestroyError:
             raise
         except Exception as e:
-            raise DestroyError(errors=[f"Error cancelling job '{name}': {e}"]) from e
-    
+            raise DestroyError(errors=[f"Error cancelling job '{name}': {utils.format_api_exception(e)}"]) from e
+
     def status(self, job: "Job", *, historical: bool = False) -> JobStatus:
         """Get the status of a job on the IRI facility."""
+        IriJobState = self._iri_models['JobState']
+        NotFoundException = self._iri_models['NotFoundException']
+        BadRequestException = self._iri_models['BadRequestException']
+
+        # Map IRI JobState enum -> AmSCROT JobState (direct 1:1 alignment)
+        iri_to_amscrot = {
+            IriJobState.NEW:       AmscrotJobState.NEW,
+            IriJobState.QUEUED:    AmscrotJobState.QUEUED,
+            IriJobState.ACTIVE:    AmscrotJobState.ACTIVE,
+            IriJobState.COMPLETED: AmscrotJobState.COMPLETED,
+            IriJobState.FAILED:    AmscrotJobState.FAILED,
+            IriJobState.CANCELED:  AmscrotJobState.CANCELED,
+        }
+
         name = job.name or self.name
-        
+
         if not self._available:
             return JobStatus(state=self._status)
-        
-        # Check if we have a job ID for this job
+
         if not job.id or not job.resource_id:
             return JobStatus(
                 state="UNKNOWN",
                 message="Job ID or Resource ID missing, job likely not submitted"
             )
-        
+
         try:
-            # Get job via the typed API (returns an IriJob model)
-            iri_job: IriJob = self._compute_api.get_job(
+            iri_job = self._compute_api.get_job(
                 resource_id=job.resource_id,
                 job_id=job.id,
                 historical=historical,
@@ -706,7 +1013,7 @@ class IriServiceClient(ServiceClient):
             )
 
             # PBS removes completed jobs from the active queue; a None response
-            # means the job is no longer tracked — treat as COMPLETED.
+            # means the job is no longer tracked -- treat as COMPLETED.
             if iri_job is None:
                 self.logger.info(
                     f"[{self.name}] Job {job.id!r} not found in PBS queue; "
@@ -722,7 +1029,7 @@ class IriServiceClient(ServiceClient):
             # Map IRI JobState enum -> AmSCROT JobState
             amscrot_state = AmscrotJobState.UNKNOWN
             if iri_job.status and iri_job.status.state:
-                amscrot_state = self._IRI_TO_AMSCROT.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
+                amscrot_state = iri_to_amscrot.get(iri_job.status.state, AmscrotJobState.UNKNOWN)
             state_str = amscrot_state.value
 
             return JobStatus(
@@ -735,7 +1042,7 @@ class IriServiceClient(ServiceClient):
             )
 
         except NotFoundException:
-            # PBS removes completed jobs from the active queue — 404 means done.
+            # PBS removes completed jobs from the active queue -- 404 means done.
             self.logger.info(
                 f"[{self.name}] Job {job.id!r} not found in PBS queue (404); "
                 "assumed completed."
@@ -770,6 +1077,10 @@ class IriServiceClient(ServiceClient):
                 message=str(e)
             )
 
+    # ------------------------------------------------------------------
+    # Query helpers
+    # ------------------------------------------------------------------
+
     def get_incidents(self, **filters) -> List[Any]:
         """Fetch all incidents from the IRI API.
 
@@ -778,7 +1089,7 @@ class IriServiceClient(ServiceClient):
                 (e.g. ``status``, ``resource_id``, ``var_from``, ``to``).
 
         Returns:
-            List of ``amsc_iri.models.Incident`` objects.
+            List of incident objects.
         """
         if not self._available:
             return []
@@ -796,7 +1107,7 @@ class IriServiceClient(ServiceClient):
             incident_id: UUID of the incident to retrieve.
 
         Returns:
-            ``amsc_iri.models.Incident``, or ``None`` if not found / unavailable.
+            Incident object, or ``None`` if not found / unavailable.
         """
         if not self._available:
             return None
@@ -815,7 +1126,7 @@ class IriServiceClient(ServiceClient):
             incident_id: The UUID of the incident to fetch events for.
 
         Returns:
-            List of ``amsc_iri.models.Event`` objects.
+            List of event objects.
         """
         if not self._available:
             return []
@@ -832,7 +1143,7 @@ class IriServiceClient(ServiceClient):
         """Fetch facility-level metadata from the IRI API.
 
         Returns:
-            Native ``amsc_iri`` facility object, or ``None`` if unavailable.
+            Native facility object, or ``None`` if unavailable.
         """
         if not self._available:
             return None
@@ -883,10 +1194,15 @@ class IriServiceClient(ServiceClient):
             )
             return []
 
+    @abstractmethod
+    def _create_filesystem(self) -> FilesystemInterface:
+        """Create a version-specific filesystem interface instance."""
+        raise NotImplementedError
+
     # -- Filesystem interface -------------------------------------------------
 
     @property
-    def filesystem(self) -> Optional[IriFilesystem]:
+    def filesystem(self) -> Optional[FilesystemInterface]:
         """Return the IRI filesystem interface for this client.
 
         Returns ``None`` if the client is not available (e.g. missing credentials).
@@ -895,12 +1211,7 @@ class IriServiceClient(ServiceClient):
         if not self._available:
             return None
         if self._filesystem is None:
-            self._filesystem = IriFilesystem(
-                filesystem_api=self._filesystem_api,
-                task_api=self._task_api,
-                logger=self.logger,
-                client_name=self.name,
-            )
+            self._filesystem = self._create_filesystem()
         return self._filesystem
 
     # -- Output file retrieval -------------------------------------------------
@@ -913,25 +1224,35 @@ class IriServiceClient(ServiceClient):
           2. Prefer one with ``home`` in its name.
           3. Fall back to any available storage resource.
 
-        A resource is considered available when its ``current_status`` is ``up``.
-        Returns ``None`` if no suitable storage resource is found.
+        A resource is treated as available unless the facility explicitly
+        reports it ``down``. Facilities are inconsistent about status
+        reporting -- ALCF returns ``unknown`` for every filesystem it
+        advertises -- so requiring ``up`` would discard perfectly usable
+        storage and leave us unable to fetch job output. ``degraded`` is
+        likewise accepted: slow is better than unavailable for a log download.
         """
         try:
             storage_resources = self._status_api.get_resources(
-                resource_type=ResourceType.STORAGE
+                resource_type=self._resource_type("storage")
             ) or []
 
-            def _is_available(res) -> bool:
+            def _status_of(res) -> Optional[str]:
                 if res.current_status is None:
-                    return True  # assume available if status unknown
-                status_val = (
+                    return None
+                return (
                     res.current_status.value
                     if hasattr(res.current_status, 'value')
                     else str(res.current_status)
-                )
-                return status_val == 'up'
+                ).lower()
+
+            def _is_available(res) -> bool:
+                return _status_of(res) != 'down'
 
             available = [res for res in storage_resources if _is_available(res)]
+
+            # Prefer resources the facility actively reports as healthy, but
+            # keep the rest as fallbacks rather than discarding them.
+            available.sort(key=lambda r: 0 if _status_of(r) == 'up' else 1)
 
             # Prefer a storage resource with "home" in the name
             for res in available:
@@ -952,9 +1273,18 @@ class IriServiceClient(ServiceClient):
                 )
                 return res.id
 
-            self.logger.warning(
-                f"[{self.name}] No available storage resource found."
-            )
+            if storage_resources:
+                self.logger.warning(
+                    f"[{self.name}] No usable storage resource found: all "
+                    f"{len(storage_resources)} advertised resource(s) report "
+                    f"status 'down'."
+                )
+            else:
+                self.logger.warning(
+                    f"[{self.name}] No storage resources are advertised by this "
+                    f"facility; cannot resolve one for filesystem operations. "
+                    f"Pass storage_resource_id explicitly."
+                )
         except Exception as e:
             self.logger.error(
                 f"[{self.name}] Error resolving storage resource: {e}"
@@ -1034,9 +1364,11 @@ class IriServiceClient(ServiceClient):
                 )
             except Exception as e:
                 self.logger.error(
-                    f"[{self.name}] Error fetching {stream} for '{job.name}': {e}"
+                    f"[{self.name}] Error fetching {stream} for '{job.name}': "
+                    f"{utils.format_api_exception(e)}"
                 )
 
         # Store results back on the Job object
         job.local_files.update(results)
         return results
+
