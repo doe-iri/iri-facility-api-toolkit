@@ -20,4 +20,4 @@ dependencies = [
 include = ["amscrot_airflow*"]
 
 [project.urls]
-Homepage = "https://github.com/esnet/amsc-isro-toolkit"
+Homepage = "https://github.com/doe-iri/iri-facility-api-toolkit"
