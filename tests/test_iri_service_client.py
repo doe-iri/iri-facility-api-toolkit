@@ -108,6 +108,7 @@ def _make_iri_sc():
         type="amsc-iri",
         name="test-alcf",
         endpoint_uri="https://api.alcf.anl.gov",
+        api_version=1,
         credential={"api_key": "test-token",
                     "api_endpoint": "https://api.alcf.anl.gov"},
     )
