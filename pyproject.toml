@@ -40,7 +40,7 @@ gcp = ["google-cloud-compute"]
 all = ["amscrot-py[fabric,chi,sense,janus,kube,cloudlab,aws,gcp]"]
 
 [project.urls]
-Homepage = "https://github.com/esnet/amsc-isro-toolkit"
+Homepage = "https://github.com/doe-iri/iri-facility-api-toolkit"
 
 [project.scripts]
 amscrot = "tools.cli:main"
